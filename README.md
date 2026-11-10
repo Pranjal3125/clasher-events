@@ -1,22 +1,23 @@
-# Clasher Events — development build 0.1.0
+# Clasher Events — 0.2.0 development build
 
-Standalone Paper tournament/event plugin for Clasher Network.
+Standalone Paper PvP event plugin for Clasher Network.
 
-## Target
-- Paper 26.1.2 (API build 74), Java 25
-- WorldGuard 7.0.18 (provided dependency)
-- WorldEdit 7.4.6 (provided dependency)
+## Confirmed arena architecture
+- One shared arena world: `clasher_events`.
+- Eight separate schematic arenas, placed at spaced coordinates.
+- Unique visual theme for NethPot, Axe & Shield, Build UHC, Sword, UHC, Crystal, SMP and Diamond Pot.
+- Individual YAML kit presets for all eight PvP styles.
+- WorldEdit schematic paste integration.
 
-## First event: NethPot
-The first event preset is `kit-library/nethpot.yml`. Its dedicated arena definition is `arenas/nethpot/arena.yml`; it does not reuse the Axe/Shield or Build UHC arenas. Configure the named WorldGuard regions in `nethpot_arena` and populate safe spawn coordinates before testing.
-
-## Kit library
-Starting presets: NethPot, Axe & Shield, Build UHC, Sword, UHC, Crystal, SMP and Diamond Pot. See `kit-library/README.md`.
+## Requirements
+- Paper server with Java 25
+- WorldEdit 7.4.6 for schematic pasting
+- WorldGuard 7.0.18 is planned for arena protection; integration is not complete in this milestone.
 
 ## Build
-Run `mvn clean package` with JDK 25 and internet access. GitHub Actions is configured to build and upload the JAR artifact.
+Run `mvn clean package` with JDK 25.
 
-## Status
-This is an early development scaffold, **not a finished public-event plugin**. Kit and arena YAML files are currently editable presets/specifications. The runtime YAML kit loader, arena selector, GUI voting, persistent audience points and complete duel/team/random-kit modes remain to be implemented and tested. See `DEVELOPMENT.md`.
+## Development status
+This is an early implementation foundation, not a finished public tournament release. The current source milestone includes shared-world arena configuration, schematic paste, YAML kit loading and basic event registration/elimination. Wave progression, border shrinking, WorldGuard protection, audience GUI/voting, persistent rewards, pause/resume and full tournament modes still need implementation and staging tests.
 
-Test on a staging server before public deployment.
+See `DEVELOPMENT.md` for the current boundaries.
