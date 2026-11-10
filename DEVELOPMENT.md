@@ -1,24 +1,27 @@
-# Development status and implementation boundaries
+# Clasher Events — development status
 
-This repository contains an early Paper plugin scaffold and editable configuration presets.
+## Confirmed design
+- One shared arena world: clasher_events.
+- Eight separately configured schematic arenas at spaced coordinates.
+- Unique themes: Nether Citadel, Ironkeep, Verdant Basin, Grand Colosseum, Wild Frontier, End Rift, Fallen Kingdom and Frostglass.
+- Eight independent YAML kits: NethPot, Axe & Shield, Build UHC, Sword, UHC, Crystal, SMP and Diamond Pot.
 
-## First milestone: NethPot
-- Dedicated arena ID: `nethpot-main`
-- World: `nethpot_arena`
-- WorldGuard regions: `ce_nethpot_lobby`, `ce_nethpot_wave1`, `ce_nethpot_wave2`, `ce_nethpot_final`, `ce_nethpot_audience`
-- Three fixed phases: Wave 1, Wave 2, Final
-- Countdown: 120-second registration and kit delivery 60 seconds before Wave 1
-- Border sizes: 180 -> 100 -> 35 blocks
-- Voting: GUI + chat planned; current prototype has only a basic chat vote method
+## Current source milestone
+- Paper plugin bootstrap and generated configuration files.
+- Shared-world arena registry.
+- WorldEdit schematic loading and paste command.
+- YAML kit loader for armor, items, enchantments and potion effects.
+- Basic registration, start, elimination and winner flow.
 
-## Not yet implemented
-1. Runtime loading and validation of kit/arena YAML files.
-2. Actual NethPot armor, offhand, potion effects and full inventory kit application (prototype currently uses a placeholder kit).
-3. Arena/world/region settings loaded from arena YAML instead of hard-coded config.
-4. Configured safe spawn points and teleport validation.
-5. GUI voting, persistent audience points and duplicate-vote handling.
-6. Complete duel/team/random-kit flows; current phase engine is Battle-Royale-oriented.
-7. Consistent player cleanup on stop, disconnect, death and shutdown.
-8. Integration/staging tests on the exact Paper/WorldGuard/WorldEdit versions.
+## Planned / incomplete
+- Bundled polished schematic arena assets.
+- WorldGuard region creation and enforcement.
+- True arena snapshot/rollback reset.
+- Wave 1 to Wave 2 to Final transitions and WorldBorder shrinking.
+- Registration countdown and kit delivery at the 60-second mark.
+- Pause/resume, GUI voting, chat prediction, persistent audience points and rewards.
+- Complete duel brackets, team assignment and random-kit flow.
+- Full player state restoration and production-grade edge-case handling.
 
-Do not deploy this prototype as a finished public event system. Kit and arena YAML files remain presets/specifications until the runtime modules are complete.
+## Build and test
+Build with JDK 25 using mvn clean package. Test on a staging copy of the exact Paper build before public use.
