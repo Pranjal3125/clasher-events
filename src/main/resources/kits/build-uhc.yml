@@ -1,0 +1,13 @@
+name: Build UHC
+armor: {helmet: DIAMOND_HELMET, chestplate: DIAMOND_CHESTPLATE, leggings: DIAMOND_LEGGINGS, boots: DIAMOND_BOOTS}
+enchantments: {protection: 2, unbreaking: 2}
+items:
+  - {slot: 0, material: DIAMOND_SWORD, amount: 1, enchants: {sharpness: 3}}
+  - {slot: 1, material: BOW, amount: 1, enchants: {power: 2}}
+  - {slot: 2, material: ARROW, amount: 32}
+  - {slot: 3, material: GOLDEN_APPLE, amount: 16}
+  - {slot: 4, material: OAK_PLANKS, amount: 64}
+  - {slot: 5, material: COBBLESTONE, amount: 64}
+  - {slot: 6, material: WATER_BUCKET, amount: 1}
+  - {slot: 7, material: LAVA_BUCKET, amount: 1}
+  - {slot: 8, material: COBWEB, amount: 8}

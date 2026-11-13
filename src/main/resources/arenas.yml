@@ -1,0 +1,321 @@
+arenas:
+  nethpot:
+    display-name: NethPot - Nether Citadel
+    schematic: nethpot.schem
+    paste:
+      x: 0
+      y: 80
+      z: 0
+    bounds:
+      min-x: -66
+      min-y: 79
+      min-z: -66
+      max-x: 66
+      max-y: 110
+      max-z: 66
+    spawns:
+      wave1:
+      - x: -20.5
+        y: 82
+        z: 0.5
+      - x: 20.5
+        y: 82
+        z: 0.5
+      wave2:
+      - x: -15.5
+        y: 82
+        z: 0.5
+      - x: 15.5
+        y: 82
+        z: 0.5
+      final:
+      - x: -8.5
+        y: 82
+        z: 0.5
+      - x: 8.5
+        y: 82
+        z: 0.5
+      audience:
+      - x: 0.5
+        y: 87
+        z: -28.5
+  axe-shield:
+    display-name: Axe & Shield - Ironkeep
+    schematic: axe-shield.schem
+    paste:
+      x: 300
+      y: 80
+      z: 0
+    bounds:
+      min-x: 264
+      min-y: 79
+      min-z: -36
+      max-x: 335
+      max-y: 100
+      max-z: 35
+    spawns:
+      wave1:
+      - x: 285.5
+        y: 82
+        z: 0.5
+      - x: 315.5
+        y: 82
+        z: 0.5
+      audience:
+      - x: 300.5
+        y: 87
+        z: -27.5
+      wave2:
+      - x: 287.5
+        y: 82
+        z: 0.5
+      - x: 312.5
+        y: 82
+        z: 0.5
+      final:
+      - x: 293.5
+        y: 82
+        z: 0.5
+      - x: 306.5
+        y: 82
+        z: 0.5
+  build-uhc:
+    display-name: Build UHC - Verdant Basin
+    schematic: build-uhc.schem
+    paste:
+      x: 600
+      y: 80
+      z: 0
+    bounds:
+      min-x: 564
+      min-y: 79
+      min-z: -36
+      max-x: 635
+      max-y: 100
+      max-z: 35
+    spawns:
+      wave1:
+      - x: 580.5
+        y: 82
+        z: 0.5
+      - x: 620.5
+        y: 82
+        z: 0.5
+      audience:
+      - x: 600.5
+        y: 87
+        z: -27.5
+      wave2:
+      - x: 587.5
+        y: 82
+        z: 0.5
+      - x: 612.5
+        y: 82
+        z: 0.5
+      final:
+      - x: 593.5
+        y: 82
+        z: 0.5
+      - x: 606.5
+        y: 82
+        z: 0.5
+  sword:
+    display-name: Sword - Grand Colosseum
+    schematic: sword.schem
+    paste:
+      x: 900
+      y: 80
+      z: 0
+    bounds:
+      min-x: 864
+      min-y: 79
+      min-z: -36
+      max-x: 935
+      max-y: 100
+      max-z: 35
+    spawns:
+      wave1:
+      - x: 885.5
+        y: 82
+        z: 0.5
+      - x: 915.5
+        y: 82
+        z: 0.5
+      audience:
+      - x: 900.5
+        y: 87
+        z: -27.5
+      wave2:
+      - x: 887.5
+        y: 82
+        z: 0.5
+      - x: 912.5
+        y: 82
+        z: 0.5
+      final:
+      - x: 893.5
+        y: 82
+        z: 0.5
+      - x: 906.5
+        y: 82
+        z: 0.5
+  uhc:
+    display-name: UHC - Wild Frontier
+    schematic: uhc.schem
+    paste:
+      x: 1200
+      y: 80
+      z: 0
+    bounds:
+      min-x: 1164
+      min-y: 79
+      min-z: -36
+      max-x: 1235
+      max-y: 100
+      max-z: 35
+    spawns:
+      wave1:
+      - x: 1180.5
+        y: 82
+        z: 0.5
+      - x: 1220.5
+        y: 82
+        z: 0.5
+      audience:
+      - x: 1200.5
+        y: 87
+        z: -27.5
+      wave2:
+      - x: 1187.5
+        y: 82
+        z: 0.5
+      - x: 1212.5
+        y: 82
+        z: 0.5
+      final:
+      - x: 1193.5
+        y: 82
+        z: 0.5
+      - x: 1206.5
+        y: 82
+        z: 0.5
+  crystal:
+    display-name: Crystal - End Rift
+    schematic: crystal.schem
+    paste:
+      x: 1600
+      y: 80
+      z: 0
+    bounds:
+      min-x: 1564
+      min-y: 79
+      min-z: -36
+      max-x: 1635
+      max-y: 100
+      max-z: 35
+    spawns:
+      wave1:
+      - x: 1580.5
+        y: 82
+        z: 0.5
+      - x: 1620.5
+        y: 82
+        z: 0.5
+      audience:
+      - x: 1600.5
+        y: 87
+        z: -27.5
+      wave2:
+      - x: 1587.5
+        y: 82
+        z: 0.5
+      - x: 1612.5
+        y: 82
+        z: 0.5
+      final:
+      - x: 1593.5
+        y: 82
+        z: 0.5
+      - x: 1606.5
+        y: 82
+        z: 0.5
+  smp:
+    display-name: SMP - Fallen Kingdom
+    schematic: smp.schem
+    paste:
+      x: 1900
+      y: 80
+      z: 0
+    bounds:
+      min-x: 1864
+      min-y: 79
+      min-z: -36
+      max-x: 1935
+      max-y: 100
+      max-z: 35
+    spawns:
+      wave1:
+      - x: 1880.5
+        y: 82
+        z: 0.5
+      - x: 1920.5
+        y: 82
+        z: 0.5
+      audience:
+      - x: 1900.5
+        y: 87
+        z: -27.5
+      wave2:
+      - x: 1887.5
+        y: 82
+        z: 0.5
+      - x: 1912.5
+        y: 82
+        z: 0.5
+      final:
+      - x: 1893.5
+        y: 82
+        z: 0.5
+      - x: 1906.5
+        y: 82
+        z: 0.5
+  diamond-pot:
+    display-name: Diamond Pot - Frostglass
+    schematic: diamond-pot.schem
+    paste:
+      x: 2200
+      y: 80
+      z: 0
+    bounds:
+      min-x: 2164
+      min-y: 79
+      min-z: -36
+      max-x: 2235
+      max-y: 100
+      max-z: 35
+    spawns:
+      wave1:
+      - x: 2180.5
+        y: 82
+        z: 0.5
+      - x: 2220.5
+        y: 82
+        z: 0.5
+      audience:
+      - x: 2200.5
+        y: 87
+        z: -27.5
+      wave2:
+      - x: 2187.5
+        y: 82
+        z: 0.5
+      - x: 2212.5
+        y: 82
+        z: 0.5
+      final:
+      - x: 2193.5
+        y: 82
+        z: 0.5
+      - x: 2206.5
+        y: 82
+        z: 0.5

@@ -1,1 +1,49 @@
-<!-- Source file for src/main/resources/config.yml is included in the downloadable source archive supplied in this conversation. -->
+# All arena schematics are pasted into this one shared world.
+shared-world: clasher_events
+lobby:
+  world: clasher_events
+  x: 0.5
+  y: 100.0
+  z: 0.5
+  yaw: 0.0
+  pitch: 0.0
+default-registration-seconds: 120
+kit-delivery-seconds-before-start: 60
+# One event is intended to run at a time in this shared world.
+
+# Audience reward for correctly predicting the event winner.
+audience-correct-prediction-points: 10
+
+# Player-specific borders are required because all arenas share one world.
+world-border:
+  wave1: {size: 140, shrink-seconds: 60}
+  wave2: {size: 80, shrink-seconds: 60}
+  final: {size: 35, shrink-seconds: 30}
+
+# Commands run from console when a winner is decided. Placeholders: {player}, {uuid}, {arena}, {mode}.
+rewards:
+  winner:
+    commands: []
+  team-winner:
+    commands: []
+
+
+# Named locations can be set in-game with /ce setlobby, /ce setspectator, /ce setwinner.
+locations:
+  lobby: {world: clasher_events, x: 0.5, y: 100.0, z: 0.5, yaw: 0.0, pitch: 0.0}
+  spectator: {world: clasher_events, x: 0.5, y: 100.0, z: 0.5, yaw: 0.0, pitch: 0.0}
+  winner: {world: clasher_events, x: 0.5, y: 100.0, z: 0.5, yaw: 0.0, pitch: 0.0}
+lobby-protection:
+  radius: 35
+rules-book:
+  enabled: true
+  pages:
+    - "&6&lCLASHER EVENTS\n\n&0Welcome! Read the rules before the match."
+    - "&6&lRULES\n\n&01. No teaming in solo modes.\n2. No exploits.\n3. Follow staff instructions."
+    - "&6&lMATCH INFO\n\n&0Your kit is delivered when fighters are staged in the arena. Eliminated players become spectators."
+sounds:
+  join: UI_BUTTON_CLICK
+  rules-book: ITEM_BOOK_PAGE_TURN
+  kit: ENTITY_ITEM_PICKUP
+  start: BLOCK_NOTE_BLOCK_PLING
+  winner: UI_TOAST_CHALLENGE_COMPLETE

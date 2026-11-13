@@ -1,1 +1,24 @@
-<!-- Source file for src/main/resources/plugin.yml is included in the downloadable source archive supplied in this conversation. -->
+name: ClasherEvents
+version: 0.6.0-dev
+main: network.clasher.events.ClasherEventsPlugin
+api-version: '26.1'
+softdepend: [WorldEdit, WorldGuard]
+author: Clasher Network
+description: Standalone PvP event management for Clasher Network.
+commands:
+  ce:
+    description: Clasher Events administration
+    usage: /ce help
+    permission: clasherevents.admin
+  event:
+    description: Join and interact with the active event
+    usage: /event join|leave|stats
+  latejoin:
+    description: Admin force-joins a player to the active event
+    usage: /latejoin <playername>
+    permission: clasherevents.admin
+permissions:
+  clasherevents.admin:
+    default: op
+  clasherevents.join:
+    default: true

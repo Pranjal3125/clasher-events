@@ -1,0 +1,28 @@
+Clasher Events - NethPot Arena Update
+
+The NethPot schematic has been upgraded from a compact 64x14x64 starter ring to a larger 128x30x128 Nether Citadel.
+
+Design features:
+- 128 x 30 x 128 footprint, centered on the configured paste point (0, 80, 0)
+- 8 perimeter bastion towers and a high crenellated curtain wall
+- broad blackstone combat floor with radial red-nether-brick inlays
+- lava moat with four fortified bridges
+- raised central keep plinth and cover structures
+- north spectator gallery aligned to the configured audience spawn
+- side balconies, bridge standards, lanterns and chains
+
+Server installation (no plugin rebuild required if Clasher Events is already installed):
+1. Stop the event server.
+2. Replace plugins/ClasherEvents/schematics/nethpot.schem with this package's schematics/nethpot.schem.
+3. Start the server.
+4. In the clasher_events world, run: /ce arena paste nethpot
+5. Inspect the new arena around X=0, Z=0. Paste Y remains 80.
+
+Important:
+- Do not use /ce arena reset nethpot after replacing the schematic; the plugin may have an older baseline backup.
+- The paste operation includes air blocks and should clear the old compact layout within the new 128x30x128 schematic volume.
+- Existing arena bounds (-80..80 X/Z, Y 40..180) already contain the updated schematic footprint.
+- Existing fighter spawn coordinates remain inside the main combat floor. The audience spawn at (0.5, 87, -28.5) lands on the raised north gallery.
+
+Baseline refresh:
+- Before pasting the replacement, remove only plugins/ClasherEvents/arena-backups/nethpot.schem if it exists. The plugin will create a fresh baseline after the new schematic is pasted. Do not delete other arena backups.
