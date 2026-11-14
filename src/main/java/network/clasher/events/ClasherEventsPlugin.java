@@ -96,6 +96,7 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
     private UUID tournamentPlayerA, tournamentPlayerB;
     private int tournamentRound = 1;
     private boolean winnerRewarded;
+    private boolean eventCompleted;
     private UUID eventWinner;
     private YamlConfiguration audiencePoints;
     private File audiencePointsFile;
@@ -831,6 +832,8 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
         }
         setArenaBuildAllowed(eventMode.equals("build-uhc"));
         winnerRewarded = false;
+        eventCompleted = false;
+        eventWinner = null;
         matchKills.clear(); matchStartedAt = System.currentTimeMillis();
         eventOpen = true; eventRunning = false; paused = false; phase = "registration";
         participants.clear(); alive.clear(); votes.clear(); snapshots.clear(); kitDelivered.clear(); disconnectedFighters.clear();
@@ -850,9 +853,7 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
                     Player p = Bukkit.getPlayer(id);
                     if (p != null) {
                         snapshotIfNeeded(p);
-                        Arena stagingArena = arenas.get(selectedArena);
-                        List<Location> staging = stagingArena == null ? List.of() : spawns(stagingArena, "wave1");
-                        if (!staging.isEmpty()) p.teleport(staging.get(new Random().nextInt(staging.size())));
+                        // Kit delivery is not combat start: fighters stay in the waiting lobby.
                         removeRulesBooks(p); giveKit(p, selectedKit); kitDelivered.add(id); playCue(p, "kit");
                         p.sendMessage("§aYour event kit has been delivered. Combat begins when the countdown ends.");
                     }
@@ -1024,24 +1025,57 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
         if (a != null && a.equals(v)) event.setCancelled(true);
     }
 
-    private void advancePhaseIfNeeded() {
-        if (!eventRunning || alive.isEmpty()) return;
-        String next = null;
-        if (phase.equals("wave1") && alive.size() > 2
-                && alive.size() <= Math.max(3, (int)Math.ceil(initialFighters * 0.67))) next = "wave2";
-        else if ((phase.equals("wave1") || phase.equals("wave2")) && alive.size() <= 2) next = "final";
-        if (next == null || next.equals(phase)) return;
+    /** Returns the Wave 2 threshold, or -1 when Wave 2 is skipped. */
+    static int calculateWave2Threshold(int initialFighters) {
+        if (initialFighters < 8) return -1;
+        return Math.max(3, initialFighters / 3);
+    }
+
+    private void transitionToPhase(String nextPhase) {
+        if (!eventRunning || eventCompleted || nextPhase == null || nextPhase.equals(phase)) return;
         Arena arena = arenas.get(selectedArena);
-        List<Location> points = arena == null ? List.of() : spawns(arena, next);
-        if (points.isEmpty()) { Bukkit.broadcastMessage("§c[Clasher Events] Missing " + next + " spawn points in arenas.yml."); return; }
-        phase = next;
-        int i = 0;
-        for (UUID id : alive) {
-            Player p = Bukkit.getPlayer(id);
-            if (p != null) { p.teleport(points.get(i++ % points.size())); p.setHealth(20); p.setFoodLevel(20); }
+        if (arena == null) {
+            getLogger().warning("Cannot transition to " + nextPhase + ": arena " + selectedArena + " is missing.");
+            return;
+        }
+        List<Location> points = spawns(arena, nextPhase);
+        if (points.isEmpty()) {
+            Bukkit.broadcastMessage("§c[Clasher Events] Missing " + nextPhase + " spawns; remaining in " + phase + ".");
+            return;
+        }
+        phase = nextPhase;
+        int index = 0;
+        for (UUID id : new ArrayList<>(alive)) {
+            Player fighter = Bukkit.getPlayer(id);
+            if (fighter == null) continue;
+            fighter.teleport(points.get(index++ % points.size()));
+            fighter.setHealth(20.0);
+            fighter.setFoodLevel(20);
+            fighter.setFireTicks(0);
+            lastMovementAt.put(id, System.currentTimeMillis());
         }
         applyPhaseBorder(phase);
-        Bukkit.broadcastMessage("§6§lCLASHER EVENTS §8» §e" + phase.toUpperCase(Locale.ROOT) + " has begun! §7" + alive.size() + " fighters remain.");
+        String label = nextPhase.equals("wave2") ? "WAVE 2" : "FINAL";
+        Bukkit.broadcastMessage("§6§lCLASHER EVENTS §8» §e" + label + " phase started! §a" + alive.size() + " fighters remain.");
+    }
+
+    private void advancePhaseIfNeeded() {
+        if (!eventRunning || eventCompleted) return;
+        int aliveCount = alive.size();
+        if (aliveCount <= 1) {
+            if (aliveCount == 1) finishWinner(alive.iterator().next());
+            else stopEvent("Event ended with no winner");
+            return;
+        }
+        if (phase.equals("final")) return;
+        if (aliveCount == 2) {
+            transitionToPhase("final");
+            return;
+        }
+        if (phase.equals("wave1")) {
+            int threshold = calculateWave2Threshold(initialFighters);
+            if (threshold != -1 && aliveCount <= threshold) transitionToPhase("wave2");
+        }
     }
 
     private void startEvent() {
@@ -1057,32 +1091,36 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
         }
         Arena arena = arenas.get(selectedArena);
         if (arena == null) { Bukkit.broadcastMessage("§cArena config missing: " + selectedArena); return; }
-        List<Location> points = spawns(arena, "wave1");
-        if (points.isEmpty()) { Bukkit.broadcastMessage("§cNo wave1 spawns configured for " + selectedArena); return; }
-        eventOpen = false; eventRunning = true; phase = "wave1"; paused = false;
-        alive.clear(); alive.addAll(participants); initialFighters = alive.size();
-        int i = 0;
-        for (UUID uuid : participants) {
-            Player p = Bukkit.getPlayer(uuid); if (p == null) { alive.remove(uuid); continue; }
-            snapshotIfNeeded(p);
-            p.setGameMode(GameMode.SURVIVAL); p.setHealth(20); p.setFoodLevel(20); p.setFireTicks(0);
-            p.teleport(points.get(i++ % points.size())); lastMovementAt.put(uuid, System.currentTimeMillis()); removeRulesBooks(p);
-            if (!kitDelivered.contains(uuid)) { giveKit(p, selectedKit); kitDelivered.add(uuid); }
-            playCue(p, "start");
-        }
-        if (alive.size() == 2) {
-            phase = "final";
-            List<Location> finalPoints = spawns(arena, "final");
-            if (!finalPoints.isEmpty()) {
-                int fi = 0;
-                for (UUID id : alive) { Player fighter = Bukkit.getPlayer(id); if (fighter != null) fighter.teleport(finalPoints.get(fi++ % finalPoints.size())); }
-            }
+        eventOpen = false; eventRunning = true; paused = false;
+        alive.clear();
+        for (UUID id : participants) if (Bukkit.getPlayer(id) != null) alive.add(id);
+        initialFighters = alive.size();
+        if (initialFighters == 0) { stopEvent("No online participants"); return; }
+
+        String startingPhase = initialFighters == 2 ? "final" : "wave1";
+        List<Location> points = spawns(arena, startingPhase);
+        if (points.isEmpty()) { stopEvent("No " + startingPhase + " spawn points configured for " + selectedArena); return; }
+        phase = startingPhase;
+        int index = 0;
+        for (UUID id : new ArrayList<>(alive)) {
+            Player fighter = Bukkit.getPlayer(id);
+            if (fighter == null) continue;
+            snapshotIfNeeded(fighter);
+            fighter.setGameMode(GameMode.SURVIVAL);
+            fighter.setHealth(20.0);
+            fighter.setFoodLevel(20);
+            fighter.setFireTicks(0);
+            fighter.teleport(points.get(index++ % points.size()));
+            lastMovementAt.put(id, System.currentTimeMillis());
+            removeRulesBooks(fighter);
+            if (!kitDelivered.contains(id)) { giveKit(fighter, selectedKit); kitDelivered.add(id); }
+            playCue(fighter, "start");
         }
         if (eventMode.equals("team-wars")) assignTeams();
         applyPhaseBorder(phase);
         Bukkit.broadcastMessage("§6§lCLASHER EVENTS §8» §a" + selectedArena + " has started! §eFighters: " + alive.size());
         if (eventMode.equals("team-wars")) checkTeamWinner();
-        else if (alive.size() == 1) finishWinner(Bukkit.getPlayer(alive.iterator().next()));
+        else advancePhaseIfNeeded();
     }
 
     private void startTournament() {
@@ -1156,56 +1194,76 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
     }
 
     private void finishWinner(Player winner) {
-        if (winner != null && !winnerRewarded) {
-            winnerRewarded = true;
-            eventWinner = winner.getUniqueId();
-            awardPredictionPoints(winner.getUniqueId());
-            runRewardCommands("winner", winner);
-            String winPath = "players." + winner.getUniqueId();
-            playerStats.set(winPath + ".wins", playerStats.getInt(winPath + ".wins") + 1);
-            savePlayerStats();
-            recordMatchResult(winner);
-            Bukkit.broadcastMessage("§6§lCLASHER EVENTS §8» §e" + winner.getName() + " §ahas won!");
-        }
-        if (winner != null) {
+        if (winner != null) finishWinner(winner.getUniqueId());
+    }
+
+    private void finishWinner(UUID winnerId) {
+        if (eventCompleted || winnerId == null) return;
+        eventCompleted = true;
+        winnerRewarded = true;
+        eventWinner = winnerId;
+        org.bukkit.OfflinePlayer offlineWinner = Bukkit.getOfflinePlayer(winnerId);
+        String winnerName = offlineWinner.getName() == null ? "Player" : offlineWinner.getName();
+        awardPredictionPoints(winnerId);
+        String winPath = "players." + winnerId;
+        playerStats.set(winPath + ".name", winnerName);
+        playerStats.set(winPath + ".wins", playerStats.getInt(winPath + ".wins") + 1);
+        savePlayerStats();
+        recordMatchResult(winnerId, winnerName);
+        Bukkit.broadcastMessage("§6§lCLASHER EVENTS §8» §e" + winnerName + " §ahas won!");
+        runRewardCommands("winner", winnerId, winnerName);
+        Player onlineWinner = Bukkit.getPlayer(winnerId);
+        if (onlineWinner != null) {
             Location winnerLoc = configuredLocation("winner");
-            if (winnerLoc != null) winner.teleport(winnerLoc);
-            playCue(winner, "winner");
-            World w = winner.getWorld();
-            Firework fw = w.spawn(winner.getLocation(), Firework.class);
-            FireworkMeta fm = fw.getFireworkMeta();
-            fm.addEffect(FireworkEffect.builder().with(FireworkEffect.Type.BALL_LARGE).withColor(org.bukkit.Color.ORANGE, org.bukkit.Color.PURPLE).withFade(org.bukkit.Color.WHITE).trail(true).build());
-            fm.setPower(1); fw.setFireworkMeta(fm);
+            if (winnerLoc != null) onlineWinner.teleport(winnerLoc);
+            playCue(onlineWinner, "winner");
+            World world = onlineWinner.getWorld();
+            if (world != null) {
+                Firework fw = world.spawn(onlineWinner.getLocation(), Firework.class);
+                FireworkMeta fm = fw.getFireworkMeta();
+                fm.addEffect(FireworkEffect.builder().with(FireworkEffect.Type.BALL_LARGE)
+                        .withColor(org.bukkit.Color.ORANGE, org.bukkit.Color.PURPLE)
+                        .withFade(org.bukkit.Color.WHITE).trail(true).build());
+                fm.setPower(1); fw.setFireworkMeta(fm);
+            }
         }
         stopEvent("Event finished");
     }
 
-
     private void recordMatchResult(Player winner) {
+        if (winner != null) recordMatchResult(winner.getUniqueId(), winner.getName());
+    }
+
+    private void recordMatchResult(UUID winnerId, String winnerName) {
         int index = matchHistory.getInt("next-id", 1);
         String path = "matches." + index;
         matchHistory.set(path + ".arena", selectedArena);
         matchHistory.set(path + ".mode", eventMode);
-        matchHistory.set(path + ".winner", winner.getName());
-        matchHistory.set(path + ".winner-uuid", winner.getUniqueId().toString());
+        matchHistory.set(path + ".winner", winnerName);
+        matchHistory.set(path + ".winner-uuid", winnerId.toString());
         matchHistory.set(path + ".started-at", matchStartedAt);
         matchHistory.set(path + ".finished-at", System.currentTimeMillis());
         matchHistory.set(path + ".duration-seconds", Math.max(0, (System.currentTimeMillis() - matchStartedAt) / 1000));
         matchHistory.set(path + ".players", participants.stream().map(UUID::toString).toList());
-        UUID mvpId = matchKills.entrySet().stream().max(Map.Entry.comparingByValue()).map(Map.Entry::getKey).orElse(winner.getUniqueId());
+        UUID mvpId = matchKills.entrySet().stream().max(Map.Entry.comparingByValue()).map(Map.Entry::getKey).orElse(winnerId);
         Player mvp = Bukkit.getPlayer(mvpId);
-        matchHistory.set(path + ".mvp", mvp == null ? Bukkit.getOfflinePlayer(mvpId).getName() : mvp.getName());
+        String mvpName = mvp == null ? Bukkit.getOfflinePlayer(mvpId).getName() : mvp.getName();
+        matchHistory.set(path + ".mvp", mvpName == null ? "Unknown" : mvpName);
         matchHistory.set(path + ".mvp-kills", matchKills.getOrDefault(mvpId, 0));
         matchHistory.set("next-id", index + 1);
         try { matchHistory.save(matchHistoryFile); }
         catch (java.io.IOException ex) { getLogger().warning("Could not save match history: " + ex.getMessage()); }
-        Bukkit.broadcastMessage("§6[MVP] §e" + (mvp == null ? "Winner" : mvp.getName()) + " §7with §e" + matchKills.getOrDefault(mvpId, 0) + " §7kills.");
+        Bukkit.broadcastMessage("§6[MVP] §e" + (mvpName == null ? "Unknown" : mvpName) + " §7was match MVP with §e" + matchKills.getOrDefault(mvpId, 0) + " §7kills.");
     }
 
     private void runRewardCommands(String rewardType, Player player) {
+        if (player != null) runRewardCommands(rewardType, player.getUniqueId(), player.getName());
+    }
+
+    private void runRewardCommands(String rewardType, UUID playerId, String playerName) {
         for (String raw : getConfig().getStringList("rewards." + rewardType + ".commands")) {
-            String command = raw.replace("{player}", player.getName())
-                    .replace("{uuid}", player.getUniqueId().toString())
+            String command = raw.replace("{player}", playerName == null ? "Unknown" : playerName)
+                    .replace("{uuid}", playerId.toString())
                     .replace("{arena}", selectedArena).replace("{mode}", eventMode);
             Bukkit.dispatchCommand(Bukkit.getConsoleSender(), command);
         }
