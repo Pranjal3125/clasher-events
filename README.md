@@ -1,77 +1,86 @@
-# Clasher Events — 0.5.0 development candidate
+<div align="center">
 
-Standalone Paper PvP event plugin for Clasher Network. This is a source milestone; it is not a compiled or production-certified JAR.
+# Clasher Events
 
-## Architecture
-- One shared arena world: `clasher_events`.
-- Eight separate schematic arenas and eight YAML kit presets: NethPot, Axe & Shield, Build UHC, Sword, UHC, Crystal, SMP and Diamond Pot.
-- Schematics are extracted from the plugin JAR to `plugins/ClasherEvents/schematics/` on first startup.
-- One event runs at a time.
+### Modular PvP events for Clasher Network
 
-## Event systems
-- Battle Royale registration, kit delivery, elimination, Wave 1 / Wave 2 / Final progression and winner detection.
-- 1v1 Duel validation and sequential tournament brackets with byes and round advancement.
-- Team Wars with balanced Red/Blue assignment, friendly-fire prevention, team elimination victory and team rewards.
-- Random Kit mode, spectator respawn, vote GUI, chat predictions and cheering.
-- Player-specific WorldBorder for arenas sharing one world.
+A standalone Paper plugin project for managing PvP modes, arenas, kits, tournament progression, spectators, and player recovery.
 
-## Admin tools and protection
-- `/ce gui` opens the event-selection GUI.
-- `/ce kit preview <kit> <player>` opens a read-only kit preview.
-- `/ce arena paste <arena>` pastes the starter schematic and creates a one-time arena baseline backup.
-- `/ce arena reset <arena>` restores that saved baseline and removes non-player entities inside the arena bounds.
-- WorldGuard regions protect each configured arena; Build UHC temporarily allows only registered event members to build.
-- Winner and team-winner console commands are configurable under `rewards` in `config.yml`. Supported placeholders: `{player}`, `{uuid}`, `{arena}`, `{mode}`.
-- Player inventory, armor, offhand, effects, game mode, health, food, XP, fire and location are persisted to `player-recovery.yml` and restored after reconnect if the server crashes mid-event.
+![Java](https://img.shields.io/badge/Java-25-orange?logo=openjdk) ![Platform](https://img.shields.io/badge/Platform-Paper-313131?logo=minecraft) ![Status](https://img.shields.io/badge/Status-Development%20candidate-yellow)
 
-## Dependencies
-- Paper API matching the POM target.
-- Java 25 and Maven to build.
-- WorldEdit 7.4.6 required for schematic paste and arena backups.
-- WorldGuard 7.0.18 optional but recommended for region protection.
+[Source](https://github.com/Pranjal3125/clasher-events) · [Issues](https://github.com/Pranjal3125/clasher-events/issues)
+
+</div>
+
+> **Development status:** The documented 0.5.0 candidate passed YAML parsing and Java syntax screening only. It has not passed a dependency-backed Maven build or live multiplayer staging test. Do not treat it as production-certified.
+
+## Overview
+
+The project documents these event systems:
+
+- Battle Royale registration, kits, eliminations, waves, and winner detection
+- 1v1 duels and sequential tournament brackets
+- Team Wars with balanced teams and friendly-fire prevention
+- Random Kit mode, spectator respawn, voting, predictions, and cheering
+- Per-player world borders for arenas sharing one world
+- Arena reset and baseline backup workflows
+- Player-state recovery after reconnecting from a server crash
+
+## Modes and arenas
+
+The documented arena/kit set includes NethPot, Axe & Shield, Build UHC, Sword, UHC, Crystal, SMP, and Diamond Pot. Duel and tournament modes use the Sword arena; Team Wars uses the SMP arena. One event is designed to run at a time in the shared `clasher_events` world.
+
+## Admin commands
+
+| Command | Purpose |
+|---|---|
+| `/ce gui` | Open event selection and admin GUI |
+| `/ce countdown` | Select registration countdown |
+| `/ce setlobby` | Save waiting lobby |
+| `/ce setspectator` | Save spectator destination |
+| `/ce setwinner` | Save winner destination |
+| `/ce setspawn <mode> <phase>` | Configure mode/phase spawn |
+| `/ce addspawn <mode> <phase>` | Add another spawn point |
+| `/latejoin <player>` | Force-add an online player (admin) |
+| `/event spectate` | Open fighter spectator selector |
+| `/event stats` | View event stats |
+| `/event top` | View audience-points leaderboard |
+
+See [DEVELOPMENT.md](DEVELOPMENT.md), [APPROVED-0.6.0-SPEC.md](APPROVED-0.6.0-SPEC.md), and [NETHPOT-ARENA-UPDATE.txt](NETHPOT-ARENA-UPDATE.txt) for detailed project notes.
+
+## Requirements
+
+- Paper API matching the version configured in `pom.xml`
+- Java 25 and Maven for the documented build environment
+- WorldEdit 7.4.6 for schematic pasting and arena backups
+- WorldGuard 7.0.18 is optional but recommended for region protection
+
+Check the POM and plugin configuration before choosing a server version.
 
 ## Build
-From the directory containing `pom.xml`:
+
 ```bash
 mvn clean package
 ```
-The JAR should appear in `target/` after a successful build.
 
-## Important
-This milestone has passed YAML parsing and Java syntax screening only. It has **not** yet passed a dependency-backed Maven compile or live multiplayer staging test. Do not deploy it to a public event server until those checks pass. The eight schematics are editable starter arenas, not commissioned final builds.
+The plugin JAR should appear under `target/` after a successful build.
 
+## Before staging or production use
 
-## 0.6.0 development commands
+1. Build with the required JDK and dependencies.
+2. Install on a disposable test server, not the live network.
+3. Configure every arena and phase spawn point.
+4. Verify kit delivery, inventory restoration, eliminations, and winner detection.
+5. Test arena reset and backup restoration.
+6. Test reconnect and crash-recovery flows with disposable accounts.
+7. Verify reward commands with harmless test commands first.
 
-- `/ce gui` — event selection and admin control centre
-- `/ce countdown` — choose 2, 5 or 10 minute registration countdown
-- `/ce setlobby` — save the waiting lobby
-- `/ce setspectator` — save the spectator destination
-- `/ce setwinner` — save the winner destination
-- `/latejoin <playername>` — admin force-add an online player to a running event
-- `/event spectate` — open the fighter spectator selector
-- `/event stats` — view kills, deaths and wins
-- `/event top` — audience-points leaderboard
+The schematics are starter assets and may need editing. Discord integration and scheduled event features are not included in the documented milestone.
 
-The 60-second pre-start kit delivery remains configurable using
-`kit-delivery-seconds-before-start`. AFK elimination is configurable under `afk`.
-Discord integration and scheduled event features are intentionally not included.
+## Contributing
 
-## Mode-specific arena spawn setup (0.6.0 update)
+See [CONTRIBUTING.md](CONTRIBUTING.md). Include Paper/Java versions, reproduction steps, and relevant logs in bug reports.
 
-Stand at the exact position in the shared `clasher_events` world and set the spawn for the mode. The command stores the current position in that mode's mapped arena and phase. Supported phases are `wave1`, `wave2`, `final`, and `audience`.
+## License
 
-Examples:
-
-```text
-/ce setspawn nethpot wave1
-/ce setspawn axe-shield wave1
-/ce setspawn build-uhc wave1
-/ce setspawn sword wave1
-/ce setspawn uhc wave1
-/ce setspawn crystal wave1
-/ce setspawn smp wave1
-/ce setspawn diamond-pot wave1
-```
-
-Use `wave2`, `final`, or `audience` instead of `wave1` for those phase locations. Use `/ce addspawn <mode-or-arena> <phase>` to add another spawn point without deleting existing points. `duel` and `tournament` use the `sword` arena; `team-wars` uses the `smp` arena. `random-kit` can choose any arena, so configure the spawn points for all eight arenas separately.
+No license is currently declared. All rights are reserved by default; do not redistribute or reuse code/assets without permission from the repository owner.
