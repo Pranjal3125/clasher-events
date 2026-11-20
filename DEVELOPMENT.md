@@ -34,14 +34,14 @@ Keep `main` unchanged until the feature branch has passed the release gates.
 - Statistics and winner reward viewers.
 - Reward command administration through `/ce reward`.
 - Preset listing/application through `/ce preset`.
-- Settings GUI for registration duration, kit-delivery lead time, audience prediction points, AFK enable/disable, AFK timeout, and named lobby/spectator/winner locations.
+- Settings GUI for registration duration, kit-delivery lead time, audience prediction points, AFK enable/disable, AFK timeout, Wave 1/Wave 2/Final world-border sizes and shrink durations, lobby-protection enable/disable and radius, and named lobby/spectator/winner locations.
 - `/ce diagnose` checks dependencies, kits, arenas, configuration values, presets, and named locations.
 - `/ce debug on|off|status` controls opt-in lifecycle diagnostics.
 
 ### Reliability and validation
-- Recovery snapshots, player statistics, match history, audience points, and plugin configuration use temporary-file replacement for safer persistence.
+- Recovery snapshots, player statistics, match history, audience points, plugin configuration, and arena baseline schematic backups use temporary-file replacement for safer persistence.
 - Arena validation checks schematic path safety, file readability, supported format, schematic dimensions, bounds ordering, required spawn counts, and spawn coordinates against arena bounds.
-- CI validates YAML resources and checks consistency across all eight arena, kit, schematic, preset, and required spawn definitions.
+- JUnit 5 unit tests cover settings cycling, allowed value ranges, and Wave 2 progression thresholds. CI requires the test report.\n- CI validates YAML resources and checks consistency across all eight arena, kit, schematic, preset, and required spawn definitions.
 - CI builds with Java 25, verifies plugin metadata and main class inside the packaged JAR, and uploads the JAR as an Actions artifact.
 
 ## Release gates still open
