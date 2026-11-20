@@ -105,6 +105,9 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
     private static final String VOTE_GUI_TITLE = "§8Predict the Winner";
     private static final String EVENT_GUI_TITLE = "§8Clasher Events - Select Mode";
     private static final String ADMIN_GUI_TITLE = "§8Clasher Events Control Center";
+    private static final String ARENA_GUI_TITLE = "§8Arena Manager";
+    private static final String ARENA_SETUP_PREFIX = "§8Arena Setup: ";
+    private static final String KIT_MANAGER_TITLE = "§8Kit Manager";
     private static final String KIT_GUI_PREFIX = "§8Kit Preview: ";
     private final Map<UUID, String> guiKitTargets = new HashMap<>();
     private final Map<UUID, BukkitTask> disconnectTasks = new HashMap<>();
@@ -257,6 +260,41 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
         admin.openInventory(gui);
     }
 
+    private void openArenaManager(Player player) {
+        Inventory gui = Bukkit.createInventory(null, 54, ARENA_GUI_TITLE);
+        int slot = 0;
+        for (Arena arena : arenas.values()) {
+            if (slot >= 45) break;
+            File schematic = new File(new File(getDataFolder(), "schematics"), arena.schematic);
+            boolean ready = schematic.isFile() && !spawns(arena, "wave1").isEmpty() && !spawns(arena, "final").isEmpty();
+            gui.setItem(slot++, menuItem(Material.MAP, (ready ? "§a" : "§c") + arena.id.toUpperCase(Locale.ROOT), "§7" + arena.displayName, "§7Schematic: " + (schematic.isFile() ? "§aOK" : "§cMissing"), "§7Wave1 spawns: " + spawns(arena, "wave1").size(), "§7Final spawns: " + spawns(arena, "final").size(), "§eClick to configure"));
+        }
+        gui.setItem(49, menuItem(Material.ARROW, "§7Back", "§7Return to Control Center"));
+        player.openInventory(gui);
+    }
+
+    private void openArenaSetup(Player player, String id) {
+        Arena arena = arenas.get(id.toLowerCase(Locale.ROOT));
+        if (arena == null) { player.sendMessage("§cUnknown arena."); return; }
+        Inventory gui = Bukkit.createInventory(null, 27, ARENA_SETUP_PREFIX + id);
+        gui.setItem(10, menuItem(Material.LIME_BANNER, "§aSet Wave 1 Spawn", "§7Save your current position."));
+        gui.setItem(11, menuItem(Material.YELLOW_BANNER, "§eAdd Wave 1 Spawn", "§7Keep existing points and add yours."));
+        gui.setItem(12, menuItem(Material.ORANGE_BANNER, "§6Set Wave 2 Spawn", "§7Save your current position."));
+        gui.setItem(13, menuItem(Material.RED_BANNER, "§cSet Final Spawn", "§7Save your current position."));
+        gui.setItem(14, menuItem(Material.ENDER_EYE, "§dSet Audience Spawn", "§7Save your current position."));
+        gui.setItem(16, menuItem(Material.WRITABLE_BOOK, "§bValidate Arena", "§7Check required files and spawn points."));
+        gui.setItem(22, menuItem(Material.ARROW, "§7Back to Arenas"));
+        player.openInventory(gui);
+    }
+
+    private void openKitManager(Player player) {
+        Inventory gui = Bukkit.createInventory(null, 27, KIT_MANAGER_TITLE);
+        int slot = 0;
+        for (String kit : kits.keySet()) { if (slot >= 18) break; gui.setItem(slot++, menuItem(Material.CHEST, "§e" + kit, "§7Click to preview this kit.")); }
+        gui.setItem(22, menuItem(Material.ARROW, "§7Back", "§7Return to Control Center"));
+        gui.setItem(26, menuItem(Material.LIME_DYE, "§aReload Kits", "§7Reload kit YAML files from disk."));
+        player.openInventory(gui);
+    }
     private ItemStack menuItem(Material material, String name, String... lore) {
         ItemStack stack = new ItemStack(material);
         org.bukkit.inventory.meta.ItemMeta meta = stack.getItemMeta();
@@ -361,14 +399,8 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
             switch (action) {
                 case "create event" -> openEventGui(player);
                 case "countdown settings" -> openCountdownGui(player);
-                case "arena manager" -> {
-                    player.sendMessage("§eLoaded arenas: §f" + String.join(", ", arenas.keySet()));
-                    player.sendMessage("§7Validate with /ce arena validate <arena>.");
-                }
-                case "kit manager" -> {
-                    player.sendMessage("§eLoaded kits: §f" + String.join(", ", kits.keySet()));
-                    player.sendMessage("§7Preview with /ce kit preview <kit> <player>.");
-                }
+                case "arena manager" -> openArenaManager(player);
+                case "kit manager" -> openKitManager(player);
                 case "player manager" -> player.sendMessage("§eRegistered: " + participants.size() + " §7| §aAlive: " + alive.size() + " §7| §eLate join: /latejoin <player>");
                 case "event status" -> player.sendMessage("§eMode: " + eventMode + " §7| Phase: " + phase + " §7| Alive: " + alive.size() + " §7| Registered: " + participants.size());
                 case "diagnostics" -> runDiagnostics(player);
@@ -381,6 +413,37 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
                 case "stop event" -> stopEvent("Event stopped by admin");
                 default -> { }
             }
+        } else if (ARENA_GUI_TITLE.equals(title)) {
+            event.setCancelled(true);
+            if (event.getClickedInventory() != event.getView().getTopInventory() || !player.hasPermission("clasherevents.admin")) return;
+            ItemStack clicked = event.getCurrentItem(); if (clicked == null || !clicked.hasItemMeta()) return;
+            String selected = org.bukkit.ChatColor.stripColor(clicked.getItemMeta().getDisplayName()).toLowerCase(Locale.ROOT);
+            player.closeInventory();
+            if (selected.equals("back")) openAdminDashboard(player); else if (arenas.containsKey(selected)) openArenaSetup(player, selected);
+        } else if (title.startsWith(ARENA_SETUP_PREFIX)) {
+            event.setCancelled(true);
+            if (event.getClickedInventory() != event.getView().getTopInventory() || !player.hasPermission("clasherevents.admin")) return;
+            ItemStack clicked = event.getCurrentItem(); if (clicked == null || !clicked.hasItemMeta()) return;
+            String action = org.bukkit.ChatColor.stripColor(clicked.getItemMeta().getDisplayName()).toLowerCase(Locale.ROOT);
+            String arenaId = title.substring(ARENA_SETUP_PREFIX.length()).toLowerCase(Locale.ROOT); player.closeInventory();
+            switch (action) {
+                case "set wave 1 spawn" -> setArenaSpawn(player, arenaId, "wave1", false);
+                case "add wave 1 spawn" -> setArenaSpawn(player, arenaId, "wave1", true);
+                case "set wave 2 spawn" -> setArenaSpawn(player, arenaId, "wave2", false);
+                case "set final spawn" -> setArenaSpawn(player, arenaId, "final", false);
+                case "set audience spawn" -> setArenaSpawn(player, arenaId, "audience", false);
+                case "validate arena" -> validateArena(player, arenaId);
+                case "back to arenas" -> openArenaManager(player);
+                default -> { }
+            }
+        } else if (KIT_MANAGER_TITLE.equals(title)) {
+            event.setCancelled(true);
+            if (event.getClickedInventory() != event.getView().getTopInventory() || !player.hasPermission("clasherevents.admin")) return;
+            ItemStack clicked = event.getCurrentItem(); if (clicked == null || !clicked.hasItemMeta()) return;
+            String kit = org.bukkit.ChatColor.stripColor(clicked.getItemMeta().getDisplayName()).toLowerCase(Locale.ROOT); player.closeInventory();
+            if (kit.equals("back")) openAdminDashboard(player);
+            else if (kit.equals("reload kits")) { loadKits(); player.sendMessage("§aReloaded " + kits.size() + " kits."); openKitManager(player); }
+            else if (kits.containsKey(kit)) openKitPreview(player, kit);
         } else if (EVENT_GUI_TITLE.equals(title)) {
             event.setCancelled(true);
             if (event.getClickedInventory() != event.getView().getTopInventory()) return;
@@ -400,7 +463,7 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
 
     @EventHandler public void onEventGuiDrag(org.bukkit.event.inventory.InventoryDragEvent event) {
         String title = event.getView().getTitle();
-        if (ADMIN_GUI_TITLE.equals(title) || EVENT_GUI_TITLE.equals(title) || COUNTDOWN_GUI_TITLE.equals(title) || title.equals("§8Spectate Fighter") || title.startsWith(KIT_GUI_PREFIX) || VOTE_GUI_TITLE.equals(title))
+        if (ADMIN_GUI_TITLE.equals(title) || ARENA_GUI_TITLE.equals(title) || title.startsWith(ARENA_SETUP_PREFIX) || KIT_MANAGER_TITLE.equals(title) || EVENT_GUI_TITLE.equals(title) || COUNTDOWN_GUI_TITLE.equals(title) || title.equals("§8Spectate Fighter") || title.startsWith(KIT_GUI_PREFIX) || VOTE_GUI_TITLE.equals(title))
             event.setCancelled(true);
     }
 
