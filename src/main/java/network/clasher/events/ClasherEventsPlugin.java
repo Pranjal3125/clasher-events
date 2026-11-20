@@ -61,6 +61,7 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.meta.SkullMeta;
 import org.bukkit.event.inventory.InventoryClickEvent;
+import org.bukkit.event.inventory.InventoryCloseEvent;
 import org.bukkit.inventory.meta.PotionMeta;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
@@ -602,6 +603,13 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
             gui.setItem(targetSlot, stack);
         }
         viewer.openInventory(gui);
+    }
+
+    @EventHandler public void onInventoryClose(InventoryCloseEvent event) {
+        if (!(event.getPlayer() instanceof Player player)) return;
+        if (PLAYER_DETAIL_TITLE.equals(event.getView().getTitle())) {
+            guiPlayerTargets.remove(player.getUniqueId());
+        }
     }
 
     @EventHandler public void onEventGuiClick(InventoryClickEvent event) {
