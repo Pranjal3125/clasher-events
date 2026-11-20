@@ -37,7 +37,7 @@ This is a feature-version upgrade focused on making event setup and administrati
 - [x] Add guided lobby, spectator, and winner location setup directly in the Settings GUI.
 - [x] Basic arena validation for schematic, required spawns, WorldEdit, and shared-world availability.
 - [ ] Expand mode-aware validation and schematic/world metadata checks.
-- [ ] Provide a confirmation summary before replacing existing spawn points; current "Set" actions intentionally replace a phase list, while "Add" preserves it.
+- [x] Require explicit confirmation before replacing existing spawn points; confirmation shows the current point count, while "Add Wave 1 Spawn" preserves existing points.
 
 ### 0.7.0-D — Presets and configuration
 - [x] Reusable presets for all eight standard modes, configurable in `config.yml` and applied with `/ce preset list|apply`.
