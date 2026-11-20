@@ -113,6 +113,7 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
     private static final String ARENA_CONFIRM_PREFIX = "§8Confirm Spawn Replace: ";
     private static final String KIT_MANAGER_TITLE = "§8Kit Manager";
     private static final String PLAYER_MANAGER_TITLE = "§8Player Manager";
+    private static final String PLAYER_DETAIL_PREFIX = "§8Player: ";
     private static final String SETTINGS_GUI_TITLE = "§8Event Settings";
     private static final String REWARDS_GUI_TITLE = "§8Winner Rewards";
     private static final String STATS_GUI_TITLE = "§8Event Statistics";
@@ -324,6 +325,50 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
         gui.setItem(53, menuItem(Material.ARROW, "§eNext Page", "§7Page " + (page + 2) + " of " + pages));
         gui.setItem(48, menuItem(Material.PAPER, "§bPage " + (page + 1) + "/" + pages, "§7Participants: " + ids.size()));
         player.openInventory(gui);
+    }
+
+    private void openPlayerDetails(Player admin, UUID targetId) {
+        Player target = Bukkit.getPlayer(targetId);
+        if (!participants.contains(targetId)) { admin.sendMessage("§cThat player is no longer registered."); openPlayerManager(admin); return; }
+        Inventory gui = Bukkit.createInventory(null, 27, PLAYER_DETAIL_PREFIX + targetId);
+        String name = target == null ? Bukkit.getOfflinePlayer(targetId).getName() : target.getName();
+        gui.setItem(11, menuItem(Material.PLAYER_HEAD, "§e" + (name == null ? targetId.toString() : name),
+                "§7Online: " + (target == null ? "§cNo" : "§aYes"),
+                "§7Alive: " + (alive.contains(targetId) ? "§aYes" : "§cNo"),
+                "§7Registered: §aYes"));
+        gui.setItem(15, menuItem(Material.BARRIER, "§cRemove From Event",
+                target == null ? "§cPlayer must be online to restore inventory safely." : "§7Remove player and restore their saved state."));
+        gui.setItem(22, menuItem(Material.ARROW, "§7Back to Players"));
+        admin.openInventory(gui);
+    }
+
+    private void adminRemoveParticipant(Player admin, UUID targetId) {
+        Player target = Bukkit.getPlayer(targetId);
+        if (target == null) { admin.sendMessage("§cPlayer must be online to safely restore their inventory."); return; }
+        if (!participants.contains(targetId)) { admin.sendMessage("§cPlayer is no longer registered."); return; }
+        boolean wasAlive = alive.remove(targetId);
+        participants.remove(targetId);
+        votes.remove(targetId);
+        votes.entrySet().removeIf(entry -> entry.getValue().equals(targetId));
+        teams.remove(targetId);
+        kitDelivered.remove(targetId);
+        disconnectedFighters.remove(targetId);
+        BukkitTask pending = disconnectTasks.remove(targetId);
+        if (pending != null) pending.cancel();
+        clearPlayerBorder(target);
+        PlayerSnapshot snapshot = snapshots.remove(targetId);
+        if (snapshot != null) snapshot.restore(target, lobbyLocation());
+        else teleportToConfigured(target, "lobby");
+        admin.sendMessage("§aRemoved " + target.getName() + " from the event and restored their saved state.");
+        target.sendMessage("§cAn administrator removed you from the event.");
+        Bukkit.broadcastMessage("§e" + target.getName() + " was removed from the event by an administrator.");
+        if (eventRunning && wasAlive) {
+            if (eventMode.equals("tournament")) completeTournamentMatch(alive.isEmpty() ? null : alive.iterator().next());
+            else if (eventMode.equals("team-wars")) checkTeamWinner();
+            else if (alive.size() == 1) finishWinner(alive.iterator().next());
+            else if (alive.isEmpty()) stopEvent("Event ended with no winner");
+            else advancePhaseIfNeeded();
+        }
     }
 
     private void openSettingsManager(Player player) {
@@ -627,10 +672,22 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
                 String uuidLine = clicked.getItemMeta().getLore() == null ? "" : clicked.getItemMeta().getLore().stream().filter(line -> line.contains("UUID: ")).findFirst().orElse("");
                 try {
                     UUID id = UUID.fromString(org.bukkit.ChatColor.stripColor(uuidLine).replace("UUID: ", "").trim());
-                    String name = Bukkit.getOfflinePlayer(id).getName();
-                    player.sendMessage("§ePlayer: §f" + (name == null ? id : name) + " §7| Alive: " + alive.contains(id) + " §7| Registered: " + participants.contains(id));
-                    player.sendMessage("§7Use /latejoin <player> to add an online player.");
+                    openPlayerDetails(player, id);
                 } catch (IllegalArgumentException ignored) { }
+            }
+        } else if (title.startsWith(PLAYER_DETAIL_PREFIX)) {
+            event.setCancelled(true);
+            if (event.getClickedInventory() != event.getView().getTopInventory() || !player.hasPermission("clasherevents.admin")) return;
+            ItemStack clicked = event.getCurrentItem(); if (clicked == null || !clicked.hasItemMeta()) return;
+            String action = org.bukkit.ChatColor.stripColor(clicked.getItemMeta().getDisplayName());
+            UUID targetId;
+            try { targetId = UUID.fromString(title.substring(PLAYER_DETAIL_PREFIX.length())); }
+            catch (IllegalArgumentException ex) { player.closeInventory(); return; }
+            player.closeInventory();
+            if (action.equalsIgnoreCase("Back to Players")) openPlayerManager(player);
+            else if (action.equalsIgnoreCase("Remove From Event")) {
+                adminRemoveParticipant(player, targetId);
+                openPlayerManager(player);
             }
         } else if (SETTINGS_GUI_TITLE.equals(title)) {
             event.setCancelled(true);
@@ -740,7 +797,7 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
 
     @EventHandler public void onEventGuiDrag(org.bukkit.event.inventory.InventoryDragEvent event) {
         String title = event.getView().getTitle();
-        if (ADMIN_GUI_TITLE.equals(title) || PLAYER_MANAGER_TITLE.equals(title) || SETTINGS_GUI_TITLE.equals(title) || REWARDS_GUI_TITLE.equals(title) || STATS_GUI_TITLE.equals(title) || ARENA_GUI_TITLE.equals(title) || title.startsWith(ARENA_SETUP_PREFIX) || title.startsWith(ARENA_CONFIRM_PREFIX) || KIT_MANAGER_TITLE.equals(title) || EVENT_GUI_TITLE.equals(title) || COUNTDOWN_GUI_TITLE.equals(title) || title.equals("§8Spectate Fighter") || title.startsWith(KIT_GUI_PREFIX) || VOTE_GUI_TITLE.equals(title))
+        if (ADMIN_GUI_TITLE.equals(title) || PLAYER_MANAGER_TITLE.equals(title) || title.startsWith(PLAYER_DETAIL_PREFIX) || SETTINGS_GUI_TITLE.equals(title) || REWARDS_GUI_TITLE.equals(title) || STATS_GUI_TITLE.equals(title) || ARENA_GUI_TITLE.equals(title) || title.startsWith(ARENA_SETUP_PREFIX) || title.startsWith(ARENA_CONFIRM_PREFIX) || KIT_MANAGER_TITLE.equals(title) || EVENT_GUI_TITLE.equals(title) || COUNTDOWN_GUI_TITLE.equals(title) || title.equals("§8Spectate Fighter") || title.startsWith(KIT_GUI_PREFIX) || VOTE_GUI_TITLE.equals(title))
             event.setCancelled(true);
     }
 
