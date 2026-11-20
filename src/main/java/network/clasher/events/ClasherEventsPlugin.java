@@ -2049,17 +2049,24 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
                     errors++;
                     sender.sendMessage("§c[ERROR] " + arena.displayName + ": missing schematic " + arena.schematic);
                 }
-                if (spawns(arena, "wave1").isEmpty()) {
+                int wave1Count = spawns(arena, "wave1").size();
+                int finalCount = spawns(arena, "final").size();
+                int wave2Count = spawns(arena, "wave2").size();
+                if (wave1Count < 2) {
                     errors++;
-                    sender.sendMessage("§c[ERROR] " + arena.displayName + ": no Wave 1 spawn points.");
+                    sender.sendMessage("§c[ERROR] " + arena.displayName + ": requires at least 2 Wave 1 spawn points (found " + wave1Count + ").");
                 }
-                if (spawns(arena, "final").isEmpty()) {
+                if (finalCount < 2) {
                     errors++;
-                    sender.sendMessage("§c[ERROR] " + arena.displayName + ": no Final spawn points.");
+                    sender.sendMessage("§c[ERROR] " + arena.displayName + ": requires at least 2 Final spawn points (found " + finalCount + ").");
                 }
-                if (spawns(arena, "wave2").isEmpty()) {
+                if (wave2Count < 2) {
                     warnings++;
-                    sender.sendMessage("§e[WARN] " + arena.displayName + ": no Wave 2 spawns (Wave 2 may be skipped for small matches).");
+                    sender.sendMessage("§e[WARN] " + arena.displayName + ": fewer than 2 Wave 2 spawns (Wave 2 may be skipped).");
+                }
+                if (spawns(arena, "audience").isEmpty()) {
+                    warnings++;
+                    sender.sendMessage("§e[WARN] " + arena.displayName + ": no Audience spawn (configured spectator location will be used).");
                 }
             }
         }
