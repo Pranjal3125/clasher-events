@@ -39,7 +39,7 @@ This is a feature-version upgrade focused on making event setup and administrati
 - [ ] Provide a confirmation summary before replacing existing spawn points; current "Set" actions intentionally replace a phase list, while "Add" preserves it.
 
 ### 0.7.0-D — Presets and configuration
-- [ ] Reusable presets for the existing eight modes.
+- [x] Reusable presets for all eight standard modes, configurable in `config.yml` and applied with `/ce preset list|apply`.
 - [x] In-game cycling controls for registration duration, kit-delivery lead time, and audience prediction points.
 - [ ] Add broader supported settings and safe value validation.
 - [x] Current settings are range-cycled and persisted through the plugin YAML config.
