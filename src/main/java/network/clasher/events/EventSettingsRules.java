@@ -1,7 +1,5 @@
 package network.clasher.events;
 
-import java.util.Arrays;
-
 /**
  * Pure validation and cycling rules for administrator-editable event settings.
  * Kept independent of Bukkit so the rules can be covered by fast unit tests.
@@ -15,9 +13,10 @@ public final class EventSettingsRules {
             throw new IllegalArgumentException("At least one allowed value is required");
         }
         int[] values = allowedValues.clone();
-        Arrays.sort(values);
-        int index = Arrays.binarySearch(values, current);
-        return index < 0 ? values[0] : values[(index + 1) % values.length];
+        for (int index = 0; index < values.length; index++) {
+            if (values[index] == current) return values[(index + 1) % values.length];
+        }
+        return values[0];
     }
 
     public static boolean isValidRegistrationSeconds(int value) {
