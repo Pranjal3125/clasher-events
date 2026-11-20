@@ -107,6 +107,7 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
     private static final String ADMIN_GUI_TITLE = "§8Clasher Events Control Center";
     private static final String ARENA_GUI_TITLE = "§8Arena Manager";
     private static final String ARENA_SETUP_PREFIX = "§8Arena Setup: ";
+    private static final String ARENA_CONFIRM_PREFIX = "§8Confirm Spawn Replace: ";
     private static final String KIT_MANAGER_TITLE = "§8Kit Manager";
     private static final String PLAYER_MANAGER_TITLE = "§8Player Manager";
     private static final String SETTINGS_GUI_TITLE = "§8Event Settings";
@@ -453,6 +454,16 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
         player.openInventory(gui);
     }
 
+    private void openArenaReplaceConfirmation(Player player, String arenaId, String phaseName) {
+        Arena arena = arenas.get(arenaId.toLowerCase(Locale.ROOT));
+        if (arena == null) { player.sendMessage("§cUnknown arena."); return; }
+        int existing = spawns(arena, phaseName).size();
+        Inventory gui = Bukkit.createInventory(null, 27, ARENA_CONFIRM_PREFIX + arenaId + ":" + phaseName);
+        gui.setItem(11, menuItem(Material.RED_CONCRETE, "§cConfirm Replace", "§7This replaces all " + existing + " existing " + phaseName + " spawn(s).", "§7Your current location becomes the only spawn."));
+        gui.setItem(15, menuItem(Material.LIME_CONCRETE, "§aCancel", "§7Keep existing spawn points unchanged."));
+        player.openInventory(gui);
+    }
+
     private void openKitManager(Player player) {
         Inventory gui = Bukkit.createInventory(null, 27, KIT_MANAGER_TITLE);
         int slot = 0;
@@ -663,15 +674,26 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
             String action = org.bukkit.ChatColor.stripColor(clicked.getItemMeta().getDisplayName()).toLowerCase(Locale.ROOT);
             String arenaId = title.substring(ARENA_SETUP_PREFIX.length()).toLowerCase(Locale.ROOT); player.closeInventory();
             switch (action) {
-                case "set wave 1 spawn" -> setArenaSpawn(player, arenaId, "wave1", false);
+                case "set wave 1 spawn" -> openArenaReplaceConfirmation(player, arenaId, "wave1");
                 case "add wave 1 spawn" -> setArenaSpawn(player, arenaId, "wave1", true);
-                case "set wave 2 spawn" -> setArenaSpawn(player, arenaId, "wave2", false);
-                case "set final spawn" -> setArenaSpawn(player, arenaId, "final", false);
-                case "set audience spawn" -> setArenaSpawn(player, arenaId, "audience", false);
+                case "set wave 2 spawn" -> openArenaReplaceConfirmation(player, arenaId, "wave2");
+                case "set final spawn" -> openArenaReplaceConfirmation(player, arenaId, "final");
+                case "set audience spawn" -> openArenaReplaceConfirmation(player, arenaId, "audience");
                 case "validate arena" -> validateArena(player, arenaId);
                 case "back to arenas" -> openArenaManager(player);
                 default -> { }
             }
+        } else if (title.startsWith(ARENA_CONFIRM_PREFIX)) {
+            event.setCancelled(true);
+            if (event.getClickedInventory() != event.getView().getTopInventory() || !player.hasPermission("clasherevents.admin")) return;
+            ItemStack clicked = event.getCurrentItem(); if (clicked == null || !clicked.hasItemMeta()) return;
+            String selected = org.bukkit.ChatColor.stripColor(clicked.getItemMeta().getDisplayName());
+            String[] details = title.substring(ARENA_CONFIRM_PREFIX.length()).split(":", 2);
+            if (details.length != 2) { player.closeInventory(); return; }
+            String arenaId = details[0]; String phaseName = details[1];
+            player.closeInventory();
+            if (selected.equalsIgnoreCase("Confirm Replace")) setArenaSpawn(player, arenaId, phaseName, false);
+            else openArenaSetup(player, arenaId);
         } else if (KIT_MANAGER_TITLE.equals(title)) {
             event.setCancelled(true);
             if (event.getClickedInventory() != event.getView().getTopInventory() || !player.hasPermission("clasherevents.admin")) return;
@@ -699,7 +721,7 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
 
     @EventHandler public void onEventGuiDrag(org.bukkit.event.inventory.InventoryDragEvent event) {
         String title = event.getView().getTitle();
-        if (ADMIN_GUI_TITLE.equals(title) || PLAYER_MANAGER_TITLE.equals(title) || SETTINGS_GUI_TITLE.equals(title) || REWARDS_GUI_TITLE.equals(title) || STATS_GUI_TITLE.equals(title) || ARENA_GUI_TITLE.equals(title) || title.startsWith(ARENA_SETUP_PREFIX) || KIT_MANAGER_TITLE.equals(title) || EVENT_GUI_TITLE.equals(title) || COUNTDOWN_GUI_TITLE.equals(title) || title.equals("§8Spectate Fighter") || title.startsWith(KIT_GUI_PREFIX) || VOTE_GUI_TITLE.equals(title))
+        if (ADMIN_GUI_TITLE.equals(title) || PLAYER_MANAGER_TITLE.equals(title) || SETTINGS_GUI_TITLE.equals(title) || REWARDS_GUI_TITLE.equals(title) || STATS_GUI_TITLE.equals(title) || ARENA_GUI_TITLE.equals(title) || title.startsWith(ARENA_SETUP_PREFIX) || title.startsWith(ARENA_CONFIRM_PREFIX) || KIT_MANAGER_TITLE.equals(title) || EVENT_GUI_TITLE.equals(title) || COUNTDOWN_GUI_TITLE.equals(title) || title.equals("§8Spectate Fighter") || title.startsWith(KIT_GUI_PREFIX) || VOTE_GUI_TITLE.equals(title))
             event.setCancelled(true);
     }
 
