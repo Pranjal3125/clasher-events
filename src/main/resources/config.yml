@@ -40,6 +40,7 @@ locations:
   spectator: {world: clasher_events, x: 0.5, y: 100.0, z: 0.5, yaw: 0.0, pitch: 0.0}
   winner: {world: clasher_events, x: 0.5, y: 100.0, z: 0.5, yaw: 0.0, pitch: 0.0}
 lobby-protection:
+  enabled: true
   radius: 35
 rules-book:
   enabled: true
