@@ -326,6 +326,38 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
         player.openInventory(gui);
     }
 
+    private void managePresets(CommandSender sender, String[] args) {
+        ConfigurationSection presets = getConfig().getConfigurationSection("presets");
+        if (args.length < 2 || args[1].equalsIgnoreCase("list")) {
+            sender.sendMessage("§6Available event presets:");
+            if (presets == null || presets.getKeys(false).isEmpty()) { sender.sendMessage("§cNo presets configured."); return; }
+            for (String key : presets.getKeys(false)) {
+                ConfigurationSection preset = presets.getConfigurationSection(key);
+                sender.sendMessage("§e" + key + " §7→ §f" + (preset == null ? "invalid" : preset.getString("mode", "unknown")) +
+                        " §7(" + (preset == null ? 120 : preset.getInt("registration-seconds", 120)) + "s registration)");
+            }
+            sender.sendMessage("§7Apply with /ce preset apply <name>.");
+            return;
+        }
+        if (!args[1].equalsIgnoreCase("apply") || args.length < 3) {
+            sender.sendMessage("§cUsage: /ce preset list|apply <name>"); return;
+        }
+        if (eventOpen || eventRunning) { sender.sendMessage("§cStop the current event before applying a preset."); return; }
+        String key = args[2].toLowerCase(Locale.ROOT);
+        ConfigurationSection preset = presets == null ? null : presets.getConfigurationSection(key);
+        if (preset == null) { sender.sendMessage("§cUnknown preset: " + key + ". Use /ce preset list."); return; }
+        String mode = preset.getString("mode", "").toLowerCase(Locale.ROOT);
+        if (!List.of("nethpot", "axe-shield", "build-uhc", "sword", "uhc", "crystal", "smp", "diamond-pot").contains(mode)) {
+            sender.sendMessage("§cPreset has an unsupported mode: " + mode); return;
+        }
+        int seconds = Math.max(30, Math.min(1800, preset.getInt("registration-seconds", getConfig().getInt("default-registration-seconds", 120))));
+        createEvent(mode);
+        if (eventOpen) {
+            countdownRemaining = seconds;
+            sender.sendMessage("§aApplied preset §e" + key + " §awith " + seconds + " seconds registration.");
+        } else sender.sendMessage("§cPreset could not start registration. Check /ce diagnose.");
+    }
+
     private void manageRewards(CommandSender sender, String[] args) {
         if (args.length < 2) { sender.sendMessage("§e/ce reward list|add|remove|clear <winner|team-winner> [index] [command...]"); return; }
         String action = args[1].toLowerCase(Locale.ROOT);
@@ -2013,6 +2045,7 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
                 else if (action.equals("validate") && args.length >= 3) validateArena(sender, args[2]);
                 else sender.sendMessage("§cInvalid arena command.");
             }
+            case "preset" -> managePresets(sender, args);
             case "reward" -> manageRewards(sender, args);
             case "kit" -> {
                 if (args.length < 2) { sender.sendMessage("§c/ce kit list|give <kit> <player>|reload"); break; }
@@ -2037,7 +2070,7 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
             else if (args.length == 2 && List.of("vote", "cheer").contains(args[0].toLowerCase(Locale.ROOT)))
                 for (Player p : Bukkit.getOnlinePlayers()) options.add(p.getName());
         } else if (command.getName().equalsIgnoreCase("ce") && sender.hasPermission("clasherevents.admin")) {
-            if (args.length == 1) options.addAll(List.of("help","create","start","stop","pause","resume","status","diagnose","reload","gui","countdown","setlobby","setspectator","setwinner","setspawn","addspawn","arena","kit","reward"));
+            if (args.length == 1) options.addAll(List.of("help","create","start","stop","pause","resume","status","diagnose","reload","gui","countdown","setlobby","setspectator","setwinner","setspawn","addspawn","arena","kit","reward","preset"));
             else if (args.length == 2 && args[0].equalsIgnoreCase("create"))
                 options.addAll(List.of("nethpot","axe-shield","build-uhc","sword","uhc","crystal","smp","diamond-pot","random-kit","duel","team-wars","tournament"));
             else if (args.length == 2 && args[0].equalsIgnoreCase("arena")) options.addAll(List.of("list","paste","reset","info","validate"));
@@ -2046,6 +2079,8 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
             else if (args.length == 3 && List.of("setspawn", "addspawn").contains(args[0].toLowerCase(Locale.ROOT))) options.addAll(List.of("wave1","wave2","final","audience"));
             else if (args.length == 2 && args[0].equalsIgnoreCase("kit")) options.addAll(List.of("list","give","preview","reload"));
             else if (args.length == 2 && args[0].equalsIgnoreCase("reward")) options.addAll(List.of("list","add","remove","clear"));
+            else if (args.length == 2 && args[0].equalsIgnoreCase("preset")) options.addAll(List.of("list","apply"));
+            else if (args.length == 3 && args[0].equalsIgnoreCase("preset") && args[1].equalsIgnoreCase("apply")) { ConfigurationSection presetSection = getConfig().getConfigurationSection("presets"); if (presetSection != null) options.addAll(presetSection.getKeys(false)); }
             else if (args.length == 3 && args[0].equalsIgnoreCase("reward") && !args[1].equalsIgnoreCase("list")) options.addAll(List.of("winner","team-winner"));
             else if (args.length == 3 && args[0].equalsIgnoreCase("arena")) options.addAll(arenas.keySet());
             else if (args.length == 3 && args[0].equalsIgnoreCase("kit") && List.of("give","preview").contains(args[1].toLowerCase(Locale.ROOT))) options.addAll(kits.keySet());
