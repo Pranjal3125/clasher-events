@@ -68,6 +68,12 @@ See [DEVELOPMENT.md](DEVELOPMENT.md), [APPROVED-0.6.0-SPEC.md](APPROVED-0.6.0-SP
 - Winner Rewards viewer and `/ce reward` commands to list, add, remove, or clear configured console reward commands.
 - Settings GUI to cycle registration duration, kit-delivery lead time, and audience prediction points while no event is active.
 - Event start preflight checks that refuse to begin when the selected arena, kit, or required starting-phase spawns are missing.
+- Reusable presets for all eight standard modes, configurable in `config.yml` and applied with `/ce preset apply <name>`.
+- Opt-in event lifecycle debug logs via `/ce debug on|off|status` (disabled by default).
+- Existing config files receive new default keys on startup without replacing administrator-defined values.
+- Settings are persisted with temporary-file replacement to reduce the risk of partial config writes.
+- Participant and statistics GUIs support pagination; player details include a safe online-only event removal action.
+- Replacing arena spawn points requires explicit confirmation.
 
 The 0.7.0 branch is a development candidate. A successful CI build verifies compilation and packaged plugin metadata; it does not replace live Paper server testing.
 
