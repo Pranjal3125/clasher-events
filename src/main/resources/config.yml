@@ -47,3 +47,30 @@ sounds:
   kit: ENTITY_ITEM_PICKUP
   start: BLOCK_NOTE_BLOCK_PLING
   winner: UI_TOAST_CHALLENGE_COMPLETE
+
+# Reusable event presets. Apply with /ce preset apply <name>.
+presets:
+  nethpot:
+    mode: nethpot
+    registration-seconds: 120
+  axe-shield:
+    mode: axe-shield
+    registration-seconds: 120
+  build-uhc:
+    mode: build-uhc
+    registration-seconds: 120
+  sword:
+    mode: sword
+    registration-seconds: 120
+  uhc:
+    mode: uhc
+    registration-seconds: 120
+  crystal:
+    mode: crystal
+    registration-seconds: 120
+  smp:
+    mode: smp
+    registration-seconds: 120
+  diamond-pot:
+    mode: diamond-pot
+    registration-seconds: 120
