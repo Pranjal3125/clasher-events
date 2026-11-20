@@ -1977,24 +1977,76 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
 
         List<String> errors = new ArrayList<>();
         List<String> warnings = new ArrayList<>();
-        File schematic = new File(new File(getDataFolder(), "schematics"), arena.schematic);
-        if (!schematic.isFile()) errors.add("schematic file (" + arena.schematic + ")");
+        File schematicDirectory = new File(getDataFolder(), "schematics");
+        File schematic = new File(schematicDirectory, arena.schematic);
+        try {
+            String base = schematicDirectory.getCanonicalPath() + File.separator;
+            if (!schematic.getCanonicalPath().startsWith(base)) {
+                errors.add("schematic path must stay inside the plugin schematics directory");
+            } else if (!schematic.isFile() || !schematic.canRead()) {
+                errors.add("missing or unreadable schematic (" + arena.schematic + ")");
+            } else {
+                ClipboardFormat format = ClipboardFormats.findByFile(schematic);
+                if (format == null) {
+                    errors.add("unsupported schematic format (" + arena.schematic + ")");
+                } else {
+                    try (ClipboardReader reader = format.getReader(new FileInputStream(schematic))) {
+                        Clipboard clipboard = reader.read();
+                        if (clipboard.getRegion().getWidth() < 1 || clipboard.getRegion().getHeight() < 1
+                                || clipboard.getRegion().getLength() < 1) {
+                            errors.add("schematic has invalid dimensions");
+                        }
+                    }
+                }
+            }
+        } catch (Exception ex) {
+            errors.add("schematic could not be inspected: " + ex.getMessage());
+        }
 
         // Every current event format needs an opening and a final spawn pair.
-        if (spawns(arena, "wave1").size() < 2) errors.add("at least 2 Wave 1 spawn points");
-        if (spawns(arena, "final").size() < 2) errors.add("at least 2 Final spawn points");
+        if (spawns(arena, "wave1").size() < 2) errors.add("at least 2 valid Wave 1 spawn points");
+        if (spawns(arena, "final").size() < 2) errors.add("at least 2 valid Final spawn points");
 
         // Wave 2 is conditional in Battle Royale progression; audience seating is optional.
         if (spawns(arena, "wave2").size() < 2) warnings.add("fewer than 2 Wave 2 spawn points (Wave 2 may be skipped)");
         if (spawns(arena, "audience").isEmpty()) warnings.add("no Audience spawn (spectators use the configured spectator location)");
 
+        ConfigurationSection bounds = arena.section.getConfigurationSection("bounds");
+        if (bounds == null) {
+            errors.add("arena bounds are not configured");
+        } else {
+            int minX = bounds.getInt("min-x"), minY = bounds.getInt("min-y"), minZ = bounds.getInt("min-z");
+            int maxX = bounds.getInt("max-x"), maxY = bounds.getInt("max-y"), maxZ = bounds.getInt("max-z");
+            if (minX > maxX || minY > maxY || minZ > maxZ) {
+                errors.add("arena bounds are inverted (min must be <= max on every axis)");
+            } else {
+                for (String phaseName : List.of("wave1", "wave2", "final", "audience")) {
+                    List<Map<?, ?>> points = arena.section.getMapList("spawns." + phaseName);
+                    for (int index = 0; index < points.size(); index++) {
+                        Map<?, ?> point = points.get(index);
+                        Object x = point.get("x"), y = point.get("y"), z = point.get("z");
+                        if (!(x instanceof Number) || !(y instanceof Number) || !(z instanceof Number)) {
+                            errors.add(phaseName + " spawn #" + (index + 1) + " has missing/non-numeric coordinates");
+                            continue;
+                        }
+                        double px = ((Number) x).doubleValue(), py = ((Number) y).doubleValue(), pz = ((Number) z).doubleValue();
+                        if (px < minX || px > maxX + 1.0 || py < minY || py > maxY + 1.0 || pz < minZ || pz > maxZ + 1.0) {
+                            errors.add(phaseName + " spawn #" + (index + 1) + " is outside configured arena bounds");
+                        }
+                    }
+                }
+            }
+        }
+
         String worldName = getConfig().getString("shared-world", "clasher_events");
         if (Bukkit.getWorld(worldName) == null) warnings.add("shared world is not loaded: " + worldName);
         org.bukkit.plugin.Plugin worldEdit = Bukkit.getPluginManager().getPlugin("WorldEdit");
         if (worldEdit == null || !worldEdit.isEnabled()) warnings.add("WorldEdit unavailable (paste/reset disabled)");
+        org.bukkit.plugin.Plugin worldGuard = Bukkit.getPluginManager().getPlugin("WorldGuard");
+        if (worldGuard == null || !worldGuard.isEnabled()) warnings.add("WorldGuard unavailable (region protection integration disabled)");
 
         sender.sendMessage("§6Arena validation: §e" + arena.displayName);
-        if (errors.isEmpty()) sender.sendMessage("§a[OK] Required arena setup is present.");
+        if (errors.isEmpty()) sender.sendMessage("§a[OK] Schematic, bounds, and required spawn configuration passed.");
         else sender.sendMessage("§c[ERROR] " + String.join("; ", errors));
         for (String warning : warnings) sender.sendMessage("§e[WARN] " + warning);
         if (errors.isEmpty() && warnings.isEmpty()) sender.sendMessage("§aAll checks passed.");
