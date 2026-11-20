@@ -42,7 +42,9 @@ The documented arena/kit set includes NethPot, Axe & Shield, Build UHC, Sword, U
 | `/ce reward list` | List configured winner reward commands |
 | `/ce reward add <winner\|team-winner> <command...>` | Add a console reward command |
 | `/ce reward remove <winner\|team-winner> <index>` | Remove a reward command by 1-based index |
-| `/ce reward clear <winner\|team-winner>` | Clear reward commands for a reward type |\n| `/ce preset list` | List reusable event presets |\n| `/ce preset apply <name>` | Open registration using a configured preset |
+| `/ce reward clear <winner\|team-winner>` | Clear reward commands for a reward type |
+| `/ce preset list` | List reusable event presets |
+| `/ce preset apply <name>` | Open registration using a configured preset |
 | `/ce setlobby` | Save waiting lobby |
 | `/ce setspectator` | Save spectator destination |
 | `/ce setwinner` | Save winner destination |
@@ -55,7 +57,20 @@ The documented arena/kit set includes NethPot, Axe & Shield, Build UHC, Sword, U
 
 See [DEVELOPMENT.md](DEVELOPMENT.md), [APPROVED-0.6.0-SPEC.md](APPROVED-0.6.0-SPEC.md), and [NETHPOT-ARENA-UPDATE.txt](NETHPOT-ARENA-UPDATE.txt) for detailed project notes.
 
-## 0.7.0 development additions\n\n- Admin Control Center with event, countdown, status, diagnostics, and stop controls.\n- Arena Manager GUI with per-arena setup shortcuts for Wave 1, Wave 2, Final, and Audience spawns, plus validation.\n- Kit Manager GUI for browsing, previewing, and reloading kit YAML files.\n- Player Manager view for registered participants and online/alive status.\n- Statistics leaderboard for recorded kills and deaths.\n- Winner Rewards viewer and `/ce reward` commands to list, add, remove, or clear configured console reward commands.\n- Settings GUI to cycle registration duration, kit-delivery lead time, and audience prediction points while no event is active.\n- Event start preflight checks that refuse to begin when the selected arena, kit, or required starting-phase spawns are missing.\n\nThe 0.7.0 branch is a development candidate. A successful CI build verifies compilation and packaged plugin metadata; it does not replace live Paper server testing.\n\n## Requirements
+## 0.7.0 development additions
+
+- Admin Control Center with event, countdown, status, diagnostics, and stop controls.
+- Arena Manager GUI with per-arena setup shortcuts for Wave 1, Wave 2, Final, and Audience spawns, plus validation.
+- Kit Manager GUI for browsing, previewing, and reloading kit YAML files.
+- Player Manager view for registered participants and online/alive status.
+- Statistics leaderboard for recorded kills and deaths.
+- Winner Rewards viewer and `/ce reward` commands to list, add, remove, or clear configured console reward commands.
+- Settings GUI to cycle registration duration, kit-delivery lead time, and audience prediction points while no event is active.
+- Event start preflight checks that refuse to begin when the selected arena, kit, or required starting-phase spawns are missing.
+
+The 0.7.0 branch is a development candidate. A successful CI build verifies compilation and packaged plugin metadata; it does not replace live Paper server testing.
+
+## Requirements
 
 - Paper API matching the version configured in `pom.xml`
 - Java 25 and Maven for the documented build environment
