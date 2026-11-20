@@ -108,6 +108,10 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
     private static final String ARENA_GUI_TITLE = "§8Arena Manager";
     private static final String ARENA_SETUP_PREFIX = "§8Arena Setup: ";
     private static final String KIT_MANAGER_TITLE = "§8Kit Manager";
+    private static final String PLAYER_MANAGER_TITLE = "§8Player Manager";
+    private static final String SETTINGS_GUI_TITLE = "§8Event Settings";
+    private static final String REWARDS_GUI_TITLE = "§8Winner Rewards";
+    private static final String STATS_GUI_TITLE = "§8Event Statistics";
     private static final String KIT_GUI_PREFIX = "§8Kit Preview: ";
     private final Map<UUID, String> guiKitTargets = new HashMap<>();
     private final Map<UUID, BukkitTask> disconnectTasks = new HashMap<>();
@@ -250,10 +254,12 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
         gui.setItem(12, menuItem(Material.CLOCK, "§eCountdown Settings", "§7Change registration countdown."));
         gui.setItem(14, menuItem(Material.COMPASS, "§bArena Manager", "§7List and validate arenas.", "§7Use /ce arena info <arena>."));
         gui.setItem(16, menuItem(Material.CHEST, "§6Kit Manager", "§7Preview and reload kits.", "§7Use /ce kit preview."));
-        gui.setItem(28, menuItem(Material.PLAYER_HEAD, "§dPlayer Manager", "§7Registered: " + participants.size(), "§7Alive: " + alive.size(), "§7Late join: /latejoin <player>"));
+        gui.setItem(28, menuItem(Material.PLAYER_HEAD, "§dPlayer Manager", "§7Registered: " + participants.size(), "§7Alive: " + alive.size(), "§7Inspect event participants."));
+        gui.setItem(29, menuItem(Material.PAPER, "§bStatistics", "§7Open player kill/death leaderboard."));
         gui.setItem(30, menuItem(Material.BOOK, "§bEvent Status", "§7Mode: " + eventMode, "§7Phase: " + phase, "§7State: " + (eventRunning ? "Running" : eventOpen ? "Registration" : "Idle")));
+        gui.setItem(31, menuItem(Material.GOLD_INGOT, "§6Winner Rewards", "§7View configured winner commands."));
         gui.setItem(32, menuItem(Material.REPEATER, "§eDiagnostics", "§7Check arenas, kits, dependencies", "§7and configured locations."));
-        gui.setItem(34, menuItem(Material.COMPARATOR, "§dSettings & Setup", "§7Set lobby, spectator and winner", "§7locations using setup shortcuts."));
+        gui.setItem(34, menuItem(Material.COMPARATOR, "§dSettings & Setup", "§7Configure countdown and points", "§7Set lobby, spectator and winner."));
         gui.setItem(45, menuItem(Material.YELLOW_STAINED_GLASS_PANE, paused ? "§aResume Event" : "§ePause Event", "§7Toggle registration countdown pause."));
         gui.setItem(49, menuItem(Material.BARRIER, "§cStop Event", "§7Stop event and restore players."));
         gui.setItem(53, menuItem(Material.ARROW, "§7Close", "§7Close this menu."));
@@ -284,6 +290,62 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
         gui.setItem(14, menuItem(Material.ENDER_EYE, "§dSet Audience Spawn", "§7Save your current position."));
         gui.setItem(16, menuItem(Material.WRITABLE_BOOK, "§bValidate Arena", "§7Check required files and spawn points."));
         gui.setItem(22, menuItem(Material.ARROW, "§7Back to Arenas"));
+        player.openInventory(gui);
+    }
+
+    private void openPlayerManager(Player player) {
+        Inventory gui = Bukkit.createInventory(null, 54, PLAYER_MANAGER_TITLE);
+        int slot = 0;
+        for (UUID id : participants) {
+            if (slot >= 45) break;
+            Player target = Bukkit.getPlayer(id);
+            ItemStack head = new ItemStack(Material.PLAYER_HEAD);
+            SkullMeta meta = (SkullMeta) head.getItemMeta();
+            String name = target == null ? id.toString().substring(0, 8) : target.getName();
+            if (meta != null) {
+                if (target != null) meta.setOwningPlayer(target);
+                meta.setDisplayName("§e" + name);
+                meta.setLore(List.of("§7Status: " + (alive.contains(id) ? "§aAlive" : "§eRegistered / Spectating"), "§7Online: " + (target != null ? "§aYes" : "§cNo"), "§7UUID: " + id, "§eClick for player details"));
+                head.setItemMeta(meta);
+            }
+            gui.setItem(slot++, head);
+        }
+        gui.setItem(49, menuItem(Material.ARROW, "§7Back", "§7Return to Control Center"));
+        player.openInventory(gui);
+    }
+
+    private void openSettingsManager(Player player) {
+        Inventory gui = Bukkit.createInventory(null, 27, SETTINGS_GUI_TITLE);
+        gui.setItem(10, menuItem(Material.CLOCK, "§eRegistration: " + getConfig().getInt("default-registration-seconds", 120) + "s", "§7Click to cycle 120 / 300 / 600 seconds."));
+        gui.setItem(12, menuItem(Material.CHEST, "§6Kit delivery: " + getConfig().getInt("kit-delivery-seconds-before-start", 60) + "s", "§7Click to cycle 30 / 60 / 90 seconds before start."));
+        gui.setItem(14, menuItem(Material.GOLD_INGOT, "§6Prediction reward: " + getConfig().getInt("audience-correct-prediction-points", 10), "§7Click to cycle 5 / 10 / 20 points."));
+        gui.setItem(22, menuItem(Material.ARROW, "§7Back", "§7Return to Control Center"));
+        player.openInventory(gui);
+    }
+
+    private void openRewardsManager(Player player) {
+        Inventory gui = Bukkit.createInventory(null, 27, REWARDS_GUI_TITLE);
+        List<String> winner = getConfig().getStringList("rewards.winner.commands");
+        List<String> team = getConfig().getStringList("rewards.team-winner.commands");
+        gui.setItem(11, menuItem(Material.GOLD_INGOT, "§6Solo / Winner Rewards", "§7Configured commands: " + winner.size(), winner.isEmpty() ? "§cNone configured" : "§e" + winner.get(0)));
+        gui.setItem(15, menuItem(Material.DIAMOND, "§bTeam Winner Rewards", "§7Configured commands: " + team.size(), team.isEmpty() ? "§cNone configured" : "§e" + team.get(0)));
+        gui.setItem(22, menuItem(Material.ARROW, "§7Back", "§7Return to Control Center"));
+        player.openInventory(gui);
+    }
+
+    private void openStatisticsManager(Player player) {
+        Inventory gui = Bukkit.createInventory(null, 54, STATS_GUI_TITLE);
+        ConfigurationSection root = playerStats.getConfigurationSection("players");
+        List<String> ids = root == null ? new ArrayList<>() : new ArrayList<>(root.getKeys(false));
+        ids.sort((a, b) -> Integer.compare(playerStats.getInt("players." + b + ".kills"), playerStats.getInt("players." + a + ".kills")));
+        int slot = 0;
+        for (String id : ids) {
+            if (slot >= 45) break;
+            String path = "players." + id;
+            gui.setItem(slot, menuItem(Material.PAPER, "§e" + playerStats.getString(path + ".name", id), "§7Kills: §a" + playerStats.getInt(path + ".kills"), "§7Deaths: §c" + playerStats.getInt(path + ".deaths")));
+            slot++;
+        }
+        gui.setItem(49, menuItem(Material.ARROW, "§7Back", "§7Return to Control Center"));
         player.openInventory(gui);
     }
 
@@ -401,18 +463,70 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
                 case "countdown settings" -> openCountdownGui(player);
                 case "arena manager" -> openArenaManager(player);
                 case "kit manager" -> openKitManager(player);
-                case "player manager" -> player.sendMessage("§eRegistered: " + participants.size() + " §7| §aAlive: " + alive.size() + " §7| §eLate join: /latejoin <player>");
+                case "player manager" -> openPlayerManager(player);
+                case "statistics" -> openStatisticsManager(player);
+                case "winner rewards" -> openRewardsManager(player);
                 case "event status" -> player.sendMessage("§eMode: " + eventMode + " §7| Phase: " + phase + " §7| Alive: " + alive.size() + " §7| Registered: " + participants.size());
                 case "diagnostics" -> runDiagnostics(player);
-                case "settings & setup" -> {
-                    player.sendMessage("§eSetup shortcuts: §f/ce setlobby, /ce setspectator, /ce setwinner");
-                    player.sendMessage("§7Arena spawns: /ce setspawn <arena> <wave1|wave2|final|audience>");
-                }
+                case "settings & setup" -> openSettingsManager(player);
                 case "pause event" -> { paused = true; player.sendMessage("§eEvent countdown paused."); }
                 case "resume event" -> { paused = false; player.sendMessage("§aEvent countdown resumed."); }
                 case "stop event" -> stopEvent("Event stopped by admin");
                 default -> { }
             }
+        } else if (PLAYER_MANAGER_TITLE.equals(title)) {
+            event.setCancelled(true);
+            if (event.getClickedInventory() != event.getView().getTopInventory() || !player.hasPermission("clasherevents.admin")) return;
+            ItemStack clicked = event.getCurrentItem();
+            if (clicked == null || !clicked.hasItemMeta()) return;
+            String display = org.bukkit.ChatColor.stripColor(clicked.getItemMeta().getDisplayName());
+            player.closeInventory();
+            if (display.equalsIgnoreCase("Back")) openAdminDashboard(player);
+            else {
+                String uuidLine = clicked.getItemMeta().getLore() == null ? "" : clicked.getItemMeta().getLore().stream().filter(line -> line.contains("UUID: ")).findFirst().orElse("");
+                try {
+                    UUID id = UUID.fromString(org.bukkit.ChatColor.stripColor(uuidLine).replace("UUID: ", "").trim());
+                    String name = Bukkit.getOfflinePlayer(id).getName();
+                    player.sendMessage("§ePlayer: §f" + (name == null ? id : name) + " §7| Alive: " + alive.contains(id) + " §7| Registered: " + participants.contains(id));
+                    player.sendMessage("§7Use /latejoin <player> to add an online player.");
+                } catch (IllegalArgumentException ignored) { }
+            }
+        } else if (SETTINGS_GUI_TITLE.equals(title)) {
+            event.setCancelled(true);
+            if (event.getClickedInventory() != event.getView().getTopInventory() || !player.hasPermission("clasherevents.admin")) return;
+            ItemStack clicked = event.getCurrentItem();
+            if (clicked == null || !clicked.hasItemMeta()) return;
+            String display = org.bukkit.ChatColor.stripColor(clicked.getItemMeta().getDisplayName());
+            if (display.equalsIgnoreCase("Back")) { player.closeInventory(); openAdminDashboard(player); return; }
+            if (eventOpen || eventRunning) { player.sendMessage("§cChange settings only when no event is open or running."); return; }
+            if (display.startsWith("Registration:")) {
+                int[] values = {120, 300, 600};
+                int current = getConfig().getInt("default-registration-seconds", 120);
+                int index = java.util.Arrays.binarySearch(values, current);
+                getConfig().set("default-registration-seconds", values[(index + 1 + values.length) % values.length]);
+                saveConfig();
+            } else if (display.startsWith("Kit delivery:")) {
+                int[] values = {30, 60, 90};
+                int current = getConfig().getInt("kit-delivery-seconds-before-start", 60);
+                int index = java.util.Arrays.binarySearch(values, current);
+                getConfig().set("kit-delivery-seconds-before-start", values[(index + 1 + values.length) % values.length]);
+                saveConfig();
+            } else if (display.startsWith("Prediction reward:")) {
+                int[] values = {5, 10, 20};
+                int current = getConfig().getInt("audience-correct-prediction-points", 10);
+                int index = java.util.Arrays.binarySearch(values, current);
+                getConfig().set("audience-correct-prediction-points", values[(index + 1 + values.length) % values.length]);
+                saveConfig();
+            }
+            openSettingsManager(player);
+        } else if (REWARDS_GUI_TITLE.equals(title)) {
+            event.setCancelled(true);
+            if (event.getClickedInventory() != event.getView().getTopInventory() || !player.hasPermission("clasherevents.admin")) return;
+            if (event.getCurrentItem() != null && event.getCurrentItem().hasItemMeta() && org.bukkit.ChatColor.stripColor(event.getCurrentItem().getItemMeta().getDisplayName()).equalsIgnoreCase("Back")) { player.closeInventory(); openAdminDashboard(player); }
+        } else if (STATS_GUI_TITLE.equals(title)) {
+            event.setCancelled(true);
+            if (event.getClickedInventory() != event.getView().getTopInventory() || !player.hasPermission("clasherevents.admin")) return;
+            if (event.getCurrentItem() != null && event.getCurrentItem().hasItemMeta() && org.bukkit.ChatColor.stripColor(event.getCurrentItem().getItemMeta().getDisplayName()).equalsIgnoreCase("Back")) { player.closeInventory(); openAdminDashboard(player); }
         } else if (ARENA_GUI_TITLE.equals(title)) {
             event.setCancelled(true);
             if (event.getClickedInventory() != event.getView().getTopInventory() || !player.hasPermission("clasherevents.admin")) return;
@@ -463,7 +577,7 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
 
     @EventHandler public void onEventGuiDrag(org.bukkit.event.inventory.InventoryDragEvent event) {
         String title = event.getView().getTitle();
-        if (ADMIN_GUI_TITLE.equals(title) || ARENA_GUI_TITLE.equals(title) || title.startsWith(ARENA_SETUP_PREFIX) || KIT_MANAGER_TITLE.equals(title) || EVENT_GUI_TITLE.equals(title) || COUNTDOWN_GUI_TITLE.equals(title) || title.equals("§8Spectate Fighter") || title.startsWith(KIT_GUI_PREFIX) || VOTE_GUI_TITLE.equals(title))
+        if (ADMIN_GUI_TITLE.equals(title) || PLAYER_MANAGER_TITLE.equals(title) || SETTINGS_GUI_TITLE.equals(title) || REWARDS_GUI_TITLE.equals(title) || STATS_GUI_TITLE.equals(title) || ARENA_GUI_TITLE.equals(title) || title.startsWith(ARENA_SETUP_PREFIX) || KIT_MANAGER_TITLE.equals(title) || EVENT_GUI_TITLE.equals(title) || COUNTDOWN_GUI_TITLE.equals(title) || title.equals("§8Spectate Fighter") || title.startsWith(KIT_GUI_PREFIX) || VOTE_GUI_TITLE.equals(title))
             event.setCancelled(true);
     }
 
