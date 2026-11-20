@@ -41,7 +41,7 @@ Keep `main` unchanged until the feature branch has passed the release gates.
 ### Reliability and validation
 - Recovery snapshots, player statistics, match history, audience points, plugin configuration, and arena baseline schematic backups use temporary-file replacement for safer persistence.
 - Arena validation checks schematic path safety, file readability, supported format, schematic dimensions, bounds ordering, required spawn counts, and spawn coordinates against arena bounds.
-- JUnit 5 unit tests cover settings cycling, allowed value ranges, and Wave 2 progression thresholds. CI requires the test report.\n- CI validates YAML resources and checks consistency across all eight arena, kit, schematic, preset, and required spawn definitions.
+- JUnit 5 unit tests cover settings cycling, allowed value ranges, Wave 2 progression thresholds, and atomic file persistence (successful replacement, nested directory creation, failed-write preservation, and temporary-file cleanup). CI requires both test suites.\n- CI validates YAML resources and checks consistency across all eight arena, kit, schematic, preset, and required spawn definitions.
 - CI builds with Java 25, verifies plugin metadata and main class inside the packaged JAR, and uploads the JAR as an Actions artifact.
 
 ## Release gates still open
