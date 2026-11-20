@@ -408,8 +408,7 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
 
     private void cycleSetting(String path, int fallback, int... values) {
         int current = getConfig().getInt(path, fallback);
-        int index = java.util.Arrays.binarySearch(values, current);
-        getConfig().set(path, values[(index + 1 + values.length) % values.length]);
+        getConfig().set(path, EventSettingsRules.nextValue(current, values));
         saveConfigAtomically();
     }
 
@@ -1566,8 +1565,7 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
 
     /** Returns the Wave 2 threshold, or -1 when Wave 2 is skipped. */
     static int calculateWave2Threshold(int initialFighters) {
-        if (initialFighters < 8) return -1;
-        return Math.max(3, initialFighters / 3);
+        return EventSettingsRules.wave2Threshold(initialFighters);
     }
 
     private void transitionToPhase(String nextPhase) {
