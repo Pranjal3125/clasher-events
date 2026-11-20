@@ -113,12 +113,13 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
     private static final String ARENA_CONFIRM_PREFIX = "§8Confirm Spawn Replace: ";
     private static final String KIT_MANAGER_TITLE = "§8Kit Manager";
     private static final String PLAYER_MANAGER_TITLE = "§8Player Manager";
-    private static final String PLAYER_DETAIL_PREFIX = "§8Player: ";
+    private static final String PLAYER_DETAIL_TITLE = "§8Player Details";
     private static final String SETTINGS_GUI_TITLE = "§8Event Settings";
     private static final String REWARDS_GUI_TITLE = "§8Winner Rewards";
     private static final String STATS_GUI_TITLE = "§8Event Statistics";
     private static final String KIT_GUI_PREFIX = "§8Kit Preview: ";
     private final Map<UUID, String> guiKitTargets = new HashMap<>();
+    private final Map<UUID, UUID> guiPlayerTargets = new HashMap<>();
     private final Map<UUID, BukkitTask> disconnectTasks = new HashMap<>();
     private final Set<UUID> disconnectedFighters = new HashSet<>();
     private final Set<UUID> kitDelivered = new HashSet<>();
@@ -330,7 +331,8 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
     private void openPlayerDetails(Player admin, UUID targetId) {
         Player target = Bukkit.getPlayer(targetId);
         if (!participants.contains(targetId)) { admin.sendMessage("§cThat player is no longer registered."); openPlayerManager(admin); return; }
-        Inventory gui = Bukkit.createInventory(null, 27, PLAYER_DETAIL_PREFIX + targetId);
+        Inventory gui = Bukkit.createInventory(null, 27, PLAYER_DETAIL_TITLE);
+        guiPlayerTargets.put(admin.getUniqueId(), targetId);
         String name = target == null ? Bukkit.getOfflinePlayer(targetId).getName() : target.getName();
         gui.setItem(11, menuItem(Material.PLAYER_HEAD, "§e" + (name == null ? targetId.toString() : name),
                 "§7Online: " + (target == null ? "§cNo" : "§aYes"),
@@ -675,17 +677,17 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
                     openPlayerDetails(player, id);
                 } catch (IllegalArgumentException ignored) { }
             }
-        } else if (title.startsWith(PLAYER_DETAIL_PREFIX)) {
+        } else if (PLAYER_DETAIL_TITLE.equals(title)) {
             event.setCancelled(true);
             if (event.getClickedInventory() != event.getView().getTopInventory() || !player.hasPermission("clasherevents.admin")) return;
             ItemStack clicked = event.getCurrentItem(); if (clicked == null || !clicked.hasItemMeta()) return;
             String action = org.bukkit.ChatColor.stripColor(clicked.getItemMeta().getDisplayName());
-            UUID targetId;
-            try { targetId = UUID.fromString(title.substring(PLAYER_DETAIL_PREFIX.length())); }
-            catch (IllegalArgumentException ex) { player.closeInventory(); return; }
+            UUID targetId = guiPlayerTargets.get(player.getUniqueId());
+            if (targetId == null) { player.closeInventory(); return; }
             player.closeInventory();
             if (action.equalsIgnoreCase("Back to Players")) openPlayerManager(player);
             else if (action.equalsIgnoreCase("Remove From Event")) {
+                guiPlayerTargets.remove(player.getUniqueId());
                 adminRemoveParticipant(player, targetId);
                 openPlayerManager(player);
             }
@@ -797,7 +799,7 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
 
     @EventHandler public void onEventGuiDrag(org.bukkit.event.inventory.InventoryDragEvent event) {
         String title = event.getView().getTitle();
-        if (ADMIN_GUI_TITLE.equals(title) || PLAYER_MANAGER_TITLE.equals(title) || title.startsWith(PLAYER_DETAIL_PREFIX) || SETTINGS_GUI_TITLE.equals(title) || REWARDS_GUI_TITLE.equals(title) || STATS_GUI_TITLE.equals(title) || ARENA_GUI_TITLE.equals(title) || title.startsWith(ARENA_SETUP_PREFIX) || title.startsWith(ARENA_CONFIRM_PREFIX) || KIT_MANAGER_TITLE.equals(title) || EVENT_GUI_TITLE.equals(title) || COUNTDOWN_GUI_TITLE.equals(title) || title.equals("§8Spectate Fighter") || title.startsWith(KIT_GUI_PREFIX) || VOTE_GUI_TITLE.equals(title))
+        if (ADMIN_GUI_TITLE.equals(title) || PLAYER_MANAGER_TITLE.equals(title) || PLAYER_DETAIL_TITLE.equals(title) || SETTINGS_GUI_TITLE.equals(title) || REWARDS_GUI_TITLE.equals(title) || STATS_GUI_TITLE.equals(title) || ARENA_GUI_TITLE.equals(title) || title.startsWith(ARENA_SETUP_PREFIX) || title.startsWith(ARENA_CONFIRM_PREFIX) || KIT_MANAGER_TITLE.equals(title) || EVENT_GUI_TITLE.equals(title) || COUNTDOWN_GUI_TITLE.equals(title) || title.equals("§8Spectate Fighter") || title.startsWith(KIT_GUI_PREFIX) || VOTE_GUI_TITLE.equals(title))
             event.setCancelled(true);
     }
 
