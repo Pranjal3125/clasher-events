@@ -2063,6 +2063,41 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
             sender.sendMessage("§a[OK] WorldGuard detected.");
         }
 
+        int registrationSeconds = getConfig().getInt("default-registration-seconds", 120);
+        if (registrationSeconds < 30 || registrationSeconds > 1800) {
+            errors++;
+            sender.sendMessage("§c[ERROR] default-registration-seconds must be between 30 and 1800.");
+        } else sender.sendMessage("§a[OK] Registration duration: " + registrationSeconds + "s");
+
+        int kitLead = getConfig().getInt("kit-delivery-seconds-before-start", 60);
+        if (kitLead < 0 || kitLead >= registrationSeconds) {
+            errors++;
+            sender.sendMessage("§c[ERROR] kit-delivery-seconds-before-start must be >= 0 and less than registration duration.");
+        } else sender.sendMessage("§a[OK] Kit delivery lead time: " + kitLead + "s");
+
+        int predictionPoints = getConfig().getInt("audience-correct-prediction-points", 10);
+        if (predictionPoints < 0 || predictionPoints > 100000) {
+            errors++;
+            sender.sendMessage("§c[ERROR] audience-correct-prediction-points must be between 0 and 100000.");
+        } else sender.sendMessage("§a[OK] Audience prediction reward: " + predictionPoints);
+
+        ConfigurationSection presetSection = getConfig().getConfigurationSection("presets");
+        if (presetSection == null || presetSection.getKeys(false).isEmpty()) {
+            warnings++;
+            sender.sendMessage("§e[WARN] No event presets configured.");
+        } else {
+            for (String key : presetSection.getKeys(false)) {
+                ConfigurationSection preset = presetSection.getConfigurationSection(key);
+                String mode = preset == null ? "" : preset.getString("mode", "").toLowerCase(Locale.ROOT);
+                int duration = preset == null ? 0 : preset.getInt("registration-seconds", 0);
+                if (!List.of("nethpot", "axe-shield", "build-uhc", "sword", "uhc", "crystal", "smp", "diamond-pot").contains(mode)
+                        || duration < 30 || duration > 1800) {
+                    errors++;
+                    sender.sendMessage("§c[ERROR] Invalid preset '" + key + "': check mode and registration-seconds.");
+                } else sender.sendMessage("§a[OK] Preset: " + key + " (" + mode + ", " + duration + "s)");
+            }
+        }
+
         for (String location : List.of("lobby", "spectator", "winner")) {
             String worldName = getConfig().getString("locations." + location + ".world",
                     location.equals("lobby") ? sharedWorldName : "");
