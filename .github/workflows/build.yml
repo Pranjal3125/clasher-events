@@ -14,10 +14,20 @@ jobs:
           distribution: temurin
           java-version: '25'
           cache: maven
-      - name: Build plugin
-        run: mvn --batch-mode clean package
+      - name: Build and verify plugin
+        run: mvn --batch-mode --no-transfer-progress clean verify
+      - name: Verify packaged plugin
+        shell: bash
+        run: |
+          set -euo pipefail
+          JAR="$(find target -maxdepth 1 -type f -name 'clasher-events-*.jar' ! -name 'original-*' | head -n 1)"
+          test -n "$JAR"
+          jar tf "$JAR" | grep -Fxq 'plugin.yml'
+          jar tf "$JAR" | grep -Fxq 'network/clasher/events/ClasherEventsPlugin.class'
+          unzip -p "$JAR" plugin.yml | grep -Fq 'main: network.clasher.events.ClasherEventsPlugin'
+          echo "Verified packaged plugin: $JAR"
       - name: Upload plugin JAR
         uses: actions/upload-artifact@v4
         with:
           name: clasher-events
-          path: target/*.jar
+          path: target/clasher-events-*.jar
