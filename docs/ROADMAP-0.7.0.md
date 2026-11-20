@@ -30,7 +30,7 @@ This is a feature-version upgrade focused on making event setup and administrati
 - [x] Admin GUI click actions check admin permission server-side; settings edits are blocked while an event is active. Continue auditing every menu path.
 - [x] Back navigation and status lore for current menus.
 - [x] Add pagination for participant and statistics lists.
-- [ ] Complete click-through player actions beyond inspecting registration/alive/online status.
+- [x] Add player detail view and admin removal action; removal requires the player online so their saved inventory/state can be restored safely.
 
 ### 0.7.0-C — Arena Setup Wizard
 - [x] Arena phase spawn setup shortcuts for Wave 1, Wave 2, Final, and Audience.
