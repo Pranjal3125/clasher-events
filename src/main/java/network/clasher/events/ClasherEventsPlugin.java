@@ -487,7 +487,7 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
         } else if (action.equals("clear")) commands.clear();
         else { sender.sendMessage("§cUnknown reward action."); return; }
         getConfig().set(key, commands);
-        saveConfig();
+        saveConfigAtomically();
         sender.sendMessage("§aSaved " + commands.size() + " command(s) for " + type + ".");
     }
 
@@ -636,7 +636,7 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
             if (seconds > 0 && eventOpen) {
                 countdownRemaining = seconds;
                 getConfig().set("default-registration-seconds", seconds);
-                saveConfig();
+                saveConfigAtomically();
                 startCountdown();
                 player.sendMessage("§aRegistration countdown set to " + (seconds / 60) + " minutes.");
                 player.closeInventory();
@@ -717,19 +717,19 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
                 int current = getConfig().getInt("default-registration-seconds", 120);
                 int index = java.util.Arrays.binarySearch(values, current);
                 getConfig().set("default-registration-seconds", values[(index + 1 + values.length) % values.length]);
-                saveConfig();
+                saveConfigAtomically();
             } else if (display.startsWith("Kit delivery:")) {
                 int[] values = {30, 60, 90};
                 int current = getConfig().getInt("kit-delivery-seconds-before-start", 60);
                 int index = java.util.Arrays.binarySearch(values, current);
                 getConfig().set("kit-delivery-seconds-before-start", values[(index + 1 + values.length) % values.length]);
-                saveConfig();
+                saveConfigAtomically();
             } else if (display.startsWith("Prediction reward:")) {
                 int[] values = {5, 10, 20};
                 int current = getConfig().getInt("audience-correct-prediction-points", 10);
                 int index = java.util.Arrays.binarySearch(values, current);
                 getConfig().set("audience-correct-prediction-points", values[(index + 1 + values.length) % values.length]);
-                saveConfig();
+                saveConfigAtomically();
             }
             openSettingsManager(player);
         } else if (REWARDS_GUI_TITLE.equals(title)) {
@@ -923,7 +923,7 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
         getConfig().set(path + ".x", l.getX()); getConfig().set(path + ".y", l.getY());
         getConfig().set(path + ".z", l.getZ()); getConfig().set(path + ".yaw", l.getYaw());
         getConfig().set(path + ".pitch", l.getPitch());
-        saveConfig();
+        saveConfigAtomically();
         player.sendMessage("§a" + key + " location saved.");
     }
 
