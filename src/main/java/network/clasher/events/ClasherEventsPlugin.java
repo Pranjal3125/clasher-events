@@ -2217,6 +2217,16 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
             sender.sendMessage("§c[ERROR] audience-correct-prediction-points must be between 0 and 100000.");
         } else sender.sendMessage("§a[OK] Audience prediction reward: " + predictionPoints);
 
+        int afkTimeout = getConfig().getInt("afk.eliminate-after-seconds", 300);
+        if (afkTimeout < 30 || afkTimeout > 3600) {
+            errors++;
+            sender.sendMessage("§c[ERROR] afk.eliminate-after-seconds must be between 30 and 3600.");
+        } else sender.sendMessage("§a[OK] AFK elimination: " + (getConfig().getBoolean("afk.enabled", true) ? "enabled" : "disabled") + " (" + afkTimeout + "s)");
+        if (!(getConfig().get("afk.enabled") instanceof Boolean)) {
+            errors++;
+            sender.sendMessage("§c[ERROR] afk.enabled must be true or false.");
+        }
+
         ConfigurationSection presetSection = getConfig().getConfigurationSection("presets");
         if (presetSection == null || presetSection.getKeys(false).isEmpty()) {
             warnings++;
