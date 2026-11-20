@@ -66,12 +66,12 @@ See [DEVELOPMENT.md](DEVELOPMENT.md), [APPROVED-0.6.0-SPEC.md](APPROVED-0.6.0-SP
 - Player Manager view for registered participants and online/alive status.
 - Statistics leaderboard for recorded kills and deaths.
 - Winner Rewards viewer and `/ce reward` commands to list, add, remove, or clear configured console reward commands.
-- Settings GUI to cycle registration duration, kit-delivery lead time, and audience prediction points; toggle AFK elimination and adjust its timeout while no event is active.
+- Settings GUI to cycle registration duration, kit-delivery lead time, and audience prediction points; toggle AFK elimination and adjust its timeout; configure Wave 1/Wave 2/Final border sizes and shrink durations; and toggle lobby protection or change its radius while no event is active.
 - Event start preflight checks that refuse to begin when the selected arena, kit, or required starting-phase spawns are missing.
 - Reusable presets for all eight standard modes, configurable in `config.yml` and applied with `/ce preset apply <name>`.
 - Opt-in event lifecycle debug logs via `/ce debug on|off|status` (disabled by default).
 - Existing config files receive new default keys on startup without replacing administrator-defined values.
-- Settings are persisted with temporary-file replacement to reduce the risk of partial config writes. AFK settings are included in `/ce diagnose` validation.
+- Settings are persisted with temporary-file replacement to reduce the risk of partial config writes. AFK, world-border, and lobby-protection settings are validated by `/ce diagnose`. Arena baseline schematic backups are also written through temporary-file replacement. JUnit 5 tests cover settings cycles, range rules, and Wave 2 progression thresholds.
 - Participant and statistics GUIs support pagination; player details include a safe online-only event removal action.
 - Replacing arena spawn points requires explicit confirmation.
 
