@@ -1352,14 +1352,6 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
     private void startEvent() {
         if (eventMode.equals("tournament")) { startTournament(); return; }
         if (!eventOpen || participants.isEmpty()) { Bukkit.broadcastMessage("§cNo event is open or no players joined."); stopEvent("No participants"); return; }
-        if (eventMode.equals("duel") && participants.size() != 2) {
-            Bukkit.broadcastMessage("§cA 1v1 Duel requires exactly two registered players. Current: " + participants.size());
-            return;
-        }
-        if (eventMode.equals("team-wars") && participants.size() < 2) {
-            Bukkit.broadcastMessage("§cTeam Wars requires at least two registered players.");
-            return;
-        }
         Arena arena = arenas.get(selectedArena);
         if (arena == null) { Bukkit.broadcastMessage("§c[Preflight] Arena config missing: " + selectedArena); return; }
         if (!kits.containsKey(selectedKit)) { Bukkit.broadcastMessage("§c[Preflight] Kit config missing: " + selectedKit); return; }
@@ -1367,6 +1359,14 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
         for (UUID id : participants) if (Bukkit.getPlayer(id) != null) onlineEntrants.add(id);
         int expectedFighters = onlineEntrants.size();
         if (expectedFighters == 0) { Bukkit.broadcastMessage("§c[Preflight] No registered participants are online."); return; }
+        if (eventMode.equals("duel") && expectedFighters != 2) {
+            Bukkit.broadcastMessage("§c[Preflight] A 1v1 Duel requires exactly two online players. Current: " + expectedFighters);
+            return;
+        }
+        if (eventMode.equals("team-wars") && expectedFighters < 2) {
+            Bukkit.broadcastMessage("§c[Preflight] Team Wars requires at least two online players.");
+            return;
+        }
         String startingPhase = expectedFighters == 2 ? "final" : "wave1";
         List<Location> points = spawns(arena, startingPhase);
         if (points.isEmpty()) {
@@ -1403,15 +1403,17 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
     }
 
     private void startTournament() {
-        if (!eventOpen || participants.size() < 2) {
-            Bukkit.broadcastMessage("§cTournament requires at least two registered players.");
-            stopEvent("Tournament cancelled: not enough players"); return;
-        }
-        eventOpen = false; eventRunning = true; paused = false; phase = "tournament";
+        if (!eventOpen) { Bukkit.broadcastMessage("§cNo tournament registration is open."); return; }
+        Arena arena = arenas.get(selectedArena);
+        if (arena == null) { Bukkit.broadcastMessage("§c[Preflight] Tournament arena config missing: " + selectedArena); return; }
+        if (!kits.containsKey(selectedKit)) { Bukkit.broadcastMessage("§c[Preflight] Tournament kit config missing: " + selectedKit); return; }
+        List<Location> finalSpawns = spawns(arena, "final");
+        if (finalSpawns.size() < 2) { Bukkit.broadcastMessage("§c[Preflight] Tournament requires at least two Final spawn points for " + selectedArena + "."); return; }
         List<UUID> entrants = new ArrayList<>();
         for (UUID id : participants) if (Bukkit.getPlayer(id) != null) entrants.add(id);
+        if (entrants.size() < 2) { Bukkit.broadcastMessage("§c[Preflight] Tournament requires at least two online players. Current: " + entrants.size()); return; }
         Collections.shuffle(entrants);
-        if (entrants.size() < 2) { stopEvent("Tournament cancelled: players unavailable"); return; }
+        eventOpen = false; eventRunning = true; paused = false; phase = "tournament";
         for (UUID id : entrants) {
             Player p = Bukkit.getPlayer(id);
             if (p != null) { snapshotIfNeeded(p); p.setGameMode(GameMode.SPECTATOR); }
