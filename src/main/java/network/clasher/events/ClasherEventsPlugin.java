@@ -334,6 +334,26 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
         player.openInventory(gui);
     }
 
+    private void debugLog(String message) {
+        if (getConfig().getBoolean("debug", false)) getLogger().info("[DEBUG] " + message);
+    }
+
+    private void manageDebug(CommandSender sender, String[] args) {
+        if (args.length < 2 || args[1].equalsIgnoreCase("status")) {
+            sender.sendMessage("§eDebug logging: " + (getConfig().getBoolean("debug", false) ? "§aON" : "§cOFF"));
+            sender.sendMessage("§7Toggle with /ce debug on|off.");
+            return;
+        }
+        if (!args[1].equalsIgnoreCase("on") && !args[1].equalsIgnoreCase("off")) {
+            sender.sendMessage("§cUsage: /ce debug on|off|status"); return;
+        }
+        boolean enabled = args[1].equalsIgnoreCase("on");
+        getConfig().set("debug", enabled);
+        saveConfig();
+        sender.sendMessage("§aDebug logging " + (enabled ? "enabled" : "disabled") + ".");
+        debugLog("Debug logging enabled by " + sender.getName());
+    }
+
     private void managePresets(CommandSender sender, String[] args) {
         ConfigurationSection presets = getConfig().getConfigurationSection("presets");
         if (args.length < 2 || args[1].equalsIgnoreCase("list")) {
@@ -1152,6 +1172,7 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
     }
 
     private void createEvent(String mode) {
+        debugLog("Create event requested: mode=" + mode);
         stopEvent("Replaced by a new event");
         eventMode = mode.equalsIgnoreCase("teams") ? "team-wars" : mode.toLowerCase(Locale.ROOT);
         selectedArena = switch (eventMode) {
@@ -1417,6 +1438,7 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
     }
 
     private void startEvent() {
+        debugLog("Start preflight: mode=" + eventMode + ", arena=" + selectedArena + ", kit=" + selectedKit + ", registered=" + participants.size());
         if (eventMode.equals("tournament")) { startTournament(); return; }
         if (!eventOpen || participants.isEmpty()) { Bukkit.broadcastMessage("§cNo event is open or no players joined."); stopEvent("No participants"); return; }
         Arena arena = arenas.get(selectedArena);
@@ -1618,6 +1640,7 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
     }
 
     private void stopEvent(String reason) {
+        debugLog("Stopping event: reason=" + reason + ", mode=" + eventMode + ", participants=" + participants.size());
         cancelCountdown();
         if (!eventOpen && !eventRunning && participants.isEmpty() && snapshots.isEmpty()) return;
         restoreAllPlayers();
@@ -2074,6 +2097,7 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
                 else if (action.equals("validate") && args.length >= 3) validateArena(sender, args[2]);
                 else sender.sendMessage("§cInvalid arena command.");
             }
+            case "debug" -> manageDebug(sender, args);
             case "preset" -> managePresets(sender, args);
             case "reward" -> manageRewards(sender, args);
             case "kit" -> {
@@ -2099,7 +2123,7 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
             else if (args.length == 2 && List.of("vote", "cheer").contains(args[0].toLowerCase(Locale.ROOT)))
                 for (Player p : Bukkit.getOnlinePlayers()) options.add(p.getName());
         } else if (command.getName().equalsIgnoreCase("ce") && sender.hasPermission("clasherevents.admin")) {
-            if (args.length == 1) options.addAll(List.of("help","create","start","stop","pause","resume","status","diagnose","reload","gui","countdown","setlobby","setspectator","setwinner","setspawn","addspawn","arena","kit","reward","preset"));
+            if (args.length == 1) options.addAll(List.of("help","create","start","stop","pause","resume","status","diagnose","reload","gui","countdown","setlobby","setspectator","setwinner","setspawn","addspawn","arena","kit","reward","preset","debug"));
             else if (args.length == 2 && args[0].equalsIgnoreCase("create"))
                 options.addAll(List.of("nethpot","axe-shield","build-uhc","sword","uhc","crystal","smp","diamond-pot","random-kit","duel","team-wars","tournament"));
             else if (args.length == 2 && args[0].equalsIgnoreCase("arena")) options.addAll(List.of("list","paste","reset","info","validate"));
@@ -2108,6 +2132,7 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
             else if (args.length == 3 && List.of("setspawn", "addspawn").contains(args[0].toLowerCase(Locale.ROOT))) options.addAll(List.of("wave1","wave2","final","audience"));
             else if (args.length == 2 && args[0].equalsIgnoreCase("kit")) options.addAll(List.of("list","give","preview","reload"));
             else if (args.length == 2 && args[0].equalsIgnoreCase("reward")) options.addAll(List.of("list","add","remove","clear"));
+            else if (args.length == 2 && args[0].equalsIgnoreCase("debug")) options.addAll(List.of("on","off","status"));
             else if (args.length == 2 && args[0].equalsIgnoreCase("preset")) options.addAll(List.of("list","apply"));
             else if (args.length == 3 && args[0].equalsIgnoreCase("preset") && args[1].equalsIgnoreCase("apply")) { ConfigurationSection presetSection = getConfig().getConfigurationSection("presets"); if (presetSection != null) options.addAll(presetSection.getKeys(false)); }
             else if (args.length == 3 && args[0].equalsIgnoreCase("reward") && !args[1].equalsIgnoreCase("list")) options.addAll(List.of("winner","team-winner"));
