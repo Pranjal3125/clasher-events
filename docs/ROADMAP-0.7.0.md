@@ -42,7 +42,7 @@ This is a feature-version upgrade focused on making event setup and administrati
 ### 0.7.0-D — Presets and configuration
 - [x] Reusable presets for all eight standard modes, configurable in `config.yml` and applied with `/ce preset list|apply`.
 - [x] In-game cycling controls for registration duration, kit-delivery lead time, and audience prediction points.
-- [ ] Add broader supported settings and safe value validation.
+- [x] Merge new default config keys into existing config.yml on startup without overwriting administrator values.\n- [x] Validate registration duration, kit lead time, prediction points, and preset values in diagnostics.\n- [ ] Add broader supported settings.
 - [x] Current settings are range-cycled and persisted through the plugin YAML config.
 - [x] Save plugin config changes through a temporary file and atomic replacement (with a safe non-atomic fallback).\n- [ ] Add GUI editing for additional settings.
 
