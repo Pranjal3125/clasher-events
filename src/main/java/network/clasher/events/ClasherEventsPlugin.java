@@ -71,6 +71,9 @@ import java.io.File;
 import java.io.IOException;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.util.*;
 
 public final class ClasherEventsPlugin extends JavaPlugin implements Listener, TabCompleter {
@@ -335,6 +338,22 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
         player.openInventory(gui);
     }
 
+    private void saveConfigAtomically() {
+        File target = new File(getDataFolder(), "config.yml");
+        File temporary = new File(getDataFolder(), "config.yml.tmp");
+        try {
+            getConfig().save(temporary);
+            try {
+                Files.move(temporary.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            } catch (AtomicMoveNotSupportedException ignored) {
+                Files.move(temporary.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING);
+            }
+        } catch (IOException ex) {
+            getLogger().severe("Could not safely save config.yml: " + ex.getMessage());
+            if (temporary.exists() && !temporary.delete()) getLogger().warning("Could not remove temporary config file: " + temporary.getName());
+        }
+    }
+
     private void debugLog(String message) {
         if (getConfig().getBoolean("debug", false)) getLogger().info("[DEBUG] " + message);
     }
@@ -350,7 +369,7 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
         }
         boolean enabled = args[1].equalsIgnoreCase("on");
         getConfig().set("debug", enabled);
-        saveConfig();
+        saveConfigAtomically();
         sender.sendMessage("§aDebug logging " + (enabled ? "enabled" : "disabled") + ".");
         debugLog("Debug logging enabled by " + sender.getName());
     }
