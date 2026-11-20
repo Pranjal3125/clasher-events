@@ -319,6 +319,9 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
         gui.setItem(10, menuItem(Material.CLOCK, "§eRegistration: " + getConfig().getInt("default-registration-seconds", 120) + "s", "§7Click to cycle 120 / 300 / 600 seconds."));
         gui.setItem(12, menuItem(Material.CHEST, "§6Kit delivery: " + getConfig().getInt("kit-delivery-seconds-before-start", 60) + "s", "§7Click to cycle 30 / 60 / 90 seconds before start."));
         gui.setItem(14, menuItem(Material.GOLD_INGOT, "§6Prediction reward: " + getConfig().getInt("audience-correct-prediction-points", 10), "§7Click to cycle 5 / 10 / 20 points."));
+        gui.setItem(16, menuItem(Material.LIME_BED, "§aSet Lobby Location", "§7Save your current position as event lobby."));
+        gui.setItem(17, menuItem(Material.ENDER_PEARL, "§bSet Spectator Location", "§7Save your current position as spectator destination."));
+        gui.setItem(18, menuItem(Material.FIREWORK_ROCKET, "§6Set Winner Location", "§7Save your current position as winner destination."));
         gui.setItem(22, menuItem(Material.ARROW, "§7Back", "§7Return to Control Center"));
         player.openInventory(gui);
     }
@@ -533,6 +536,9 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
             if (clicked == null || !clicked.hasItemMeta()) return;
             String display = org.bukkit.ChatColor.stripColor(clicked.getItemMeta().getDisplayName());
             if (display.equalsIgnoreCase("Back")) { player.closeInventory(); openAdminDashboard(player); return; }
+            if (display.equalsIgnoreCase("Set Lobby Location")) { setNamedLocation(player, "lobby"); openSettingsManager(player); return; }
+            if (display.equalsIgnoreCase("Set Spectator Location")) { setNamedLocation(player, "spectator"); openSettingsManager(player); return; }
+            if (display.equalsIgnoreCase("Set Winner Location")) { setNamedLocation(player, "winner"); openSettingsManager(player); return; }
             if (eventOpen || eventRunning) { player.sendMessage("§cChange settings only when no event is open or running."); return; }
             if (display.startsWith("Registration:")) {
                 int[] values = {120, 300, 600};
