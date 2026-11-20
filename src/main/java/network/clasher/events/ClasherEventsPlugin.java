@@ -104,6 +104,7 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
     private File recoveryFile;
     private static final String VOTE_GUI_TITLE = "§8Predict the Winner";
     private static final String EVENT_GUI_TITLE = "§8Clasher Events - Select Mode";
+    private static final String ADMIN_GUI_TITLE = "§8Clasher Events Control Center";
     private static final String KIT_GUI_PREFIX = "§8Kit Preview: ";
     private final Map<UUID, String> guiKitTargets = new HashMap<>();
     private final Map<UUID, BukkitTask> disconnectTasks = new HashMap<>();
@@ -240,6 +241,33 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
         viewer.openInventory(gui);
     }
 
+    private void openAdminDashboard(Player admin) {
+        Inventory gui = Bukkit.createInventory(null, 54, ADMIN_GUI_TITLE);
+        gui.setItem(10, menuItem(Material.NETHER_STAR, "§aCreate Event", "§7Choose one of the eight modes", "§7or a special event format."));
+        gui.setItem(12, menuItem(Material.CLOCK, "§eCountdown Settings", "§7Change registration countdown."));
+        gui.setItem(14, menuItem(Material.COMPASS, "§bArena Manager", "§7List and validate arenas.", "§7Use /ce arena info <arena>."));
+        gui.setItem(16, menuItem(Material.CHEST, "§6Kit Manager", "§7Preview and reload kits.", "§7Use /ce kit preview."));
+        gui.setItem(28, menuItem(Material.PLAYER_HEAD, "§dPlayer Manager", "§7Registered: " + participants.size(), "§7Alive: " + alive.size(), "§7Late join: /latejoin <player>"));
+        gui.setItem(30, menuItem(Material.BOOK, "§bEvent Status", "§7Mode: " + eventMode, "§7Phase: " + phase, "§7State: " + (eventRunning ? "Running" : eventOpen ? "Registration" : "Idle")));
+        gui.setItem(32, menuItem(Material.REPEATER, "§eDiagnostics", "§7Check arenas, kits, dependencies", "§7and configured locations."));
+        gui.setItem(34, menuItem(Material.COMPARATOR, "§dSettings & Setup", "§7Set lobby, spectator and winner", "§7locations using setup shortcuts."));
+        gui.setItem(45, menuItem(Material.YELLOW_STAINED_GLASS_PANE, paused ? "§aResume Event" : "§ePause Event", "§7Toggle registration countdown pause."));
+        gui.setItem(49, menuItem(Material.BARRIER, "§cStop Event", "§7Stop event and restore players."));
+        gui.setItem(53, menuItem(Material.ARROW, "§7Close", "§7Close this menu."));
+        admin.openInventory(gui);
+    }
+
+    private ItemStack menuItem(Material material, String name, String... lore) {
+        ItemStack stack = new ItemStack(material);
+        org.bukkit.inventory.meta.ItemMeta meta = stack.getItemMeta();
+        if (meta != null) {
+            meta.setDisplayName(name);
+            meta.setLore(Arrays.asList(lore));
+            stack.setItemMeta(meta);
+        }
+        return stack;
+    }
+
     private void openEventGui(Player admin) {
         Inventory gui = Bukkit.createInventory(null, 27, EVENT_GUI_TITLE);
         String[] ids = {"nethpot", "axe-shield", "build-uhc", "sword", "uhc", "crystal", "smp", "diamond-pot", "team-wars", "duel", "random-kit", "tournament"};
@@ -322,6 +350,37 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
                 player.sendMessage("§aRegistration countdown set to " + (seconds / 60) + " minutes.");
                 player.closeInventory();
             }
+        } else if (ADMIN_GUI_TITLE.equals(title)) {
+            event.setCancelled(true);
+            if (event.getClickedInventory() != event.getView().getTopInventory()) return;
+            if (!player.hasPermission("clasherevents.admin")) return;
+            ItemStack clicked = event.getCurrentItem();
+            if (clicked == null || !clicked.hasItemMeta()) return;
+            String action = org.bukkit.ChatColor.stripColor(clicked.getItemMeta().getDisplayName()).toLowerCase(Locale.ROOT);
+            player.closeInventory();
+            switch (action) {
+                case "create event" -> openEventGui(player);
+                case "countdown settings" -> openCountdownGui(player);
+                case "arena manager" -> {
+                    player.sendMessage("§eLoaded arenas: §f" + String.join(", ", arenas.keySet()));
+                    player.sendMessage("§7Validate with /ce arena validate <arena>.");
+                }
+                case "kit manager" -> {
+                    player.sendMessage("§eLoaded kits: §f" + String.join(", ", kits.keySet()));
+                    player.sendMessage("§7Preview with /ce kit preview <kit> <player>.");
+                }
+                case "player manager" -> player.sendMessage("§eRegistered: " + participants.size() + " §7| §aAlive: " + alive.size() + " §7| §eLate join: /latejoin <player>");
+                case "event status" -> player.sendMessage("§eMode: " + eventMode + " §7| Phase: " + phase + " §7| Alive: " + alive.size() + " §7| Registered: " + participants.size());
+                case "diagnostics" -> runDiagnostics(player);
+                case "settings & setup" -> {
+                    player.sendMessage("§eSetup shortcuts: §f/ce setlobby, /ce setspectator, /ce setwinner");
+                    player.sendMessage("§7Arena spawns: /ce setspawn <arena> <wave1|wave2|final|audience>");
+                }
+                case "pause event" -> { paused = true; player.sendMessage("§eEvent countdown paused."); }
+                case "resume event" -> { paused = false; player.sendMessage("§aEvent countdown resumed."); }
+                case "stop event" -> stopEvent("Event stopped by admin");
+                default -> { }
+            }
         } else if (EVENT_GUI_TITLE.equals(title)) {
             event.setCancelled(true);
             if (event.getClickedInventory() != event.getView().getTopInventory()) return;
@@ -341,7 +400,7 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
 
     @EventHandler public void onEventGuiDrag(org.bukkit.event.inventory.InventoryDragEvent event) {
         String title = event.getView().getTitle();
-        if (EVENT_GUI_TITLE.equals(title) || COUNTDOWN_GUI_TITLE.equals(title) || title.equals("§8Spectate Fighter") || title.startsWith(KIT_GUI_PREFIX) || VOTE_GUI_TITLE.equals(title))
+        if (ADMIN_GUI_TITLE.equals(title) || EVENT_GUI_TITLE.equals(title) || COUNTDOWN_GUI_TITLE.equals(title) || title.equals("§8Spectate Fighter") || title.startsWith(KIT_GUI_PREFIX) || VOTE_GUI_TITLE.equals(title))
             event.setCancelled(true);
     }
 
@@ -1687,7 +1746,7 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
             case "stop" -> stopEvent("Event stopped by admin");
             case "pause" -> { if (!eventOpen && !eventRunning) sender.sendMessage("§cNo active event."); else { paused = true; sender.sendMessage("§aRegistration countdown paused. (Live combat is not frozen.)"); } }
             case "resume" -> { if (!paused) sender.sendMessage("§cEvent is not paused."); else { paused = false; sender.sendMessage("§aEvent countdown resumed."); } }
-            case "gui" -> { if (sender instanceof Player admin) openEventGui(admin); else sender.sendMessage("§cPlayers only."); }
+            case "gui" -> { if (sender instanceof Player admin) openAdminDashboard(admin); else sender.sendMessage("§cPlayers only."); }
             case "countdown" -> { if (sender instanceof Player admin) openCountdownGui(admin); else sender.sendMessage("§cPlayers only."); }
             case "setlobby" -> { if (sender instanceof Player admin) setNamedLocation(admin, "lobby"); else sender.sendMessage("§cPlayers only."); }
             case "setspectator" -> { if (sender instanceof Player admin) setNamedLocation(admin, "spectator"); else sender.sendMessage("§cPlayers only."); }
