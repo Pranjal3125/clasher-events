@@ -1382,8 +1382,26 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
     }
 
     private void saveRecoveryData() {
-        try { recoveryData.save(recoveryFile); }
-        catch (java.io.IOException ex) { getLogger().severe("Could not save player recovery data: " + ex.getMessage()); }
+        if (recoveryData == null || recoveryFile == null) return;
+        File temporary = new File(recoveryFile.getParentFile(), recoveryFile.getName() + ".tmp");
+        try {
+            File parent = recoveryFile.getParentFile();
+            if (parent != null && !parent.exists() && !parent.mkdirs()) {
+                throw new IOException("Could not create recovery data directory");
+            }
+            recoveryData.save(temporary);
+            try {
+                Files.move(temporary.toPath(), recoveryFile.toPath(),
+                        StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            } catch (AtomicMoveNotSupportedException ignored) {
+                Files.move(temporary.toPath(), recoveryFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+            }
+        } catch (IOException ex) {
+            getLogger().severe("Could not safely save player recovery data: " + ex.getMessage());
+            if (temporary.exists() && !temporary.delete()) {
+                getLogger().warning("Could not remove temporary recovery file: " + temporary.getName());
+            }
+        }
     }
 
     private void removePersistedSnapshot(UUID id) {
