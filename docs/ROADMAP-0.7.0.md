@@ -37,7 +37,7 @@ This is a feature-version upgrade focused on making event setup and administrati
 - [x] Add guided lobby, spectator, and winner location setup directly in the Settings GUI.
 - [x] Basic arena validation for schematic, required spawns, WorldEdit, and shared-world availability.
 - [x] Expand diagnostics to validate registration duration, kit lead time, audience points, and all configured preset modes/durations.
-- [ ] Expand mode-aware arena validation and schematic/world metadata checks.
+- [x] Expand arena validation with schematic readability/format/dimension checks, path safety, bounds ordering, spawn-coordinate checks, and optional integration warnings.
 - [x] Require explicit confirmation before replacing existing spawn points; confirmation shows the current point count, while "Add Wave 1 Spawn" preserves existing points.
 
 ### 0.7.0-D — Presets and configuration
@@ -54,7 +54,7 @@ This is a feature-version upgrade focused on making event setup and administrati
 - [ ] Verify arena backup/reset workflow under live server testing before calling it release-ready.
 - [ ] Recovery and reconnect tests before release.
 - [x] CI verifies Maven build, plugin descriptor presence/main class, and packaged JAR contents.
-- [ ] Add YAML syntax validation and automated behavior tests.
+- [x] Add CI YAML syntax validation plus cross-checks for all eight arena/kit/schematic/preset definitions and required spawn bounds.\n- [ ] Add automated behavior tests.
 
 ## Non-goals for the first 0.7.0 milestone
 - No web panel or external database requirement.
