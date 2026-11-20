@@ -1,7 +1,7 @@
 name: Build Clasher Events
 on:
   push:
-    branches: [main, development]
+    branches: [main, development, 'feature/**']
   pull_request:
     branches: [main]
 jobs:
