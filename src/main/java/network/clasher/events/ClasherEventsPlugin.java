@@ -139,6 +139,8 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
 
     @Override public void onEnable() {
         saveDefaultConfig();
+        getConfig().options().copyDefaults(true);
+        saveConfigAtomically();
         saveResource("schematics/nethpot.schem", false);
         saveResource("schematics/axe-shield.schem", false);
         saveResource("schematics/build-uhc.schem", false);
