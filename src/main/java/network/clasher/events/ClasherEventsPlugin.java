@@ -1958,15 +1958,30 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
     private void validateArena(CommandSender sender, String id) {
         Arena arena = arenas.get(id.toLowerCase(Locale.ROOT));
         if (arena == null) { sender.sendMessage("§cUnknown arena: " + id); return; }
+
+        List<String> errors = new ArrayList<>();
+        List<String> warnings = new ArrayList<>();
         File schematic = new File(new File(getDataFolder(), "schematics"), arena.schematic);
-        List<String> missing = new ArrayList<>();
-        if (!schematic.isFile()) missing.add("schematic file");
-        for (String phaseName : List.of("wave1", "wave2", "final", "audience")) {
-            if (spawns(arena, phaseName).isEmpty()) missing.add(phaseName + " spawn");
-        }
-        if (Bukkit.getPluginManager().getPlugin("WorldEdit") == null) missing.add("WorldEdit");
-        if (missing.isEmpty()) sender.sendMessage("§a" + arena.displayName + " validation passed.");
-        else sender.sendMessage("§c" + arena.displayName + " missing: " + String.join(", ", missing));
+        if (!schematic.isFile()) errors.add("schematic file (" + arena.schematic + ")");
+
+        // Every current event format needs an opening and a final spawn pair.
+        if (spawns(arena, "wave1").size() < 2) errors.add("at least 2 Wave 1 spawn points");
+        if (spawns(arena, "final").size() < 2) errors.add("at least 2 Final spawn points");
+
+        // Wave 2 is conditional in Battle Royale progression; audience seating is optional.
+        if (spawns(arena, "wave2").size() < 2) warnings.add("fewer than 2 Wave 2 spawn points (Wave 2 may be skipped)");
+        if (spawns(arena, "audience").isEmpty()) warnings.add("no Audience spawn (spectators use the configured spectator location)");
+
+        String worldName = getConfig().getString("shared-world", "clasher_events");
+        if (Bukkit.getWorld(worldName) == null) warnings.add("shared world is not loaded: " + worldName);
+        org.bukkit.plugin.Plugin worldEdit = Bukkit.getPluginManager().getPlugin("WorldEdit");
+        if (worldEdit == null || !worldEdit.isEnabled()) warnings.add("WorldEdit unavailable (paste/reset disabled)");
+
+        sender.sendMessage("§6Arena validation: §e" + arena.displayName);
+        if (errors.isEmpty()) sender.sendMessage("§a[OK] Required arena setup is present.");
+        else sender.sendMessage("§c[ERROR] " + String.join("; ", errors));
+        for (String warning : warnings) sender.sendMessage("§e[WARN] " + warning);
+        if (errors.isEmpty() && warnings.isEmpty()) sender.sendMessage("§aAll checks passed.");
     }
 
 
