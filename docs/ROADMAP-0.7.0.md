@@ -29,7 +29,7 @@ This is a feature-version upgrade focused on making event setup and administrati
 - [x] Reward command administration through `/ce reward list|add|remove|clear` for winner and team-winner reward groups.
 - [x] Admin GUI click actions check admin permission server-side; settings edits are blocked while an event is active. Continue auditing every menu path.
 - [x] Back navigation and status lore for current menus.
-- [ ] Add pagination for large participant/statistics lists and complete click-through player actions.
+- [x] Add pagination for participant and statistics lists.\n- [ ] Complete click-through player actions beyond inspecting registration/alive/online status.
 
 ### 0.7.0-C — Arena Setup Wizard
 - [x] Arena phase spawn setup shortcuts for Wave 1, Wave 2, Final, and Audience.
