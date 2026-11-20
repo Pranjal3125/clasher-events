@@ -1162,11 +1162,29 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
         ForwardExtentCopy copy = new ForwardExtentCopy(BukkitAdapter.adapt(world), region, clipboard, min);
         Operations.complete(copy);
         File parent = destination.getParentFile();
-        if (!parent.exists()) parent.mkdirs();
+        if (parent == null || (!parent.exists() && !parent.mkdirs())) {
+            throw new IOException("Could not create arena backup directory");
+        }
         File formatHint = new File(getDataFolder(), "schematics/nethpot.schem");
         ClipboardFormat format = ClipboardFormats.findByFile(formatHint);
         if (format == null) throw new IllegalStateException("Could not resolve Sponge schematic writer");
-        try (ClipboardWriter writer = format.getWriter(new FileOutputStream(destination))) { writer.write(clipboard); }
+        File temporary = new File(parent, destination.getName() + ".tmp");
+        try {
+            try (ClipboardWriter writer = format.getWriter(new FileOutputStream(temporary))) {
+                writer.write(clipboard);
+            }
+            try {
+                Files.move(temporary.toPath(), destination.toPath(),
+                        StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            } catch (AtomicMoveNotSupportedException ignored) {
+                Files.move(temporary.toPath(), destination.toPath(), StandardCopyOption.REPLACE_EXISTING);
+            }
+        } catch (Exception ex) {
+            if (temporary.exists() && !temporary.delete()) {
+                getLogger().warning("Could not remove incomplete arena backup temporary file: " + temporary.getName());
+            }
+            throw ex;
+        }
     }
 
     private void clearArenaEntities(World world, Arena arena) {
