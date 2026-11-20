@@ -19,6 +19,46 @@ jobs:
       - name: Validate YAML resources
         run: |
           ruby -e 'require "yaml"; Dir.glob("src/main/resources/**/*.yml").sort.each { |file| YAML.load_file(file); puts "Valid YAML: #{file}" }'
+      - name: Validate arena, kit, and preset consistency
+        run: |
+          ruby <<'RUBY'
+          require "yaml"
+          root = "src/main/resources"
+          arenas = YAML.load_file(File.join(root, "arenas.yml")).fetch("arenas")
+          config = YAML.load_file(File.join(root, "config.yml"))
+          expected_modes = %w[nethpot axe-shield build-uhc sword uhc crystal smp diamond-pot]
+          abort "Expected all 8 arena definitions" unless arenas.keys.sort == expected_modes.sort
+          abort "Expected all 8 event presets" unless config.fetch("presets").keys.sort == expected_modes.sort
+          expected_modes.each do |mode|
+            arena = arenas.fetch(mode)
+            kit = File.join(root, "kits", "#{mode}.yml")
+            schematic = File.join(root, "schematics", arena.fetch("schematic"))
+            abort "Missing kit: #{kit}" unless File.file?(kit)
+            abort "Missing schematic: #{schematic}" unless File.file?(schematic)
+            bounds = arena.fetch("bounds")
+            %w[x y z].each do |axis|
+              abort "Invalid bounds for #{mode}: #{axis}" unless bounds.key?("min-#{axis}") && bounds.key?("max-#{axis}") && bounds["min-#{axis}"] <= bounds["max-#{axis}"]
+            end
+            %w[wave1 final].each do |phase|
+              points = arena.fetch("spawns", {}).fetch(phase, [])
+              abort "#{mode} needs at least two #{phase} spawns" unless points.length >= 2
+              points.each_with_index do |point, index|
+                %w[x y z].each do |axis|
+                  value = point[axis]
+                  abort "#{mode} #{phase} spawn #{index + 1} missing #{axis}" unless value.is_a?(Numeric)
+                  min = bounds["min-#{axis}"]
+                  max = bounds["max-#{axis}"] + 1
+                  abort "#{mode} #{phase} spawn #{index + 1} outside bounds" unless value >= min && value <= max
+                end
+              end
+            end
+            preset = config.fetch("presets").fetch(mode)
+            abort "Preset #{mode} points to the wrong mode" unless preset.fetch("mode") == mode
+            duration = preset.fetch("registration-seconds")
+            abort "Preset #{mode} has invalid registration duration" unless duration.is_a?(Integer) && duration.between?(30, 1800)
+          end
+          puts "Validated 8 arenas, kits, schematics, presets, and required spawn bounds."
+          RUBY
       - name: Verify packaged plugin
         shell: bash
         run: |
