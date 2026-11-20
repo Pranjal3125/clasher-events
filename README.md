@@ -12,7 +12,7 @@ A standalone Paper plugin project for managing PvP modes, arenas, kits, tourname
 
 </div>
 
-> **Development status:** The documented 0.5.0 candidate passed YAML parsing and Java syntax screening only. It has not passed a dependency-backed Maven build or live multiplayer staging test. Do not treat it as production-certified.
+> **Development status:** The latest GitHub Actions build completed successfully with Java 25 and produced a plugin JAR artifact. This confirms the configured CI build passes; it does not certify live multiplayer behavior or production readiness. Test on a disposable Paper server before deployment.
 
 ## Overview
 
@@ -63,7 +63,7 @@ Check the POM and plugin configuration before choosing a server version.
 mvn clean package
 ```
 
-The plugin JAR should appear under `target/` after a successful build.
+The plugin JAR should appear under `target/` after a successful build. GitHub Actions is configured to run the project build; check the [Actions page](https://github.com/Pranjal3125/clasher-events/actions) for the latest result.
 
 ## Before staging or production use
 
