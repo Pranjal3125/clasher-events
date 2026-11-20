@@ -16,6 +16,14 @@ jobs:
           cache: maven
       - name: Build and verify plugin
         run: mvn --batch-mode --no-transfer-progress clean verify
+      - name: Verify automated unit tests ran
+        shell: bash
+        run: |
+          set -euo pipefail
+          REPORT="target/surefire-reports/TEST-network.clasher.events.EventSettingsRulesTest.xml"
+          test -f "$REPORT"
+          grep -Eq 'tests="[1-9][0-9]*"' "$REPORT"
+          echo "Verified EventSettingsRulesTest report."
       - name: Validate YAML resources
         run: |
           ruby -e 'require "yaml"; Dir.glob("src/main/resources/**/*.yml").sort.each { |file| YAML.load_file(file); puts "Valid YAML: #{file}" }'
