@@ -1090,7 +1090,7 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
         selectedArena = switch (eventMode) {
             case "axe", "axe-shield" -> "axe-shield"; case "build-uhc" -> "build-uhc"; case "sword", "duel" -> "sword";
             case "uhc" -> "uhc"; case "team-wars", "teams" -> "smp"; case "crystal" -> "crystal"; case "smp" -> "smp"; case "diamond-pot" -> "diamond-pot";
-            case "random-kit" -> new ArrayList<>(arenas.keySet()).get(new Random().nextInt(arenas.size()));
+            case "random-kit" -> arenas.isEmpty() ? null : new ArrayList<>(arenas.keySet()).get(new Random().nextInt(arenas.size()));
             case "nethpot" -> "nethpot";
             case "tournament" -> "sword";
             default -> null;
