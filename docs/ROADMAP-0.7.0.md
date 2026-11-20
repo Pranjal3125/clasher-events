@@ -44,7 +44,7 @@ This is a feature-version upgrade focused on making event setup and administrati
 - [x] In-game cycling controls for registration duration, kit-delivery lead time, and audience prediction points.
 - [ ] Add broader supported settings and safe value validation.
 - [x] Current settings are range-cycled and persisted through the plugin YAML config.
-- [ ] Add atomic config writes and GUI editing for additional settings.
+- [x] Save plugin config changes through a temporary file and atomic replacement (with a safe non-atomic fallback).\n- [ ] Add GUI editing for additional settings.
 
 ### 0.7.0-E — Reliability
 - [ ] Verify arena backup/reset workflow under live server testing before calling it release-ready.
