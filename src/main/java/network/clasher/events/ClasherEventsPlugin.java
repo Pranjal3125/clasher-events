@@ -323,6 +323,41 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
         player.openInventory(gui);
     }
 
+    private void manageRewards(CommandSender sender, String[] args) {
+        if (args.length < 2) { sender.sendMessage("§e/ce reward list|add|remove|clear <winner|team-winner> [index] [command...]"); return; }
+        String action = args[1].toLowerCase(Locale.ROOT);
+        if (action.equals("list")) {
+            for (String type : List.of("winner", "team-winner")) {
+                List<String> commands = getConfig().getStringList("rewards." + type + ".commands");
+                sender.sendMessage("§6" + type + " rewards (" + commands.size() + "):");
+                for (int i = 0; i < commands.size(); i++) sender.sendMessage("§e" + (i + 1) + ". §f" + commands.get(i));
+            }
+            return;
+        }
+        if (args.length < 3 || !List.of("winner", "team-winner").contains(args[2].toLowerCase(Locale.ROOT))) {
+            sender.sendMessage("§cReward type must be winner or team-winner."); return;
+        }
+        String type = args[2].toLowerCase(Locale.ROOT);
+        String key = "rewards." + type + ".commands";
+        List<String> commands = new ArrayList<>(getConfig().getStringList(key));
+        if (action.equals("add")) {
+            if (args.length < 4) { sender.sendMessage("§cUsage: /ce reward add <winner|team-winner> <console command...>"); return; }
+            String raw = String.join(" ", Arrays.copyOfRange(args, 3, args.length)).trim();
+            if (raw.startsWith("/") || raw.isBlank() || raw.length() > 256 || raw.contains("\n") || raw.contains("\r")) { sender.sendMessage("§cCommand must be 1-256 characters without a leading slash or newline."); return; }
+            commands.add(raw);
+        } else if (action.equals("remove")) {
+            if (args.length < 4) { sender.sendMessage("§cUsage: /ce reward remove <winner|team-winner> <1-based index>"); return; }
+            int index;
+            try { index = Integer.parseInt(args[3]) - 1; } catch (NumberFormatException ex) { sender.sendMessage("§cIndex must be a number."); return; }
+            if (index < 0 || index >= commands.size()) { sender.sendMessage("§cReward index out of range."); return; }
+            commands.remove(index);
+        } else if (action.equals("clear")) commands.clear();
+        else { sender.sendMessage("§cUnknown reward action."); return; }
+        getConfig().set(key, commands);
+        saveConfig();
+        sender.sendMessage("§aSaved " + commands.size() + " command(s) for " + type + ".");
+    }
+
     private void openRewardsManager(Player player) {
         Inventory gui = Bukkit.createInventory(null, 27, REWARDS_GUI_TITLE);
         List<String> winner = getConfig().getStringList("rewards.winner.commands");
@@ -1925,6 +1960,7 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
                 sender.sendMessage("§7Random-kit uses any arena: configure each arena separately (nethpot, axe-shield, build-uhc, sword, uhc, crystal, smp, diamond-pot).");
                 sender.sendMessage("§e/ce kit list|give <kit> <player>|reload");
                 sender.sendMessage("§e/ce gui §7| /ce diagnose §7| /ce kit preview <kit> <player>");
+                sender.sendMessage("§e/ce reward list|add|remove|clear <winner|team-winner> [index] [command...]");
             }
             case "create" -> { if (args.length < 2) sender.sendMessage("§cUsage: /ce create <nethpot|axe-shield|build-uhc|sword|uhc|crystal|smp|diamond-pot|random-kit|duel|team-wars>"); else createEvent(args[1]); }
             case "start" -> startEvent();
@@ -1969,6 +2005,7 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
                 else if (action.equals("validate") && args.length >= 3) validateArena(sender, args[2]);
                 else sender.sendMessage("§cInvalid arena command.");
             }
+            case "reward" -> manageRewards(sender, args);
             case "kit" -> {
                 if (args.length < 2) { sender.sendMessage("§c/ce kit list|give <kit> <player>|reload"); break; }
                 if (args[1].equalsIgnoreCase("list")) sender.sendMessage("§eKits: §f" + String.join(", ", kits.keySet()));
@@ -1992,7 +2029,7 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
             else if (args.length == 2 && List.of("vote", "cheer").contains(args[0].toLowerCase(Locale.ROOT)))
                 for (Player p : Bukkit.getOnlinePlayers()) options.add(p.getName());
         } else if (command.getName().equalsIgnoreCase("ce") && sender.hasPermission("clasherevents.admin")) {
-            if (args.length == 1) options.addAll(List.of("help","create","start","stop","pause","resume","status","diagnose","reload","gui","countdown","setlobby","setspectator","setwinner","setspawn","addspawn","arena","kit"));
+            if (args.length == 1) options.addAll(List.of("help","create","start","stop","pause","resume","status","diagnose","reload","gui","countdown","setlobby","setspectator","setwinner","setspawn","addspawn","arena","kit","reward"));
             else if (args.length == 2 && args[0].equalsIgnoreCase("create"))
                 options.addAll(List.of("nethpot","axe-shield","build-uhc","sword","uhc","crystal","smp","diamond-pot","random-kit","duel","team-wars","tournament"));
             else if (args.length == 2 && args[0].equalsIgnoreCase("arena")) options.addAll(List.of("list","paste","reset","info","validate"));
@@ -2000,6 +2037,8 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
                 options.addAll(List.of("nethpot","axe-shield","build-uhc","sword","uhc","crystal","smp","diamond-pot","duel","team-wars","tournament","random-kit"));
             else if (args.length == 3 && List.of("setspawn", "addspawn").contains(args[0].toLowerCase(Locale.ROOT))) options.addAll(List.of("wave1","wave2","final","audience"));
             else if (args.length == 2 && args[0].equalsIgnoreCase("kit")) options.addAll(List.of("list","give","preview","reload"));
+            else if (args.length == 2 && args[0].equalsIgnoreCase("reward")) options.addAll(List.of("list","add","remove","clear"));
+            else if (args.length == 3 && args[0].equalsIgnoreCase("reward") && !args[1].equalsIgnoreCase("list")) options.addAll(List.of("winner","team-winner"));
             else if (args.length == 3 && args[0].equalsIgnoreCase("arena")) options.addAll(arenas.keySet());
             else if (args.length == 3 && args[0].equalsIgnoreCase("kit") && List.of("give","preview").contains(args[1].toLowerCase(Locale.ROOT))) options.addAll(kits.keySet());
             else if (args.length == 4 && args[0].equalsIgnoreCase("kit") && args[1].equalsIgnoreCase("give"))
