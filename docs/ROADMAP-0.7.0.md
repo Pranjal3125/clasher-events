@@ -56,7 +56,8 @@ This is a feature-version upgrade focused on making event setup and administrati
 - [ ] Run live reconnect, disconnect-grace, shutdown recovery, and inventory restoration scenarios on a disposable Paper server.
 - [x] CI verifies Maven build, plugin descriptor presence/main class, and packaged JAR contents.
 - [x] Add CI YAML syntax validation plus cross-checks for all eight arena/kit/schematic/preset definitions and required spawn bounds.
-- [x] Add JUnit 5 tests for setting cycles, configuration ranges, and wave progression thresholds; CI requires the test report.
+- [x] Add JUnit 5 tests for setting cycles, configuration ranges, and wave progression thresholds.
+- [x] Add atomic-file persistence tests for successful replacement, directory creation, failed-write preservation, and temporary-file cleanup; CI requires both test reports.
 
 ## Non-goals for the first 0.7.0 milestone
 - No web panel or external database requirement.
