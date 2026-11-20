@@ -72,9 +72,6 @@ import java.io.File;
 import java.io.IOException;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
-import java.nio.file.Files;
-import java.nio.file.StandardCopyOption;
-import java.nio.file.AtomicMoveNotSupportedException;
 import java.util.*;
 
 public final class ClasherEventsPlugin extends JavaPlugin implements Listener, TabCompleter {
@@ -414,17 +411,10 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
 
     private void saveConfigAtomically() {
         File target = new File(getDataFolder(), "config.yml");
-        File temporary = new File(getDataFolder(), "config.yml.tmp");
         try {
-            getConfig().save(temporary);
-            try {
-                Files.move(temporary.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-            } catch (AtomicMoveNotSupportedException ignored) {
-                Files.move(temporary.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING);
-            }
+            AtomicFileWriter.write(target, temporary -> getConfig().save(temporary));
         } catch (IOException ex) {
             getLogger().severe("Could not safely save config.yml: " + ex.getMessage());
-            if (temporary.exists() && !temporary.delete()) getLogger().warning("Could not remove temporary config file: " + temporary.getName());
         }
     }
 
@@ -1161,30 +1151,14 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
         clipboard.setOrigin(min);
         ForwardExtentCopy copy = new ForwardExtentCopy(BukkitAdapter.adapt(world), region, clipboard, min);
         Operations.complete(copy);
-        File parent = destination.getParentFile();
-        if (parent == null || (!parent.exists() && !parent.mkdirs())) {
-            throw new IOException("Could not create arena backup directory");
-        }
         File formatHint = new File(getDataFolder(), "schematics/nethpot.schem");
         ClipboardFormat format = ClipboardFormats.findByFile(formatHint);
         if (format == null) throw new IllegalStateException("Could not resolve Sponge schematic writer");
-        File temporary = new File(parent, destination.getName() + ".tmp");
-        try {
+        AtomicFileWriter.write(destination, temporary -> {
             try (ClipboardWriter writer = format.getWriter(new FileOutputStream(temporary))) {
                 writer.write(clipboard);
             }
-            try {
-                Files.move(temporary.toPath(), destination.toPath(),
-                        StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-            } catch (AtomicMoveNotSupportedException ignored) {
-                Files.move(temporary.toPath(), destination.toPath(), StandardCopyOption.REPLACE_EXISTING);
-            }
-        } catch (Exception ex) {
-            if (temporary.exists() && !temporary.delete()) {
-                getLogger().warning("Could not remove incomplete arena backup temporary file: " + temporary.getName());
-            }
-            throw ex;
-        }
+        });
     }
 
     private void clearArenaEntities(World world, Arena arena) {
@@ -1452,24 +1426,10 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
 
     private void saveRecoveryData() {
         if (recoveryData == null || recoveryFile == null) return;
-        File temporary = new File(recoveryFile.getParentFile(), recoveryFile.getName() + ".tmp");
         try {
-            File parent = recoveryFile.getParentFile();
-            if (parent != null && !parent.exists() && !parent.mkdirs()) {
-                throw new IOException("Could not create recovery data directory");
-            }
-            recoveryData.save(temporary);
-            try {
-                Files.move(temporary.toPath(), recoveryFile.toPath(),
-                        StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-            } catch (AtomicMoveNotSupportedException ignored) {
-                Files.move(temporary.toPath(), recoveryFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
-            }
+            AtomicFileWriter.write(recoveryFile, temporary -> recoveryData.save(temporary));
         } catch (IOException ex) {
             getLogger().severe("Could not safely save player recovery data: " + ex.getMessage());
-            if (temporary.exists() && !temporary.delete()) {
-                getLogger().warning("Could not remove temporary recovery file: " + temporary.getName());
-            }
         }
     }
 
@@ -2128,24 +2088,10 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
 
     private void saveYamlAtomically(YamlConfiguration yaml, File target, String label) {
         if (yaml == null || target == null) return;
-        File parent = target.getParentFile();
-        File temporary = new File(parent == null ? getDataFolder() : parent, target.getName() + ".tmp");
         try {
-            if (parent != null && !parent.exists() && !parent.mkdirs()) {
-                throw new IOException("Could not create " + label + " directory");
-            }
-            yaml.save(temporary);
-            try {
-                Files.move(temporary.toPath(), target.toPath(),
-                        StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-            } catch (AtomicMoveNotSupportedException ignored) {
-                Files.move(temporary.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING);
-            }
+            AtomicFileWriter.write(target, temporary -> yaml.save(temporary));
         } catch (IOException ex) {
             getLogger().severe("Could not safely save " + label + ": " + ex.getMessage());
-            if (temporary.exists() && !temporary.delete()) {
-                getLogger().warning("Could not remove temporary " + label + " file: " + temporary.getName());
-            }
         }
     }
 
