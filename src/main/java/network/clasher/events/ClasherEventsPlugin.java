@@ -1149,16 +1149,24 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
             return;
         }
         Arena arena = arenas.get(selectedArena);
-        if (arena == null) { Bukkit.broadcastMessage("§cArena config missing: " + selectedArena); return; }
+        if (arena == null) { Bukkit.broadcastMessage("§c[Preflight] Arena config missing: " + selectedArena); return; }
+        if (!kits.containsKey(selectedKit)) { Bukkit.broadcastMessage("§c[Preflight] Kit config missing: " + selectedKit); return; }
+        List<UUID> onlineEntrants = new ArrayList<>();
+        for (UUID id : participants) if (Bukkit.getPlayer(id) != null) onlineEntrants.add(id);
+        int expectedFighters = onlineEntrants.size();
+        if (expectedFighters == 0) { Bukkit.broadcastMessage("§c[Preflight] No registered participants are online."); return; }
+        String startingPhase = expectedFighters == 2 ? "final" : "wave1";
+        List<Location> points = spawns(arena, startingPhase);
+        if (points.isEmpty()) {
+            Bukkit.broadcastMessage("§c[Preflight] Cannot start: no " + startingPhase + " spawn points configured for " + selectedArena + ".");
+            Bukkit.broadcastMessage("§7Set them with /ce addspawn " + selectedArena + " " + startingPhase + ".");
+            return;
+        }
+
         eventOpen = false; eventRunning = true; paused = false;
         alive.clear();
-        for (UUID id : participants) if (Bukkit.getPlayer(id) != null) alive.add(id);
+        alive.addAll(onlineEntrants);
         initialFighters = alive.size();
-        if (initialFighters == 0) { stopEvent("No online participants"); return; }
-
-        String startingPhase = initialFighters == 2 ? "final" : "wave1";
-        List<Location> points = spawns(arena, startingPhase);
-        if (points.isEmpty()) { stopEvent("No " + startingPhase + " spawn points configured for " + selectedArena); return; }
         phase = startingPhase;
         int index = 0;
         for (UUID id : new ArrayList<>(alive)) {
