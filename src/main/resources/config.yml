@@ -2,6 +2,10 @@
 shared-world: clasher_events
 # Enable extra lifecycle diagnostics in the server console.
 debug: false
+# AFK fighters are warned and eliminated after the configured idle duration.
+afk:
+  enabled: true
+  eliminate-after-seconds: 300
 lobby:
   world: clasher_events
   x: 0.5
