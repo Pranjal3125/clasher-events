@@ -36,7 +36,7 @@ This is a feature-version upgrade focused on making event setup and administrati
 - [x] Arena phase spawn setup shortcuts for Wave 1, Wave 2, Final, and Audience.
 - [x] Add guided lobby, spectator, and winner location setup directly in the Settings GUI.
 - [x] Basic arena validation for schematic, required spawns, WorldEdit, and shared-world availability.
-- [ ] Expand mode-aware validation and schematic/world metadata checks.
+- [x] Expand diagnostics to validate registration duration, kit lead time, audience points, and all configured preset modes/durations.\n- [ ] Expand mode-aware arena validation and schematic/world metadata checks.
 - [x] Require explicit confirmation before replacing existing spawn points; confirmation shows the current point count, while "Add Wave 1 Spawn" preserves existing points.
 
 ### 0.7.0-D — Presets and configuration
