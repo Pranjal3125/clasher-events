@@ -42,7 +42,7 @@ The documented arena/kit set includes NethPot, Axe & Shield, Build UHC, Sword, U
 | `/ce reward list` | List configured winner reward commands |
 | `/ce reward add <winner\|team-winner> <command...>` | Add a console reward command |
 | `/ce reward remove <winner\|team-winner> <index>` | Remove a reward command by 1-based index |
-| `/ce reward clear <winner\|team-winner>` | Clear reward commands for a reward type |
+| `/ce reward clear <winner\|team-winner>` | Clear reward commands for a reward type |\n| `/ce preset list` | List reusable event presets |\n| `/ce preset apply <name>` | Open registration using a configured preset |
 | `/ce setlobby` | Save waiting lobby |
 | `/ce setspectator` | Save spectator destination |
 | `/ce setwinner` | Save winner destination |
