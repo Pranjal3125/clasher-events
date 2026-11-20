@@ -19,29 +19,37 @@ This is a feature-version upgrade focused on making event setup and administrati
 
 ### 0.7.0-A — Safety and diagnostics
 - [x] `/ce diagnose` reports loaded/missing arenas, spawn points, kits, and optional integrations.
-- [x] Event start preflight blocks starts with missing arena/kit/required starting-phase spawns or no online entrants.\n- [x] Duel, Team Wars, and Tournament start checks validate online entrant counts and tournament Final spawns before transitioning event state.
+- [x] Event start preflight blocks starts with missing arena/kit/required starting-phase spawns or no online entrants.
+- [x] Duel, Team Wars, and Tournament start checks validate online entrant counts and tournament Final spawns before transitioning event state.
 - [ ] Add configurable debug logging without flooding normal server logs.
 
 ### 0.7.0-B — Admin Control Center
 - [x] `/ce gui` opens a permission-checked dashboard.
-- [x] Dashboard sections: Create Event, Arena Manager, Kit Manager, Rewards viewer, Player Manager, Statistics, Diagnostics, Settings, status and stop controls.\n- [x] Reward command administration through `/ce reward list|add|remove|clear` for winner and team-winner reward groups.
+- [x] Dashboard sections: Create Event, Arena Manager, Kit Manager, Rewards viewer, Player Manager, Statistics, Diagnostics, Settings, status and stop controls.
+- [x] Reward command administration through `/ce reward list|add|remove|clear` for winner and team-winner reward groups.
 - [x] Admin GUI click actions check admin permission server-side; settings edits are blocked while an event is active. Continue auditing every menu path.
-- [x] Back navigation and status lore for current menus.\n- [ ] Add pagination for large participant/statistics lists and complete click-through player actions.
+- [x] Back navigation and status lore for current menus.
+- [ ] Add pagination for large participant/statistics lists and complete click-through player actions.
 
 ### 0.7.0-C — Arena Setup Wizard
-- [x] Arena phase spawn setup shortcuts for Wave 1, Wave 2, Final, and Audience.\n- [ ] Add guided lobby, spectator, and winner location setup directly in the GUI.
-- [x] Basic arena validation for schematic, required spawns, WorldEdit, and shared-world availability.\n- [ ] Expand mode-aware validation and schematic/world metadata checks.
+- [x] Arena phase spawn setup shortcuts for Wave 1, Wave 2, Final, and Audience.
+- [x] Add guided lobby, spectator, and winner location setup directly in the Settings GUI.
+- [x] Basic arena validation for schematic, required spawns, WorldEdit, and shared-world availability.
+- [ ] Expand mode-aware validation and schematic/world metadata checks.
 - [ ] Provide a confirmation summary before replacing existing spawn points; current "Set" actions intentionally replace a phase list, while "Add" preserves it.
 
 ### 0.7.0-D — Presets and configuration
 - [ ] Reusable presets for the existing eight modes.
-- [x] In-game cycling controls for registration duration, kit-delivery lead time, and audience prediction points.\n- [ ] Add broader supported settings and safe value validation.
-- [x] Current settings are range-cycled and persisted through the plugin YAML config.\n- [ ] Add atomic config writes and GUI editing for additional settings.
+- [x] In-game cycling controls for registration duration, kit-delivery lead time, and audience prediction points.
+- [ ] Add broader supported settings and safe value validation.
+- [x] Current settings are range-cycled and persisted through the plugin YAML config.
+- [ ] Add atomic config writes and GUI editing for additional settings.
 
 ### 0.7.0-E — Reliability
 - [ ] Verify arena backup/reset workflow under live server testing before calling it release-ready.
 - [ ] Recovery and reconnect tests before release.
-- [x] CI verifies Maven build, plugin descriptor presence/main class, and packaged JAR contents.\n- [ ] Add YAML syntax validation and automated behavior tests.
+- [x] CI verifies Maven build, plugin descriptor presence/main class, and packaged JAR contents.
+- [ ] Add YAML syntax validation and automated behavior tests.
 
 ## Non-goals for the first 0.7.0 milestone
 - No web panel or external database requirement.
@@ -54,7 +62,8 @@ This is a feature-version upgrade focused on making event setup and administrati
 - Packaged JAR contains `plugin.yml` and the configured main class.
 - [ ] All eight modes remain selectable and retain their approved behavior (live regression testing required).
 - [ ] GUI permissions and click handling are tested in a live Paper server.
-- [x] Basic arena preflight catches missing selected arena/kit/starting-phase spawns.\n- [ ] Test negative and edge cases on a live server.
+- [x] Basic arena preflight catches missing selected arena/kit/starting-phase spawns.
+- [ ] Test negative and edge cases on a live server.
 - Multiplayer tests cover start, elimination, winner, disconnect/rejoin, stop, and shutdown restoration.
 - No stable release tag until live server testing passes.
 
