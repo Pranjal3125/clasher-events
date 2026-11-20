@@ -385,11 +385,11 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
                 "§7Click to toggle AFK elimination."));
         gui.setItem(15, menuItem(Material.REPEATER, "§dAFK Timeout: " + getConfig().getInt("afk.eliminate-after-seconds", 300) + "s",
                 "§7Cycle 180 / 300 / 600 / 900 seconds."));
-        gui.setItem(16, menuItem(Material.BORDER, "§bWave 1 Border: " + getConfig().getInt("world-border.wave1.size", 140),
+        gui.setItem(16, menuItem(Material.GLASS, "§bWave 1 Border: " + getConfig().getInt("world-border.wave1.size", 140),
                 "§7Cycle 160 / 140 / 120 / 100 / 80 blocks."));
-        gui.setItem(17, menuItem(Material.BORDER, "§bWave 2 Border: " + getConfig().getInt("world-border.wave2.size", 80),
+        gui.setItem(17, menuItem(Material.GLASS, "§bWave 2 Border: " + getConfig().getInt("world-border.wave2.size", 80),
                 "§7Cycle 120 / 100 / 80 / 60 / 40 blocks."));
-        gui.setItem(18, menuItem(Material.BORDER, "§bFinal Border: " + getConfig().getInt("world-border.final.size", 35),
+        gui.setItem(18, menuItem(Material.GLASS, "§bFinal Border: " + getConfig().getInt("world-border.final.size", 35),
                 "§7Cycle 80 / 60 / 40 / 35 / 25 blocks."));
         gui.setItem(19, menuItem(Material.LIME_BED, "§aSet Lobby Location", "§7Save your current position as event lobby."));
         gui.setItem(20, menuItem(Material.ENDER_PEARL, "§bSet Spectator Location", "§7Save your current position as spectator destination."));
@@ -2264,6 +2264,27 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
         if (!(getConfig().get("afk.enabled") instanceof Boolean)) {
             errors++;
             sender.sendMessage("§c[ERROR] afk.enabled must be true or false.");
+        }
+
+        for (String borderPhase : List.of("wave1", "wave2", "final")) {
+            double borderSize = getConfig().getDouble("world-border." + borderPhase + ".size", -1);
+            long shrink = getConfig().getLong("world-border." + borderPhase + ".shrink-seconds", -1);
+            if (!Double.isFinite(borderSize) || borderSize < 1 || borderSize > 59999968) {
+                errors++;
+                sender.sendMessage("§c[ERROR] world-border." + borderPhase + ".size must be between 1 and 59999968.");
+            } else if (shrink < 0 || shrink > 86400) {
+                errors++;
+                sender.sendMessage("§c[ERROR] world-border." + borderPhase + ".shrink-seconds must be between 0 and 86400.");
+            } else sender.sendMessage("§a[OK] " + borderPhase + " border: " + borderSize + " blocks, " + shrink + "s shrink.");
+        }
+        double lobbyRadius = getConfig().getDouble("lobby-protection.radius", -1);
+        if (!Double.isFinite(lobbyRadius) || lobbyRadius < 1 || lobbyRadius > 1000) {
+            errors++;
+            sender.sendMessage("§c[ERROR] lobby-protection.radius must be between 1 and 1000.");
+        } else sender.sendMessage("§a[OK] Lobby protection: " + (getConfig().getBoolean("lobby-protection.enabled", true) ? "enabled" : "disabled") + " (" + lobbyRadius + " blocks).");
+        if (!(getConfig().get("lobby-protection.enabled") instanceof Boolean)) {
+            errors++;
+            sender.sendMessage("§c[ERROR] lobby-protection.enabled must be true or false.");
         }
 
         ConfigurationSection presetSection = getConfig().getConfigurationSection("presets");
