@@ -376,7 +376,7 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
     }
 
     private void openSettingsManager(Player player) {
-        Inventory gui = Bukkit.createInventory(null, 27, SETTINGS_GUI_TITLE);
+        Inventory gui = Bukkit.createInventory(null, 36, SETTINGS_GUI_TITLE);
         gui.setItem(10, menuItem(Material.CLOCK, "§eRegistration: " + getConfig().getInt("default-registration-seconds", 120) + "s", "§7Click to cycle 120 / 300 / 600 seconds."));
         gui.setItem(11, menuItem(Material.CHEST, "§6Kit delivery: " + getConfig().getInt("kit-delivery-seconds-before-start", 60) + "s", "§7Click to cycle 30 / 60 / 90 seconds before start."));
         gui.setItem(12, menuItem(Material.GOLD_INGOT, "§6Prediction reward: " + getConfig().getInt("audience-correct-prediction-points", 10), "§7Click to cycle 5 / 10 / 20 points."));
@@ -385,11 +385,32 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
                 "§7Click to toggle AFK elimination."));
         gui.setItem(15, menuItem(Material.REPEATER, "§dAFK Timeout: " + getConfig().getInt("afk.eliminate-after-seconds", 300) + "s",
                 "§7Cycle 180 / 300 / 600 / 900 seconds."));
+        gui.setItem(16, menuItem(Material.BORDER, "§bWave 1 Border: " + getConfig().getInt("world-border.wave1.size", 140),
+                "§7Cycle 160 / 140 / 120 / 100 / 80 blocks."));
+        gui.setItem(17, menuItem(Material.BORDER, "§bWave 2 Border: " + getConfig().getInt("world-border.wave2.size", 80),
+                "§7Cycle 120 / 100 / 80 / 60 / 40 blocks."));
+        gui.setItem(18, menuItem(Material.BORDER, "§bFinal Border: " + getConfig().getInt("world-border.final.size", 35),
+                "§7Cycle 80 / 60 / 40 / 35 / 25 blocks."));
         gui.setItem(19, menuItem(Material.LIME_BED, "§aSet Lobby Location", "§7Save your current position as event lobby."));
         gui.setItem(20, menuItem(Material.ENDER_PEARL, "§bSet Spectator Location", "§7Save your current position as spectator destination."));
         gui.setItem(21, menuItem(Material.FIREWORK_ROCKET, "§6Set Winner Location", "§7Save your current position as winner destination."));
         gui.setItem(22, menuItem(Material.ARROW, "§7Back", "§7Return to Control Center"));
+        gui.setItem(24, menuItem(Material.CLOCK, "§bWave 1 Shrink: " + getConfig().getInt("world-border.wave1.shrink-seconds", 60) + "s", "§7Cycle 0 / 30 / 60 / 90 / 120 seconds."));
+        gui.setItem(25, menuItem(Material.CLOCK, "§bWave 2 Shrink: " + getConfig().getInt("world-border.wave2.shrink-seconds", 60) + "s", "§7Cycle 0 / 30 / 60 / 90 / 120 seconds."));
+        gui.setItem(26, menuItem(Material.CLOCK, "§bFinal Shrink: " + getConfig().getInt("world-border.final.shrink-seconds", 30) + "s", "§7Cycle 0 / 30 / 60 / 90 / 120 seconds."));
+        gui.setItem(28, menuItem(getConfig().getBoolean("lobby-protection.enabled", true) ? Material.SHIELD : Material.GRAY_DYE,
+                "§dLobby Protection: " + (getConfig().getBoolean("lobby-protection.enabled", true) ? "§aEnabled" : "§cDisabled"),
+                "§7Toggle lobby block, damage, item and inventory protection."));
+        gui.setItem(29, menuItem(Material.COMPASS, "§dLobby Radius: " + getConfig().getInt("lobby-protection.radius", 35),
+                "§7Cycle 15 / 25 / 35 / 50 / 75 blocks."));
         player.openInventory(gui);
+    }
+
+    private void cycleSetting(String path, int fallback, int... values) {
+        int current = getConfig().getInt(path, fallback);
+        int index = java.util.Arrays.binarySearch(values, current);
+        getConfig().set(path, values[(index + 1 + values.length) % values.length]);
+        saveConfigAtomically();
     }
 
     private void saveConfigAtomically() {
@@ -743,6 +764,23 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
                 int index = java.util.Arrays.binarySearch(values, current);
                 getConfig().set("audience-correct-prediction-points", values[(index + 1 + values.length) % values.length]);
                 saveConfigAtomically();
+            } else if (display.startsWith("Wave 1 Border:")) {
+                cycleSetting("world-border.wave1.size", 140, 160, 140, 120, 100, 80);
+            } else if (display.startsWith("Wave 2 Border:")) {
+                cycleSetting("world-border.wave2.size", 80, 120, 100, 80, 60, 40);
+            } else if (display.startsWith("Final Border:")) {
+                cycleSetting("world-border.final.size", 35, 80, 60, 40, 35, 25);
+            } else if (display.startsWith("Wave 1 Shrink:")) {
+                cycleSetting("world-border.wave1.shrink-seconds", 60, 0, 30, 60, 90, 120);
+            } else if (display.startsWith("Wave 2 Shrink:")) {
+                cycleSetting("world-border.wave2.shrink-seconds", 60, 0, 30, 60, 90, 120);
+            } else if (display.startsWith("Final Shrink:")) {
+                cycleSetting("world-border.final.shrink-seconds", 30, 0, 30, 60, 90, 120);
+            } else if (display.startsWith("Lobby Protection:")) {
+                getConfig().set("lobby-protection.enabled", !getConfig().getBoolean("lobby-protection.enabled", true));
+                saveConfigAtomically();
+            } else if (display.startsWith("Lobby Radius:")) {
+                cycleSetting("lobby-protection.radius", 35, 15, 25, 35, 50, 75);
             }
             openSettingsManager(player);
         } else if (REWARDS_GUI_TITLE.equals(title)) {
@@ -998,6 +1036,7 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
 
     private boolean inWaitingLobby(Player p) {
         if (eventOpen && participants.contains(p.getUniqueId()) && !alive.contains(p.getUniqueId())) return true;
+        if (!getConfig().getBoolean("lobby-protection.enabled", true)) return false;
         String worldName = getConfig().getString("locations.lobby.world", getConfig().getString("shared-world", "clasher_events"));
         World lobbyWorld = Bukkit.getWorld(worldName);
         if (lobbyWorld == null || !p.getWorld().equals(lobbyWorld)) return false;
