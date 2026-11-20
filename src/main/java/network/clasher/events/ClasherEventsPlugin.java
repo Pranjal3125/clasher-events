@@ -293,11 +293,16 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
         player.openInventory(gui);
     }
 
-    private void openPlayerManager(Player player) {
+    private void openPlayerManager(Player player) { openPlayerManager(player, 0); }
+
+    private void openPlayerManager(Player player, int requestedPage) {
         Inventory gui = Bukkit.createInventory(null, 54, PLAYER_MANAGER_TITLE);
-        int slot = 0;
-        for (UUID id : participants) {
-            if (slot >= 45) break;
+        List<UUID> ids = new ArrayList<>(participants);
+        int pages = Math.max(1, (ids.size() + 44) / 45);
+        int page = Math.max(0, Math.min(requestedPage, pages - 1));
+        int from = page * 45;
+        for (int i = from; i < Math.min(ids.size(), from + 45); i++) {
+            UUID id = ids.get(i);
             Player target = Bukkit.getPlayer(id);
             ItemStack head = new ItemStack(Material.PLAYER_HEAD);
             SkullMeta meta = (SkullMeta) head.getItemMeta();
@@ -308,9 +313,12 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
                 meta.setLore(List.of("§7Status: " + (alive.contains(id) ? "§aAlive" : "§eRegistered / Spectating"), "§7Online: " + (target != null ? "§aYes" : "§cNo"), "§7UUID: " + id, "§eClick for player details"));
                 head.setItemMeta(meta);
             }
-            gui.setItem(slot++, head);
+            gui.setItem(i - from, head);
         }
+        if (page > 0) gui.setItem(45, menuItem(Material.ARROW, "§ePrevious Page", "§7Page " + page + " of " + pages));
         gui.setItem(49, menuItem(Material.ARROW, "§7Back", "§7Return to Control Center"));
+        gui.setItem(53, menuItem(Material.ARROW, "§eNext Page", "§7Page " + (page + 2) + " of " + pages));
+        gui.setItem(48, menuItem(Material.PAPER, "§bPage " + (page + 1) + "/" + pages, "§7Participants: " + ids.size()));
         player.openInventory(gui);
     }
 
@@ -403,19 +411,25 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
         player.openInventory(gui);
     }
 
-    private void openStatisticsManager(Player player) {
+    private void openStatisticsManager(Player player) { openStatisticsManager(player, 0); }
+
+    private void openStatisticsManager(Player player, int requestedPage) {
         Inventory gui = Bukkit.createInventory(null, 54, STATS_GUI_TITLE);
         ConfigurationSection root = playerStats.getConfigurationSection("players");
         List<String> ids = root == null ? new ArrayList<>() : new ArrayList<>(root.getKeys(false));
         ids.sort((a, b) -> Integer.compare(playerStats.getInt("players." + b + ".kills"), playerStats.getInt("players." + a + ".kills")));
-        int slot = 0;
-        for (String id : ids) {
-            if (slot >= 45) break;
+        int pages = Math.max(1, (ids.size() + 44) / 45);
+        int page = Math.max(0, Math.min(requestedPage, pages - 1));
+        int from = page * 45;
+        for (int i = from; i < Math.min(ids.size(), from + 45); i++) {
+            String id = ids.get(i);
             String path = "players." + id;
-            gui.setItem(slot, menuItem(Material.PAPER, "§e" + playerStats.getString(path + ".name", id), "§7Kills: §a" + playerStats.getInt(path + ".kills"), "§7Deaths: §c" + playerStats.getInt(path + ".deaths")));
-            slot++;
+            gui.setItem(i - from, menuItem(Material.PAPER, "§e" + playerStats.getString(path + ".name", id), "§7Rank: #" + (i + 1), "§7Kills: §a" + playerStats.getInt(path + ".kills"), "§7Deaths: §c" + playerStats.getInt(path + ".deaths")));
         }
+        if (page > 0) gui.setItem(45, menuItem(Material.ARROW, "§ePrevious Page", "§7Page " + page + " of " + pages));
         gui.setItem(49, menuItem(Material.ARROW, "§7Back", "§7Return to Control Center"));
+        gui.setItem(53, menuItem(Material.ARROW, "§eNext Page", "§7Page " + (page + 2) + " of " + pages));
+        gui.setItem(48, menuItem(Material.PAPER, "§bPage " + (page + 1) + "/" + pages, "§7Players: " + ids.size()));
         player.openInventory(gui);
     }
 
@@ -550,6 +564,13 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
             ItemStack clicked = event.getCurrentItem();
             if (clicked == null || !clicked.hasItemMeta()) return;
             String display = org.bukkit.ChatColor.stripColor(clicked.getItemMeta().getDisplayName());
+            if (display.equalsIgnoreCase("Next Page") || display.equalsIgnoreCase("Previous Page")) {
+                int page = 0;
+                ItemStack pageItem = event.getView().getTopInventory().getItem(48);
+                if (pageItem != null && pageItem.hasItemMeta()) { String text = org.bukkit.ChatColor.stripColor(pageItem.getItemMeta().getDisplayName()).replace("Page ", ""); try { page = Integer.parseInt(text.split("/")[0]) - 1; } catch (NumberFormatException ignored) { } }
+                openPlayerManager(player, Math.max(0, page + (display.equalsIgnoreCase("Next Page") ? 1 : -1)));
+                return;
+            }
             player.closeInventory();
             if (display.equalsIgnoreCase("Back")) openAdminDashboard(player);
             else {
@@ -599,7 +620,15 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
         } else if (STATS_GUI_TITLE.equals(title)) {
             event.setCancelled(true);
             if (event.getClickedInventory() != event.getView().getTopInventory() || !player.hasPermission("clasherevents.admin")) return;
-            if (event.getCurrentItem() != null && event.getCurrentItem().hasItemMeta() && org.bukkit.ChatColor.stripColor(event.getCurrentItem().getItemMeta().getDisplayName()).equalsIgnoreCase("Back")) { player.closeInventory(); openAdminDashboard(player); }
+            if (event.getCurrentItem() != null && event.getCurrentItem().hasItemMeta()) {
+                String display = org.bukkit.ChatColor.stripColor(event.getCurrentItem().getItemMeta().getDisplayName());
+                if (display.equalsIgnoreCase("Back")) { player.closeInventory(); openAdminDashboard(player); }
+                else if (display.equalsIgnoreCase("Next Page") || display.equalsIgnoreCase("Previous Page")) {
+                    int page = 0; ItemStack pageItem = event.getView().getTopInventory().getItem(48);
+                    if (pageItem != null && pageItem.hasItemMeta()) { String text = org.bukkit.ChatColor.stripColor(pageItem.getItemMeta().getDisplayName()).replace("Page ", ""); try { page = Integer.parseInt(text.split("/")[0]) - 1; } catch (NumberFormatException ignored) { } }
+                    openStatisticsManager(player, Math.max(0, page + (display.equalsIgnoreCase("Next Page") ? 1 : -1)));
+                }
+            }
         } else if (ARENA_GUI_TITLE.equals(title)) {
             event.setCancelled(true);
             if (event.getClickedInventory() != event.getView().getTopInventory() || !player.hasPermission("clasherevents.admin")) return;
