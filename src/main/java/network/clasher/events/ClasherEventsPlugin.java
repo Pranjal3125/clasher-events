@@ -216,8 +216,7 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
     }
 
     private void saveAudiencePoints() {
-        try { audiencePoints.save(audiencePointsFile); }
-        catch (java.io.IOException ex) { getLogger().severe("Could not save audience points: " + ex.getMessage()); }
+        saveYamlAtomically(audiencePoints, audiencePointsFile, "audience points");
     }
 
     private int points(UUID id) { return audiencePoints.getInt("players." + id + ".points", 0); }
@@ -1749,8 +1748,7 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
         matchHistory.set(path + ".mvp", mvpName == null ? "Unknown" : mvpName);
         matchHistory.set(path + ".mvp-kills", matchKills.getOrDefault(mvpId, 0));
         matchHistory.set("next-id", index + 1);
-        try { matchHistory.save(matchHistoryFile); }
-        catch (java.io.IOException ex) { getLogger().warning("Could not save match history: " + ex.getMessage()); }
+        saveYamlAtomically(matchHistory, matchHistoryFile, "match history");
         Bukkit.broadcastMessage("§6[MVP] §e" + (mvpName == null ? "Unknown" : mvpName) + " §7was match MVP with §e" + matchKills.getOrDefault(mvpId, 0) + " §7kills.");
     }
 
@@ -2004,8 +2002,30 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
 
 
     private void savePlayerStats() {
-        try { playerStats.save(playerStatsFile); }
-        catch (java.io.IOException ex) { getLogger().warning("Could not save player stats: " + ex.getMessage()); }
+        saveYamlAtomically(playerStats, playerStatsFile, "player stats");
+    }
+
+    private void saveYamlAtomically(YamlConfiguration yaml, File target, String label) {
+        if (yaml == null || target == null) return;
+        File parent = target.getParentFile();
+        File temporary = new File(parent == null ? getDataFolder() : parent, target.getName() + ".tmp");
+        try {
+            if (parent != null && !parent.exists() && !parent.mkdirs()) {
+                throw new IOException("Could not create " + label + " directory");
+            }
+            yaml.save(temporary);
+            try {
+                Files.move(temporary.toPath(), target.toPath(),
+                        StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            } catch (AtomicMoveNotSupportedException ignored) {
+                Files.move(temporary.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING);
+            }
+        } catch (IOException ex) {
+            getLogger().severe("Could not safely save " + label + ": " + ex.getMessage());
+            if (temporary.exists() && !temporary.delete()) {
+                getLogger().warning("Could not remove temporary " + label + " file: " + temporary.getName());
+            }
+        }
     }
 
     private void recordKill(Player killer, Player victim) {
