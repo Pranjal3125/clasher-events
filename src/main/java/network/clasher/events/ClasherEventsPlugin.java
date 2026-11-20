@@ -1528,6 +1528,91 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
         viewer.openInventory(gui);
     }
 
+    private void runDiagnostics(CommandSender sender) {
+        int errors = 0;
+        int warnings = 0;
+        sender.sendMessage("§6§lCLASHER EVENTS 0.7.0 DIAGNOSTICS");
+        sender.sendMessage("§7Checking runtime, arenas, kits and configured locations...");
+
+        String sharedWorldName = getConfig().getString("shared-world", "clasher_events");
+        if (Bukkit.getWorld(sharedWorldName) == null) {
+            warnings++;
+            sender.sendMessage("§e[WARN] Shared arena world is not currently loaded: " + sharedWorldName);
+        } else {
+            sender.sendMessage("§a[OK] Shared arena world loaded: " + sharedWorldName);
+        }
+
+        if (arenas.isEmpty()) {
+            errors++;
+            sender.sendMessage("§c[ERROR] No arenas loaded. Check plugins/ClasherEvents/arenas.yml.");
+        } else {
+            sender.sendMessage("§a[OK] Loaded arenas: " + arenas.size());
+            for (Arena arena : arenas.values()) {
+                File schematic = new File(new File(getDataFolder(), "schematics"), arena.schematic);
+                if (!schematic.isFile()) {
+                    errors++;
+                    sender.sendMessage("§c[ERROR] " + arena.displayName + ": missing schematic " + arena.schematic);
+                }
+                if (spawns(arena, "wave1").isEmpty()) {
+                    errors++;
+                    sender.sendMessage("§c[ERROR] " + arena.displayName + ": no Wave 1 spawn points.");
+                }
+                if (spawns(arena, "final").isEmpty()) {
+                    errors++;
+                    sender.sendMessage("§c[ERROR] " + arena.displayName + ": no Final spawn points.");
+                }
+                if (spawns(arena, "wave2").isEmpty()) {
+                    warnings++;
+                    sender.sendMessage("§e[WARN] " + arena.displayName + ": no Wave 2 spawns (Wave 2 may be skipped for small matches).");
+                }
+            }
+        }
+
+        List<String> requiredKits = List.of("nethpot", "axe-shield", "build-uhc", "sword", "uhc", "crystal", "smp", "diamond-pot");
+        for (String kit : requiredKits) {
+            if (!kits.containsKey(kit)) {
+                errors++;
+                sender.sendMessage("§c[ERROR] Missing kit configuration: " + kit);
+            }
+        }
+        if (kits.size() >= requiredKits.size()) sender.sendMessage("§a[OK] Loaded kit configurations: " + kits.size());
+
+        if (Bukkit.getPluginManager().getPlugin("WorldEdit") == null
+                || !Bukkit.getPluginManager().getPlugin("WorldEdit").isEnabled()) {
+            warnings++;
+            sender.sendMessage("§e[WARN] WorldEdit is unavailable; schematic paste/reset features may not work.");
+        } else {
+            sender.sendMessage("§a[OK] WorldEdit detected.");
+        }
+        if (Bukkit.getPluginManager().getPlugin("WorldGuard") == null
+                || !Bukkit.getPluginManager().getPlugin("WorldGuard").isEnabled()) {
+            warnings++;
+            sender.sendMessage("§e[WARN] WorldGuard is unavailable; region protection integration is disabled.");
+        } else {
+            sender.sendMessage("§a[OK] WorldGuard detected.");
+        }
+
+        for (String location : List.of("lobby", "spectator", "winner")) {
+            String worldName = getConfig().getString("locations." + location + ".world",
+                    location.equals("lobby") ? sharedWorldName : "");
+            if (worldName.isBlank()) {
+                warnings++;
+                sender.sendMessage("§e[WARN] " + location + " location has no world configured.");
+            } else if (Bukkit.getWorld(worldName) == null) {
+                warnings++;
+                sender.sendMessage("§e[WARN] " + location + " location world is not loaded: " + worldName);
+            } else {
+                sender.sendMessage("§a[OK] " + location + " location world: " + worldName);
+            }
+        }
+
+        sender.sendMessage("§7Event state: " + (eventRunning ? "running" : eventOpen ? "registration open" : "idle")
+                + " §8| §7Mode: " + eventMode + " §8| §7Players: " + participants.size());
+        sender.sendMessage("§6Diagnostic result: " + errors + " error(s), " + warnings + " warning(s).");
+        if (errors == 0) sender.sendMessage("§aNo blocking file/arena/kit errors found by this basic diagnostic.");
+        else sender.sendMessage("§cFix the listed errors before opening an event.");
+    }
+
     @Override public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (command.getName().equalsIgnoreCase("event")) {
             if (!(sender instanceof Player p)) { sender.sendMessage("Players only."); return true; }
@@ -1595,7 +1680,7 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
                 sender.sendMessage("§7Modes: nethpot, axe-shield, build-uhc, sword, uhc, crystal, smp, diamond-pot, duel, team-wars, tournament.");
                 sender.sendMessage("§7Random-kit uses any arena: configure each arena separately (nethpot, axe-shield, build-uhc, sword, uhc, crystal, smp, diamond-pot).");
                 sender.sendMessage("§e/ce kit list|give <kit> <player>|reload");
-                sender.sendMessage("§e/ce gui §7| /ce kit preview <kit> <player>");
+                sender.sendMessage("§e/ce gui §7| /ce diagnose §7| /ce kit preview <kit> <player>");
             }
             case "create" -> { if (args.length < 2) sender.sendMessage("§cUsage: /ce create <nethpot|axe-shield|build-uhc|sword|uhc|crystal|smp|diamond-pot|random-kit|duel|team-wars>"); else createEvent(args[1]); }
             case "start" -> startEvent();
@@ -1627,6 +1712,7 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
                 }
                 setArenaSpawn(admin, arenaId, args.length >= 3 ? args[2] : "wave1", sub.equals("addspawn"));
             }
+            case "diagnose" -> runDiagnostics(sender);
             case "status" -> sender.sendMessage("§6Mode: " + eventMode + " §7| Arena: " + selectedArena + " §7| Phase: " + phase + " §7| Open: " + eventOpen + " §7| Running: " + eventRunning + " §7| Players: " + participants.size());
             case "reload" -> { reloadConfig(); loadArenas(); loadKits(); sender.sendMessage("§aConfigs reloaded."); }
             case "arena" -> {
@@ -1662,7 +1748,7 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
             else if (args.length == 2 && List.of("vote", "cheer").contains(args[0].toLowerCase(Locale.ROOT)))
                 for (Player p : Bukkit.getOnlinePlayers()) options.add(p.getName());
         } else if (command.getName().equalsIgnoreCase("ce") && sender.hasPermission("clasherevents.admin")) {
-            if (args.length == 1) options.addAll(List.of("help","create","start","stop","pause","resume","status","reload","gui","countdown","setlobby","setspectator","setwinner","setspawn","addspawn","arena","kit"));
+            if (args.length == 1) options.addAll(List.of("help","create","start","stop","pause","resume","status","diagnose","reload","gui","countdown","setlobby","setspectator","setwinner","setspawn","addspawn","arena","kit"));
             else if (args.length == 2 && args[0].equalsIgnoreCase("create"))
                 options.addAll(List.of("nethpot","axe-shield","build-uhc","sword","uhc","crystal","smp","diamond-pot","random-kit","duel","team-wars","tournament"));
             else if (args.length == 2 && args[0].equalsIgnoreCase("arena")) options.addAll(List.of("list","paste","reset","info","validate"));
