@@ -1,5 +1,7 @@
 # All arena schematics are pasted into this one shared world.
 shared-world: clasher_events
+# Enable extra lifecycle diagnostics in the server console.
+debug: false
 lobby:
   world: clasher_events
   x: 0.5
