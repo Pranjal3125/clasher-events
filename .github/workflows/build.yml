@@ -16,6 +16,9 @@ jobs:
           cache: maven
       - name: Build and verify plugin
         run: mvn --batch-mode --no-transfer-progress clean verify
+      - name: Validate YAML resources
+        run: |
+          ruby -e 'require "yaml"; Dir.glob("src/main/resources/**/*.yml").sort.each { |file| YAML.load_file(file); puts "Valid YAML: #{file}" }'
       - name: Verify packaged plugin
         shell: bash
         run: |
