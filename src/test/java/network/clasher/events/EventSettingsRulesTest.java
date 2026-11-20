@@ -14,6 +14,13 @@ class EventSettingsRulesTest {
     }
 
     @Test
+    void preservesTheOrderProvidedByTheSettingsGui() {
+        assertEquals(140, EventSettingsRules.nextValue(160, 160, 140, 120, 100, 80));
+        assertEquals(80, EventSettingsRules.nextValue(100, 160, 140, 120, 100, 80));
+        assertEquals(160, EventSettingsRules.nextValue(80, 160, 140, 120, 100, 80));
+    }
+
+    @Test
     void unsupportedStoredValueFallsBackToFirstAllowedValue() {
         assertEquals(120, EventSettingsRules.nextValue(240, 120, 300, 600));
     }
