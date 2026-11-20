@@ -2237,13 +2237,13 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
         }
 
         int registrationSeconds = getConfig().getInt("default-registration-seconds", 120);
-        if (registrationSeconds < 30 || registrationSeconds > 1800) {
+        if (!EventSettingsRules.isValidRegistrationSeconds(registrationSeconds)) {
             errors++;
             sender.sendMessage("§c[ERROR] default-registration-seconds must be between 30 and 1800.");
         } else sender.sendMessage("§a[OK] Registration duration: " + registrationSeconds + "s");
 
         int kitLead = getConfig().getInt("kit-delivery-seconds-before-start", 60);
-        if (kitLead < 0 || kitLead >= registrationSeconds) {
+        if (!EventSettingsRules.isValidKitLeadSeconds(kitLead, registrationSeconds)) {
             errors++;
             sender.sendMessage("§c[ERROR] kit-delivery-seconds-before-start must be >= 0 and less than registration duration.");
         } else sender.sendMessage("§a[OK] Kit delivery lead time: " + kitLead + "s");
@@ -2267,16 +2267,16 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
         for (String borderPhase : List.of("wave1", "wave2", "final")) {
             double borderSize = getConfig().getDouble("world-border." + borderPhase + ".size", -1);
             long shrink = getConfig().getLong("world-border." + borderPhase + ".shrink-seconds", -1);
-            if (!Double.isFinite(borderSize) || borderSize < 1 || borderSize > 59999968) {
+            if (!EventSettingsRules.isValidBorderSize(borderSize)) {
                 errors++;
                 sender.sendMessage("§c[ERROR] world-border." + borderPhase + ".size must be between 1 and 59999968.");
-            } else if (shrink < 0 || shrink > 86400) {
+            } else if (!EventSettingsRules.isValidBorderShrinkSeconds(shrink)) {
                 errors++;
                 sender.sendMessage("§c[ERROR] world-border." + borderPhase + ".shrink-seconds must be between 0 and 86400.");
             } else sender.sendMessage("§a[OK] " + borderPhase + " border: " + borderSize + " blocks, " + shrink + "s shrink.");
         }
         double lobbyRadius = getConfig().getDouble("lobby-protection.radius", -1);
-        if (!Double.isFinite(lobbyRadius) || lobbyRadius < 1 || lobbyRadius > 1000) {
+        if (!EventSettingsRules.isValidLobbyRadius(lobbyRadius)) {
             errors++;
             sender.sendMessage("§c[ERROR] lobby-protection.radius must be between 1 and 1000.");
         } else sender.sendMessage("§a[OK] Lobby protection: " + (getConfig().getBoolean("lobby-protection.enabled", true) ? "enabled" : "disabled") + " (" + lobbyRadius + " blocks).");
