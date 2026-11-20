@@ -378,11 +378,16 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
     private void openSettingsManager(Player player) {
         Inventory gui = Bukkit.createInventory(null, 27, SETTINGS_GUI_TITLE);
         gui.setItem(10, menuItem(Material.CLOCK, "§eRegistration: " + getConfig().getInt("default-registration-seconds", 120) + "s", "§7Click to cycle 120 / 300 / 600 seconds."));
-        gui.setItem(12, menuItem(Material.CHEST, "§6Kit delivery: " + getConfig().getInt("kit-delivery-seconds-before-start", 60) + "s", "§7Click to cycle 30 / 60 / 90 seconds before start."));
-        gui.setItem(14, menuItem(Material.GOLD_INGOT, "§6Prediction reward: " + getConfig().getInt("audience-correct-prediction-points", 10), "§7Click to cycle 5 / 10 / 20 points."));
-        gui.setItem(16, menuItem(Material.LIME_BED, "§aSet Lobby Location", "§7Save your current position as event lobby."));
-        gui.setItem(17, menuItem(Material.ENDER_PEARL, "§bSet Spectator Location", "§7Save your current position as spectator destination."));
-        gui.setItem(18, menuItem(Material.FIREWORK_ROCKET, "§6Set Winner Location", "§7Save your current position as winner destination."));
+        gui.setItem(11, menuItem(Material.CHEST, "§6Kit delivery: " + getConfig().getInt("kit-delivery-seconds-before-start", 60) + "s", "§7Click to cycle 30 / 60 / 90 seconds before start."));
+        gui.setItem(12, menuItem(Material.GOLD_INGOT, "§6Prediction reward: " + getConfig().getInt("audience-correct-prediction-points", 10), "§7Click to cycle 5 / 10 / 20 points."));
+        gui.setItem(14, menuItem(getConfig().getBoolean("afk.enabled", true) ? Material.LIME_DYE : Material.GRAY_DYE,
+                "§dAFK Elimination: " + (getConfig().getBoolean("afk.enabled", true) ? "§aEnabled" : "§cDisabled"),
+                "§7Click to toggle AFK elimination."));
+        gui.setItem(15, menuItem(Material.REPEATER, "§dAFK Timeout: " + getConfig().getInt("afk.eliminate-after-seconds", 300) + "s",
+                "§7Cycle 180 / 300 / 600 / 900 seconds."));
+        gui.setItem(19, menuItem(Material.LIME_BED, "§aSet Lobby Location", "§7Save your current position as event lobby."));
+        gui.setItem(20, menuItem(Material.ENDER_PEARL, "§bSet Spectator Location", "§7Save your current position as spectator destination."));
+        gui.setItem(21, menuItem(Material.FIREWORK_ROCKET, "§6Set Winner Location", "§7Save your current position as winner destination."));
         gui.setItem(22, menuItem(Material.ARROW, "§7Back", "§7Return to Control Center"));
         player.openInventory(gui);
     }
@@ -711,7 +716,16 @@ public final class ClasherEventsPlugin extends JavaPlugin implements Listener, T
             if (display.equalsIgnoreCase("Set Spectator Location")) { setNamedLocation(player, "spectator"); openSettingsManager(player); return; }
             if (display.equalsIgnoreCase("Set Winner Location")) { setNamedLocation(player, "winner"); openSettingsManager(player); return; }
             if (eventOpen || eventRunning) { player.sendMessage("§cChange settings only when no event is open or running."); return; }
-            if (display.startsWith("Registration:")) {
+            if (display.startsWith("AFK Elimination:")) {
+                getConfig().set("afk.enabled", !getConfig().getBoolean("afk.enabled", true));
+                saveConfigAtomically();
+            } else if (display.startsWith("AFK Timeout:")) {
+                int[] values = {180, 300, 600, 900};
+                int current = getConfig().getInt("afk.eliminate-after-seconds", 300);
+                int index = java.util.Arrays.binarySearch(values, current);
+                getConfig().set("afk.eliminate-after-seconds", values[(index + 1 + values.length) % values.length]);
+                saveConfigAtomically();
+            } else if (display.startsWith("Registration:")) {
                 int[] values = {120, 300, 600};
                 int current = getConfig().getInt("default-registration-seconds", 120);
                 int index = java.util.Arrays.binarySearch(values, current);
