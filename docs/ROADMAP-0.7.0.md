@@ -45,16 +45,18 @@ This is a feature-version upgrade focused on making event setup and administrati
 - [x] In-game cycling controls for registration duration, kit-delivery lead time, and audience prediction points.
 - [x] Merge new default config keys into existing config.yml on startup without overwriting administrator values.
 - [x] Validate registration duration, kit lead time, prediction points, and preset values in diagnostics.
-- [ ] Add broader supported settings.
+- [x] Add broader supported settings.
 - [x] Current settings are range-cycled and persisted through the plugin YAML config.
 - [x] Save plugin config changes through a temporary file and atomic replacement (with a safe non-atomic fallback).
-- [x] Add GUI controls for AFK elimination toggle and AFK timeout, with diagnostics validation.\n- [ ] Add GUI editing for additional settings (world-border and lobby-protection controls remain open).
+- [x] Add GUI controls for AFK elimination toggle and AFK timeout, with diagnostics validation.
+- [x] Add GUI controls for Wave 1/Wave 2/Final border sizes and shrink durations, plus lobby protection toggle and radius.
 
 ### 0.7.0-E — Reliability
-- [ ] Verify arena backup/reset workflow under live server testing before calling it release-ready.
-- [ ] Recovery and reconnect tests before release.
+- [ ] Verify arena backup/reset workflow on a disposable Paper server before calling it release-ready. Atomic backup-file replacement is implemented.
+- [ ] Run live reconnect, disconnect-grace, shutdown recovery, and inventory restoration scenarios on a disposable Paper server.
 - [x] CI verifies Maven build, plugin descriptor presence/main class, and packaged JAR contents.
-- [x] Add CI YAML syntax validation plus cross-checks for all eight arena/kit/schematic/preset definitions and required spawn bounds.\n- [ ] Add automated behavior tests.
+- [x] Add CI YAML syntax validation plus cross-checks for all eight arena/kit/schematic/preset definitions and required spawn bounds.
+- [x] Add JUnit 5 tests for setting cycles, configuration ranges, and wave progression thresholds; CI requires the test report.
 
 ## Non-goals for the first 0.7.0 milestone
 - No web panel or external database requirement.
