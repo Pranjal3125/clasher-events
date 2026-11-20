@@ -48,7 +48,7 @@ This is a feature-version upgrade focused on making event setup and administrati
 - [ ] Add broader supported settings.
 - [x] Current settings are range-cycled and persisted through the plugin YAML config.
 - [x] Save plugin config changes through a temporary file and atomic replacement (with a safe non-atomic fallback).
-- [ ] Add GUI editing for additional settings.
+- [x] Add GUI controls for AFK elimination toggle and AFK timeout, with diagnostics validation.\n- [ ] Add GUI editing for additional settings (world-border and lobby-protection controls remain open).
 
 ### 0.7.0-E — Reliability
 - [ ] Verify arena backup/reset workflow under live server testing before calling it release-ready.
