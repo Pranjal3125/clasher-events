@@ -36,15 +36,19 @@ This is a feature-version upgrade focused on making event setup and administrati
 - [x] Arena phase spawn setup shortcuts for Wave 1, Wave 2, Final, and Audience.
 - [x] Add guided lobby, spectator, and winner location setup directly in the Settings GUI.
 - [x] Basic arena validation for schematic, required spawns, WorldEdit, and shared-world availability.
-- [x] Expand diagnostics to validate registration duration, kit lead time, audience points, and all configured preset modes/durations.\n- [ ] Expand mode-aware arena validation and schematic/world metadata checks.
+- [x] Expand diagnostics to validate registration duration, kit lead time, audience points, and all configured preset modes/durations.
+- [ ] Expand mode-aware arena validation and schematic/world metadata checks.
 - [x] Require explicit confirmation before replacing existing spawn points; confirmation shows the current point count, while "Add Wave 1 Spawn" preserves existing points.
 
 ### 0.7.0-D — Presets and configuration
 - [x] Reusable presets for all eight standard modes, configurable in `config.yml` and applied with `/ce preset list|apply`.
 - [x] In-game cycling controls for registration duration, kit-delivery lead time, and audience prediction points.
-- [x] Merge new default config keys into existing config.yml on startup without overwriting administrator values.\n- [x] Validate registration duration, kit lead time, prediction points, and preset values in diagnostics.\n- [ ] Add broader supported settings.
+- [x] Merge new default config keys into existing config.yml on startup without overwriting administrator values.
+- [x] Validate registration duration, kit lead time, prediction points, and preset values in diagnostics.
+- [ ] Add broader supported settings.
 - [x] Current settings are range-cycled and persisted through the plugin YAML config.
-- [x] Save plugin config changes through a temporary file and atomic replacement (with a safe non-atomic fallback).\n- [ ] Add GUI editing for additional settings.
+- [x] Save plugin config changes through a temporary file and atomic replacement (with a safe non-atomic fallback).
+- [ ] Add GUI editing for additional settings.
 
 ### 0.7.0-E — Reliability
 - [ ] Verify arena backup/reset workflow under live server testing before calling it release-ready.
