@@ -2,60 +2,61 @@
 
 # Clasher Events
 
-### Modular PvP events for Clasher Network
+### Modular PvP Events & Tournament Engine for Clasher Network
 
-A standalone Paper plugin project for managing PvP modes, arenas, kits, tournament progression, spectators, and player recovery.
+A standalone Paper plugin for managing PvP modes, arenas, kits, tournament brackets, spectators, and crash-safe player recovery.
 
-![Java](https://img.shields.io/badge/Java-25-orange?logo=openjdk) ![Platform](https://img.shields.io/badge/Platform-Paper-313131?logo=minecraft) ![Status](https://img.shields.io/badge/Status-Development%20candidate-yellow)
+![Java](https://img.shields.io/badge/Java-25-orange?logo=openjdk)
+![Platform](https://img.shields.io/badge/Platform-Paper-313131?logo=minecraft)
+![Status](https://img.shields.io/badge/Status-Development%20Candidate-yellow)
 
-[Source](https://github.com/Pranjal3125/clasher-events) · [Issues](https://github.com/Pranjal3125/clasher-events/issues)
+[Source](https://github.com/Pranjal3125/clasher-events) · [Issues](https://github.com/Pranjal3125/clasher-events/issues) · [Actions](https://github.com/Pranjal3125/clasher-events/actions)
 
 </div>
 
-> **Development status:** The latest GitHub Actions build completed successfully with Java 25 and produced a plugin JAR artifact. This confirms the configured CI build passes; it does not certify live multiplayer behavior or production readiness. Test on a disposable Paper server before deployment.
+> **Note:** Built with Java 25 via GitHub Actions. Test on a disposable Paper staging server before live deployment.
 
-## Overview
+## Features
 
-The project documents these event systems:
+- **Battle Royale** — registration, kits, eliminations, waves, and winner detection.
+- **1v1 Duels & Tournaments** — sequential tournament brackets and match progression.
+- **Team Wars** — balanced team assignment with friendly-fire prevention.
+- **Interactive Modes & Audience Tools** — Random Kit mode, spectator respawn, voting, predictions, and cheering.
+- **Arena Management** — per-player world borders for shared-world arenas, plus arena reset and baseline backup workflows.
+- **Crash Recovery** — automatic player-state recovery when reconnecting after a server crash.
 
-- Battle Royale registration, kits, eliminations, waves, and winner detection
-- 1v1 duels and sequential tournament brackets
-- Team Wars with balanced teams and friendly-fire prevention
-- Random Kit mode, spectator respawn, voting, predictions, and cheering
-- Per-player world borders for arenas sharing one world
-- Arena reset and baseline backup workflows
-- Player-state recovery after reconnecting from a server crash
+## Modes & Arenas
 
-## Modes and arenas
+Supported arena and kit presets include **NethPot**, **Axe & Shield**, **Build UHC**, **Sword**, **UHC**, **Crystal**, **SMP**, and **Diamond Pot**.
 
-The documented arena/kit set includes NethPot, Axe & Shield, Build UHC, Sword, UHC, Crystal, SMP, and Diamond Pot. Duel and tournament modes use the Sword arena; Team Wars uses the SMP arena. One event is designed to run at a time in the shared `clasher_events` world.
+- Duel and tournament modes use the **Sword** arena.
+- Team Wars uses the **SMP** arena.
+- One event runs at a time in the shared `clasher_events` world.
 
-## Admin commands
+## Commands
 
 | Command | Purpose |
 |---|---|
 | `/ce gui` | Open event selection and admin GUI |
 | `/ce countdown` | Select registration countdown |
-| `/ce setlobby` | Save waiting lobby |
+| `/ce setlobby` | Save waiting lobby location |
 | `/ce setspectator` | Save spectator destination |
 | `/ce setwinner` | Save winner destination |
 | `/ce setspawn <mode> <phase>` | Configure mode/phase spawn |
 | `/ce addspawn <mode> <phase>` | Add another spawn point |
 | `/latejoin <player>` | Force-add an online player (admin) |
 | `/event spectate` | Open fighter spectator selector |
-| `/event stats` | View event stats |
+| `/event stats` | View event statistics |
 | `/event top` | View audience-points leaderboard |
 
-See [DEVELOPMENT.md](DEVELOPMENT.md), [APPROVED-0.6.0-SPEC.md](APPROVED-0.6.0-SPEC.md), and [NETHPOT-ARENA-UPDATE.txt](NETHPOT-ARENA-UPDATE.txt) for detailed project notes.
+See [DEVELOPMENT.md](DEVELOPMENT.md), [APPROVED-0.6.0-SPEC.md](APPROVED-0.6.0-SPEC.md), and [NETHPOT-ARENA-UPDATE.txt](NETHPOT-ARENA-UPDATE.txt) for detailed architecture and design specs.
 
 ## Requirements
 
 - Paper API matching the version configured in `pom.xml`
-- Java 25 and Maven for the documented build environment
-- WorldEdit 7.4.6 for schematic pasting and arena backups
-- WorldGuard 7.0.18 is optional but recommended for region protection
-
-Check the POM and plugin configuration before choosing a server version.
+- Java 25 and Maven
+- WorldEdit `7.4.6` (schematic pasting and arena backups)
+- WorldGuard `7.0.18` *(optional, recommended for region protection)*
 
 ## Build
 
@@ -63,24 +64,24 @@ Check the POM and plugin configuration before choosing a server version.
 mvn clean package
 ```
 
-The plugin JAR should appear under `target/` after a successful build. GitHub Actions is configured to run the project build; check the [Actions page](https://github.com/Pranjal3125/clasher-events/actions) for the latest result.
+The compiled plugin JAR is generated under `target/`. CI builds are also available on the [GitHub Actions page](https://github.com/Pranjal3125/clasher-events/actions).
 
-## Before staging or production use
+## Staging Checklist
 
 1. Build with the required JDK and dependencies.
-2. Install on a disposable test server, not the live network.
+2. Install on a disposable test server rather than the live network.
 3. Configure every arena and phase spawn point.
 4. Verify kit delivery, inventory restoration, eliminations, and winner detection.
 5. Test arena reset and backup restoration.
-6. Test reconnect and crash-recovery flows with disposable accounts.
+6. Test reconnect and crash-recovery flows with test accounts.
 7. Verify reward commands with harmless test commands first.
 
-The schematics are starter assets and may need editing. Discord integration and scheduled event features are not included in the documented milestone.
+> Included schematics are starter assets and can be customized. Discord integration and scheduled events are outside the current milestone.
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). Include Paper/Java versions, reproduction steps, and relevant logs in bug reports.
+See [CONTRIBUTING.md](CONTRIBUTING.md). Please include Paper/Java versions, reproduction steps, and relevant logs in bug reports.
 
 ## License
 
-No license is currently declared. All rights are reserved by default; do not redistribute or reuse code/assets without permission from the repository owner.
+All rights reserved. Contact the repository owner before reusing or redistributing code or assets.
