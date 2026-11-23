@@ -29,8 +29,8 @@ public final class EventCommands implements CommandExecutor, TabCompleter {
             "join", "leave", "modevote", "vote", "cheer", "team", "points", "stats", "top", "history", "spectate", "help"
     );
     private static final List<String> CE_SUBS = List.of(
-            "help", "create", "voteopen", "start", "stop", "pause", "resume", "status", "reload",
-            "gui", "countdown", "setlobby", "setspectator", "setwinner",
+            "help", "create", "voteopen", "start", "skip", "timeskip", "stop", "pause", "resume", "status", "reload",
+            "gui", "countdown", "tp", "setlobby", "setspectator", "setwinner",
             "setspawn", "addspawn", "arena", "kit"
     );
 
@@ -158,9 +158,9 @@ public final class EventCommands implements CommandExecutor, TabCompleter {
         switch (sub) {
             case "help" -> {
                 sender.sendMessage(FormatUtil.mm("<gold><bold>Clasher Events v2.0 Admin Commands</bold></gold>"));
-                sender.sendMessage(FormatUtil.mm("<yellow>/ce gui</yellow> <dark_gray>|</dark_gray> <yellow>/ce create <mode></yellow> <dark_gray>|</dark_gray> <yellow>/ce voteopen [sec]</yellow> <dark_gray>|</dark_gray> <yellow>/ce start</yellow> <dark_gray>|</dark_gray> <yellow>/ce stop</yellow>"));
-                sender.sendMessage(FormatUtil.mm("<yellow>/ce pause</yellow> <dark_gray>|</dark_gray> <yellow>/ce resume</yellow> <dark_gray>|</dark_gray> <yellow>/ce countdown</yellow> <dark_gray>|</dark_gray> <yellow>/ce status</yellow> <dark_gray>|</dark_gray> <yellow>/ce reload</yellow>"));
-                sender.sendMessage(FormatUtil.mm("<yellow>/ce setlobby</yellow> <dark_gray>|</dark_gray> <yellow>/ce setspectator</yellow> <dark_gray>|</dark_gray> <yellow>/ce setwinner</yellow>"));
+                sender.sendMessage(FormatUtil.mm("<yellow>/ce gui</yellow> <dark_gray>|</dark_gray> <yellow>/ce create <mode></yellow> <dark_gray>|</dark_gray> <yellow>/ce voteopen [sec]</yellow> <dark_gray>|</dark_gray> <yellow>/ce skip [sec|now]</yellow>"));
+                sender.sendMessage(FormatUtil.mm("<yellow>/ce start</yellow> <dark_gray>|</dark_gray> <yellow>/ce stop</yellow> <dark_gray>|</dark_gray> <yellow>/ce pause</yellow> <dark_gray>|</dark_gray> <yellow>/ce resume</yellow> <dark_gray>|</dark_gray> <yellow>/ce countdown</yellow> <dark_gray>|</dark_gray> <yellow>/ce status</yellow> <dark_gray>|</dark_gray> <yellow>/ce reload</yellow>"));
+                sender.sendMessage(FormatUtil.mm("<yellow>/ce tp <arena></yellow> <dark_gray>|</dark_gray> <yellow>/ce setlobby</yellow> <dark_gray>|</dark_gray> <yellow>/ce setspectator</yellow> <dark_gray>|</dark_gray> <yellow>/ce setwinner</yellow>"));
                 sender.sendMessage(FormatUtil.mm("<yellow>/ce setspawn <mode|arena> [wave1|wave2|final|audience]</yellow>"));
                 sender.sendMessage(FormatUtil.mm("<yellow>/ce addspawn <mode|arena> [wave1|wave2|final|audience]</yellow>"));
                 sender.sendMessage(FormatUtil.mm("<yellow>/ce arena list|tp|paste|pasteall|reset|info|validate <arena></yellow>"));
@@ -179,6 +179,26 @@ public final class EventCommands implements CommandExecutor, TabCompleter {
                 events.startModeVote(sec);
             }
             case "start" -> events.startEvent();
+            case "skip", "timeskip" -> {
+                if (args.length < 2) {
+                    events.skipTimer(sender, null, false);
+                } else if (args[1].equalsIgnoreCase("now") || args[1].equals("0")) {
+                    events.skipTimer(sender, 0, true);
+                } else {
+                    try {
+                        int sec = Integer.parseInt(args[1]);
+                        if (sec <= 0) events.skipTimer(sender, 0, true);
+                        else events.skipTimer(sender, sec, false);
+                    } catch (NumberFormatException ex) {
+                        sender.sendMessage(FormatUtil.mm("<red>Usage:</red> <yellow>/ce skip [seconds|now]</yellow>"));
+                    }
+                }
+            }
+            case "tp" -> {
+                if (!(sender instanceof Player admin)) sender.sendMessage(FormatUtil.mm("<red>Players only.</red>"));
+                else if (args.length >= 2) arenas.teleportAdminToArena(admin, args[1]);
+                else sender.sendMessage(FormatUtil.mm("<red>Usage:</red> <yellow>/ce tp <arena></yellow>"));
+            }
             case "stop" -> events.stopEvent("Event stopped by admin");
             case "pause" -> {
                 if (!events.isEventOpen() && !events.isEventRunning()) sender.sendMessage(FormatUtil.mm("<red>No active event.</red>"));
@@ -262,7 +282,7 @@ public final class EventCommands implements CommandExecutor, TabCompleter {
         String action = args[1].toLowerCase(Locale.ROOT);
         switch (action) {
             case "list" -> sender.sendMessage(FormatUtil.mm("<gold>Arenas:</gold> <white>" + String.join(", ", arenas.arenaIds()) + "</white>"));
-            case "tp" -> {
+            case "tp", "goto" -> {
                 if (!(sender instanceof Player admin)) sender.sendMessage(FormatUtil.mm("<red>Players only.</red>"));
                 else if (args.length >= 3) arenas.teleportAdminToArena(admin, args[2]);
                 else sender.sendMessage(FormatUtil.mm("<red>Usage:</red> <yellow>/ce arena tp <arena></yellow>"));
@@ -351,6 +371,8 @@ public final class EventCommands implements CommandExecutor, TabCompleter {
         } else if (name.equals("ce") && sender.hasPermission("clasherevents.admin")) {
             if (args.length == 1) options.addAll(CE_SUBS);
             else if (args.length == 2 && args[0].equalsIgnoreCase("create")) options.addAll(EventMode.allIds());
+            else if (args.length == 2 && args[0].equalsIgnoreCase("tp")) options.addAll(arenas.arenaIds());
+            else if (args.length == 2 && List.of("skip", "timeskip").contains(args[0].toLowerCase(Locale.ROOT))) options.addAll(List.of("now", "10", "30", "60"));
             else if (args.length == 2 && args[0].equalsIgnoreCase("arena")) options.addAll(List.of("list", "tp", "paste", "pasteall", "reset", "info", "validate"));
             else if (args.length == 2 && List.of("setspawn", "addspawn").contains(args[0].toLowerCase(Locale.ROOT))) options.addAll(EventMode.allIds());
             else if (args.length == 3 && List.of("setspawn", "addspawn").contains(args[0].toLowerCase(Locale.ROOT))) options.addAll(List.of("wave1", "wave2", "final", "audience"));

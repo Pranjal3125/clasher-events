@@ -390,6 +390,73 @@ public final class EventManager implements Listener {
         startCountdown();
     }
 
+    /**
+     * Admin time-skip helper:
+     * - If Mode Voting is open: reduces vote timer by `seconds` (or ends immediately if seconds <= 0 / exceeds remaining).
+     * - If Registration is open: reduces countdown by `seconds`, or skips cleanly to 5s (default) / instant start (0).
+     *   Ensures fighter kits are still delivered if skipping past the kit-delivery mark!
+     */
+    public void skipTimer(CommandSender sender, Integer secondsToSkip, boolean instant) {
+        if (modeVoteOpen) {
+            if (instant || secondsToSkip == null || modeVoteRemaining - secondsToSkip <= 0) {
+                if (sender != null) sender.sendMessage(FormatUtil.mm(PREFIX + "<green>Skipped remaining mode-vote timer — tallying votes now!</green>"));
+                finishModeVote();
+            } else {
+                modeVoteRemaining = Math.max(1, modeVoteRemaining - secondsToSkip);
+                broadcast("<yellow>Admin skipped " + secondsToSkip + "s! Mode voting ends in <gold>" + FormatUtil.formatDuration(modeVoteRemaining) + "</gold>.</yellow>");
+            }
+            return;
+        }
+        if (!eventOpen) {
+            if (sender != null) sender.sendMessage(FormatUtil.mm(PREFIX + "<red>No registration countdown or mode vote is currently running.</red>"));
+            return;
+        }
+
+        int targetRemaining;
+        if (instant) {
+            targetRemaining = 0;
+        } else if (secondsToSkip == null) {
+            // Default `/ce skip`: jump cleanly to 5s hype countdown (or 0 if already <= 5s)
+            targetRemaining = countdownRemaining > 5 ? 5 : 0;
+        } else {
+            targetRemaining = Math.max(0, countdownRemaining - secondsToSkip);
+        }
+
+        int kitAt = plugin.getConfig().getInt("kit-delivery-seconds-before-start", 60);
+        if (targetRemaining <= kitAt && !participants.isEmpty()) {
+            deliverPendingKits();
+        }
+
+        if (targetRemaining <= 0) {
+            cancelCountdown();
+            broadcast("<yellow>Admin skipped the remaining countdown — starting event now!</yellow>");
+            startEvent();
+        } else {
+            countdownRemaining = targetRemaining;
+            broadcast("<yellow>Admin skipped countdown! Event starts in</yellow> <gold><bold>" + FormatUtil.formatDuration(countdownRemaining) + "</bold></gold><yellow>!</yellow>");
+        }
+    }
+
+    private void deliverPendingKits() {
+        boolean deliveredAny = false;
+        for (UUID id : participants) {
+            if (kitDelivered.contains(id)) continue;
+            Player p = Bukkit.getPlayer(id);
+            if (p != null) {
+                snapshotIfNeeded(p);
+                removeRulesBooks(p);
+                kitManager.giveKit(p, selectedKit);
+                kitDelivered.add(id);
+                playCue(p, "kit");
+                p.sendMessage(FormatUtil.mm(PREFIX + "<green>Your event kit has been delivered! Combat begins when the countdown ends.</green>"));
+                deliveredAny = true;
+            }
+        }
+        if (deliveredAny) {
+            broadcast("<green>Fighter kits delivered!</green>");
+        }
+    }
+
     private void startCountdown() {
         cancelCountdown();
         countdownTask = Bukkit.getScheduler().runTaskTimer(plugin, () -> {

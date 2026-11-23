@@ -117,6 +117,13 @@ public final class EventGui implements Listener {
                 "paste-all",
                 ""
         ));
+        inv.setItem(34, button(
+                Material.FEATHER,
+                "<aqua><bold>Skip Timer</bold></aqua>",
+                List.of("<gray>Skip registration countdown to 5s</gray>", "<gray>(or finish active mode vote now).</gray>"),
+                "skip-timer",
+                ""
+        ));
         inv.setItem(40, button(
                 Material.BOOK,
                 "<aqua><bold>Event Status</bold></aqua>",
@@ -431,6 +438,11 @@ public final class EventGui implements Listener {
                 if (!player.hasPermission("clasherevents.admin")) return;
                 player.closeInventory();
                 events.stopEvent("Event stopped by admin");
+            }
+            case "skip-timer" -> {
+                if (!player.hasPermission("clasherevents.admin")) return;
+                player.closeInventory();
+                events.skipTimer(player, null, false);
             }
             case "status" -> {
                 player.sendMessage(FormatUtil.mm("<gold>Mode:</gold> <white>" + events.eventMode().displayName()
