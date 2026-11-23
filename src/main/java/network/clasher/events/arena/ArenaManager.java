@@ -327,6 +327,29 @@ public final class ArenaManager {
         return pasteArenaAsync(sender, id, false, null);
     }
 
+    /**
+     * Teleports an admin directly to the arena's viewing platform (or safe center overlook)
+     * inside the shared event world, auto-loading the world if needed.
+     */
+    public void teleportAdminToArena(Player admin, String id) {
+        Arena arena = get(id);
+        if (arena == null) {
+            admin.sendMessage(FormatUtil.mm("<red>Unknown arena: " + FormatUtil.escape(id) + ". Use <yellow>/ce arena list</yellow>.</red>"));
+            return;
+        }
+        World world = getOrCreateSharedWorld(admin);
+        if (world == null) return;
+        Location dest = firstSpawn(arena, "audience");
+        if (dest == null) dest = firstSpawn(arena, "wave1");
+        if (dest == null) {
+            dest = new Location(world, arena.centerX(), arena.pasteY() + 6.0, arena.centerZ());
+        }
+        admin.teleport(dest);
+        boolean pasted = isArenaFloorPresent(world, arena);
+        admin.sendMessage(FormatUtil.mm("<green>Teleported to <gold>" + FormatUtil.escape(arena.displayName()) + "</gold></green>"
+                + (pasted ? "" : " <yellow>(Not pasted yet — run <white>/ce arena paste " + FormatUtil.escape(arena.id()) + "</white> or <white>/ce arena pasteall</white>)</yellow>")));
+    }
+
     public void clearArenaEntities(String arenaId) {
         Arena arena = get(arenaId);
         World world = Bukkit.getWorld(sharedWorldName());

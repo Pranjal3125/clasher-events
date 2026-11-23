@@ -70,7 +70,7 @@ Every arena was rebuilt with distinct architecture, elevated spectator boxes, an
 | `/event stats` / `/event top [elo\|wins\|kills\|points]` | View Elo/K/D/Streak stats & interactive Leaderboard GUI |
 | `/event history` / `/event spectate` / `/event team` | Match history, spectator selector, Team Wars squad |
 | `/ce gui` / `/ce create <mode>` / `/ce voteopen [sec]` | Admin panel, instant event open, or player mode vote |
-| `/ce arena paste\|pasteall\|reset\|validate <arena>` | Zero-lag batched arena management |
+| `/ce arena tp\|paste\|pasteall\|reset\|validate <arena>` | Teleport to arena & zero-lag batched arena management |
 | `/ce pause\|resume\|start\|stop\|reload` | Event lifecycle control |
 
 ## Build & Test

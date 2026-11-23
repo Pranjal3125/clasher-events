@@ -163,7 +163,7 @@ public final class EventCommands implements CommandExecutor, TabCompleter {
                 sender.sendMessage(FormatUtil.mm("<yellow>/ce setlobby</yellow> <dark_gray>|</dark_gray> <yellow>/ce setspectator</yellow> <dark_gray>|</dark_gray> <yellow>/ce setwinner</yellow>"));
                 sender.sendMessage(FormatUtil.mm("<yellow>/ce setspawn <mode|arena> [wave1|wave2|final|audience]</yellow>"));
                 sender.sendMessage(FormatUtil.mm("<yellow>/ce addspawn <mode|arena> [wave1|wave2|final|audience]</yellow>"));
-                sender.sendMessage(FormatUtil.mm("<yellow>/ce arena list|paste|pasteall|reset|info|validate <arena></yellow>"));
+                sender.sendMessage(FormatUtil.mm("<yellow>/ce arena list|tp|paste|pasteall|reset|info|validate <arena></yellow>"));
                 sender.sendMessage(FormatUtil.mm("<yellow>/ce kit list|give <kit> <player>|preview <kit> <player>|reload</yellow>"));
                 sender.sendMessage(FormatUtil.mm("<yellow>/latejoin <player></yellow> <dark_gray>-</dark_gray> <gray>Force-add an online player to an active match</gray>"));
             }
@@ -256,12 +256,17 @@ public final class EventCommands implements CommandExecutor, TabCompleter {
 
     private void handleArenaSub(CommandSender sender, String[] args) {
         if (args.length < 2) {
-            sender.sendMessage(FormatUtil.mm("<red>Usage:</red> <yellow>/ce arena list|paste|pasteall|reset|info|validate <arena></yellow>"));
+            sender.sendMessage(FormatUtil.mm("<red>Usage:</red> <yellow>/ce arena list|tp|paste|pasteall|reset|info|validate <arena></yellow>"));
             return;
         }
         String action = args[1].toLowerCase(Locale.ROOT);
         switch (action) {
             case "list" -> sender.sendMessage(FormatUtil.mm("<gold>Arenas:</gold> <white>" + String.join(", ", arenas.arenaIds()) + "</white>"));
+            case "tp" -> {
+                if (!(sender instanceof Player admin)) sender.sendMessage(FormatUtil.mm("<red>Players only.</red>"));
+                else if (args.length >= 3) arenas.teleportAdminToArena(admin, args[2]);
+                else sender.sendMessage(FormatUtil.mm("<red>Usage:</red> <yellow>/ce arena tp <arena></yellow>"));
+            }
             case "pasteall" -> arenas.pasteAllArenas(sender, events::isArenaInUse);
             case "paste" -> {
                 if (args.length >= 3) arenas.pasteArena(sender, args[2], events.isArenaInUse(args[2]));
@@ -346,7 +351,7 @@ public final class EventCommands implements CommandExecutor, TabCompleter {
         } else if (name.equals("ce") && sender.hasPermission("clasherevents.admin")) {
             if (args.length == 1) options.addAll(CE_SUBS);
             else if (args.length == 2 && args[0].equalsIgnoreCase("create")) options.addAll(EventMode.allIds());
-            else if (args.length == 2 && args[0].equalsIgnoreCase("arena")) options.addAll(List.of("list", "paste", "pasteall", "reset", "info", "validate"));
+            else if (args.length == 2 && args[0].equalsIgnoreCase("arena")) options.addAll(List.of("list", "tp", "paste", "pasteall", "reset", "info", "validate"));
             else if (args.length == 2 && List.of("setspawn", "addspawn").contains(args[0].toLowerCase(Locale.ROOT))) options.addAll(EventMode.allIds());
             else if (args.length == 3 && List.of("setspawn", "addspawn").contains(args[0].toLowerCase(Locale.ROOT))) options.addAll(List.of("wave1", "wave2", "final", "audience"));
             else if (args.length == 2 && args[0].equalsIgnoreCase("kit")) options.addAll(List.of("list", "give", "preview", "reload"));
