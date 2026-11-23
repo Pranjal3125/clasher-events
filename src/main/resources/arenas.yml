@@ -11,34 +11,73 @@ arenas:
       min-y: 79
       min-z: -66
       max-x: 66
-      max-y: 110
+      max-y: 124
       max-z: 66
     spawns:
       wave1:
+      - x: 30.5
+        y: 82
+        z: 0.5
+        yaw: -90.0
+      - x: 21.5
+        y: 82
+        z: 21.5
+        yaw: -135.0
+      - x: 0.5
+        y: 82
+        z: 30.5
+        yaw: 180.0
       - x: -20.5
         y: 82
-        z: 0.5
-      - x: 20.5
+        z: 21.5
+        yaw: 135.0
+      - x: -29.5
         y: 82
         z: 0.5
+        yaw: 90.0
+      - x: -20.5
+        y: 82
+        z: -20.5
+        yaw: 45.0
+      - x: 0.5
+        y: 82
+        z: -29.5
+        yaw: 0.0
+      - x: 21.5
+        y: 82
+        z: -20.5
+        yaw: -45.0
       wave2:
-      - x: -15.5
+      - x: 18.5
         y: 82
         z: 0.5
-      - x: 15.5
+        yaw: -90.0
+      - x: 0.5
+        y: 82
+        z: 18.5
+        yaw: 180.0
+      - x: -17.5
         y: 82
         z: 0.5
+        yaw: 90.0
+      - x: 0.5
+        y: 82
+        z: -17.5
+        yaw: 0.0
       final:
-      - x: -8.5
+      - x: -9.5
         y: 82
         z: 0.5
-      - x: 8.5
+        yaw: -90.0
+      - x: 10.5
         y: 82
         z: 0.5
+        yaw: 90.0
       audience:
       - x: 0.5
-        y: 87
-        z: -28.5
+        y: 92
+        z: -31.5
+        yaw: 0.0
   axe-shield:
     display-name: Axe & Shield - Ironkeep
     schematic: axe-shield.schem
@@ -47,38 +86,77 @@ arenas:
       y: 80
       z: 0
     bounds:
-      min-x: 264
+      min-x: 250
       min-y: 79
-      min-z: -36
-      max-x: 335
-      max-y: 100
-      max-z: 35
+      min-z: -50
+      max-x: 350
+      max-y: 120
+      max-z: 50
     spawns:
       wave1:
-      - x: 285.5
+      - x: 324.5
         y: 82
         z: 0.5
+        yaw: -90.0
+      - x: 317.5
+        y: 82
+        z: 17.5
+        yaw: -135.0
+      - x: 300.5
+        y: 82
+        z: 24.5
+        yaw: 180.0
+      - x: 283.5
+        y: 82
+        z: 17.5
+        yaw: 135.0
+      - x: 276.5
+        y: 82
+        z: 0.5
+        yaw: 90.0
+      - x: 283.5
+        y: 82
+        z: -16.5
+        yaw: 45.0
+      - x: 300.5
+        y: 82
+        z: -23.5
+        yaw: 0.0
+      - x: 317.5
+        y: 82
+        z: -16.5
+        yaw: -45.0
+      wave2:
       - x: 315.5
         y: 82
         z: 0.5
+        yaw: -90.0
+      - x: 300.5
+        y: 82
+        z: 15.5
+        yaw: 180.0
+      - x: 285.5
+        y: 82
+        z: 0.5
+        yaw: 90.0
+      - x: 300.5
+        y: 82
+        z: -14.5
+        yaw: 0.0
+      final:
+      - x: 292.5
+        y: 82
+        z: 0.5
+        yaw: -90.0
+      - x: 308.5
+        y: 82
+        z: 0.5
+        yaw: 90.0
       audience:
       - x: 300.5
-        y: 87
+        y: 91
         z: -27.5
-      wave2:
-      - x: 287.5
-        y: 82
-        z: 0.5
-      - x: 312.5
-        y: 82
-        z: 0.5
-      final:
-      - x: 293.5
-        y: 82
-        z: 0.5
-      - x: 306.5
-        y: 82
-        z: 0.5
+        yaw: 0.0
   build-uhc:
     display-name: Build UHC - Verdant Basin
     schematic: build-uhc.schem
@@ -87,38 +165,77 @@ arenas:
       y: 80
       z: 0
     bounds:
-      min-x: 564
+      min-x: 550
       min-y: 79
-      min-z: -36
-      max-x: 635
-      max-y: 100
-      max-z: 35
+      min-z: -50
+      max-x: 650
+      max-y: 122
+      max-z: 50
     spawns:
       wave1:
-      - x: 580.5
+      - x: 622.5
         y: 82
         z: 0.5
-      - x: 620.5
+        yaw: -90.0
+      - x: 616.5
+        y: 82
+        z: 16.5
+        yaw: -135.0
+      - x: 600.5
+        y: 82
+        z: 22.5
+        yaw: 180.0
+      - x: 584.5
+        y: 82
+        z: 16.5
+        yaw: 135.0
+      - x: 578.5
         y: 82
         z: 0.5
+        yaw: 90.0
+      - x: 584.5
+        y: 82
+        z: -15.5
+        yaw: 45.0
+      - x: 600.5
+        y: 82
+        z: -21.5
+        yaw: 0.0
+      - x: 616.5
+        y: 82
+        z: -15.5
+        yaw: -45.0
+      wave2:
+      - x: 614.5
+        y: 82
+        z: 0.5
+        yaw: -90.0
+      - x: 600.5
+        y: 82
+        z: 14.5
+        yaw: 180.0
+      - x: 586.5
+        y: 82
+        z: 0.5
+        yaw: 90.0
+      - x: 600.5
+        y: 82
+        z: -13.5
+        yaw: 0.0
+      final:
+      - x: 592.5
+        y: 82
+        z: 0.5
+        yaw: -90.0
+      - x: 608.5
+        y: 82
+        z: 0.5
+        yaw: 90.0
       audience:
       - x: 600.5
-        y: 87
+        y: 93
         z: -27.5
-      wave2:
-      - x: 587.5
-        y: 82
-        z: 0.5
-      - x: 612.5
-        y: 82
-        z: 0.5
-      final:
-      - x: 593.5
-        y: 82
-        z: 0.5
-      - x: 606.5
-        y: 82
-        z: 0.5
+        yaw: 0.0
   sword:
     display-name: Sword - Grand Colosseum
     schematic: sword.schem
@@ -127,38 +244,77 @@ arenas:
       y: 80
       z: 0
     bounds:
-      min-x: 864
+      min-x: 850
       min-y: 79
-      min-z: -36
-      max-x: 935
-      max-y: 100
-      max-z: 35
+      min-z: -50
+      max-x: 950
+      max-y: 120
+      max-z: 50
     spawns:
       wave1:
-      - x: 885.5
+      - x: 924.5
         y: 82
         z: 0.5
+        yaw: -90.0
+      - x: 917.5
+        y: 82
+        z: 17.5
+        yaw: -135.0
+      - x: 900.5
+        y: 82
+        z: 24.5
+        yaw: 180.0
+      - x: 883.5
+        y: 82
+        z: 17.5
+        yaw: 135.0
+      - x: 876.5
+        y: 82
+        z: 0.5
+        yaw: 90.0
+      - x: 883.5
+        y: 82
+        z: -16.5
+        yaw: 45.0
+      - x: 900.5
+        y: 82
+        z: -23.5
+        yaw: 0.0
+      - x: 917.5
+        y: 82
+        z: -16.5
+        yaw: -45.0
+      wave2:
       - x: 915.5
         y: 82
         z: 0.5
+        yaw: -90.0
+      - x: 900.5
+        y: 82
+        z: 15.5
+        yaw: 180.0
+      - x: 885.5
+        y: 82
+        z: 0.5
+        yaw: 90.0
+      - x: 900.5
+        y: 82
+        z: -14.5
+        yaw: 0.0
+      final:
+      - x: 892.5
+        y: 82
+        z: 0.5
+        yaw: -90.0
+      - x: 908.5
+        y: 82
+        z: 0.5
+        yaw: 90.0
       audience:
       - x: 900.5
-        y: 87
+        y: 90
         z: -27.5
-      wave2:
-      - x: 887.5
-        y: 82
-        z: 0.5
-      - x: 912.5
-        y: 82
-        z: 0.5
-      final:
-      - x: 893.5
-        y: 82
-        z: 0.5
-      - x: 906.5
-        y: 82
-        z: 0.5
+        yaw: 0.0
   uhc:
     display-name: UHC - Wild Frontier
     schematic: uhc.schem
@@ -167,38 +323,77 @@ arenas:
       y: 80
       z: 0
     bounds:
-      min-x: 1164
+      min-x: 1146
       min-y: 79
-      min-z: -36
-      max-x: 1235
-      max-y: 100
-      max-z: 35
+      min-z: -54
+      max-x: 1254
+      max-y: 122
+      max-z: 54
     spawns:
       wave1:
-      - x: 1180.5
+      - x: 1224.5
         y: 82
         z: 0.5
-      - x: 1220.5
+        yaw: -90.0
+      - x: 1217.5
+        y: 82
+        z: 17.5
+        yaw: -135.0
+      - x: 1200.5
+        y: 82
+        z: 24.5
+        yaw: 180.0
+      - x: 1183.5
+        y: 82
+        z: 17.5
+        yaw: 135.0
+      - x: 1176.5
         y: 82
         z: 0.5
+        yaw: 90.0
+      - x: 1183.5
+        y: 82
+        z: -16.5
+        yaw: 45.0
+      - x: 1200.5
+        y: 82
+        z: -23.5
+        yaw: 0.0
+      - x: 1217.5
+        y: 82
+        z: -16.5
+        yaw: -45.0
+      wave2:
+      - x: 1215.5
+        y: 82
+        z: 0.5
+        yaw: -90.0
+      - x: 1200.5
+        y: 82
+        z: 15.5
+        yaw: 180.0
+      - x: 1185.5
+        y: 82
+        z: 0.5
+        yaw: 90.0
+      - x: 1200.5
+        y: 82
+        z: -14.5
+        yaw: 0.0
+      final:
+      - x: 1192.5
+        y: 82
+        z: 0.5
+        yaw: -90.0
+      - x: 1208.5
+        y: 82
+        z: 0.5
+        yaw: 90.0
       audience:
       - x: 1200.5
-        y: 87
-        z: -27.5
-      wave2:
-      - x: 1187.5
-        y: 82
-        z: 0.5
-      - x: 1212.5
-        y: 82
-        z: 0.5
-      final:
-      - x: 1193.5
-        y: 82
-        z: 0.5
-      - x: 1206.5
-        y: 82
-        z: 0.5
+        y: 93
+        z: -30.5
+        yaw: 0.0
   crystal:
     display-name: Crystal - End Rift
     schematic: crystal.schem
@@ -207,38 +402,77 @@ arenas:
       y: 80
       z: 0
     bounds:
-      min-x: 1564
+      min-x: 1546
       min-y: 79
-      min-z: -36
-      max-x: 1635
-      max-y: 100
-      max-z: 35
+      min-z: -54
+      max-x: 1654
+      max-y: 118
+      max-z: 54
     spawns:
       wave1:
-      - x: 1580.5
+      - x: 1626.5
         y: 82
         z: 0.5
-      - x: 1620.5
+        yaw: -90.0
+      - x: 1618.5
+        y: 82
+        z: 18.5
+        yaw: -135.0
+      - x: 1600.5
+        y: 82
+        z: 26.5
+        yaw: 180.0
+      - x: 1582.5
+        y: 82
+        z: 18.5
+        yaw: 135.0
+      - x: 1574.5
         y: 82
         z: 0.5
+        yaw: 90.0
+      - x: 1582.5
+        y: 82
+        z: -17.5
+        yaw: 45.0
+      - x: 1600.5
+        y: 82
+        z: -25.5
+        yaw: 0.0
+      - x: 1618.5
+        y: 82
+        z: -17.5
+        yaw: -45.0
+      wave2:
+      - x: 1616.5
+        y: 82
+        z: 0.5
+        yaw: -90.0
+      - x: 1600.5
+        y: 82
+        z: 16.5
+        yaw: 180.0
+      - x: 1584.5
+        y: 82
+        z: 0.5
+        yaw: 90.0
+      - x: 1600.5
+        y: 82
+        z: -15.5
+        yaw: 0.0
+      final:
+      - x: 1592.5
+        y: 82
+        z: 0.5
+        yaw: -90.0
+      - x: 1608.5
+        y: 82
+        z: 0.5
+        yaw: 90.0
       audience:
       - x: 1600.5
-        y: 87
-        z: -27.5
-      wave2:
-      - x: 1587.5
-        y: 82
-        z: 0.5
-      - x: 1612.5
-        y: 82
-        z: 0.5
-      final:
-      - x: 1593.5
-        y: 82
-        z: 0.5
-      - x: 1606.5
-        y: 82
-        z: 0.5
+        y: 91
+        z: -30.5
+        yaw: 0.0
   smp:
     display-name: SMP - Fallen Kingdom
     schematic: smp.schem
@@ -247,75 +481,153 @@ arenas:
       y: 80
       z: 0
     bounds:
-      min-x: 1864
+      min-x: 1846
       min-y: 79
-      min-z: -36
-      max-x: 1935
-      max-y: 100
-      max-z: 35
+      min-z: -54
+      max-x: 1954
+      max-y: 120
+      max-z: 54
     spawns:
       wave1:
-      - x: 1880.5
+      - x: 1926.5
         y: 82
         z: 0.5
-      - x: 1920.5
+        yaw: -90.0
+      - x: 1918.5
+        y: 82
+        z: 18.5
+        yaw: -135.0
+      - x: 1900.5
+        y: 82
+        z: 26.5
+        yaw: 180.0
+      - x: 1882.5
+        y: 82
+        z: 18.5
+        yaw: 135.0
+      - x: 1874.5
         y: 82
         z: 0.5
+        yaw: 90.0
+      - x: 1882.5
+        y: 82
+        z: -17.5
+        yaw: 45.0
+      - x: 1900.5
+        y: 82
+        z: -25.5
+        yaw: 0.0
+      - x: 1918.5
+        y: 82
+        z: -17.5
+        yaw: -45.0
+      wave2:
+      - x: 1916.5
+        y: 82
+        z: 0.5
+        yaw: -90.0
+      - x: 1900.5
+        y: 82
+        z: 16.5
+        yaw: 180.0
+      - x: 1884.5
+        y: 82
+        z: 0.5
+        yaw: 90.0
+      - x: 1900.5
+        y: 82
+        z: -15.5
+        yaw: 0.0
+      final:
+      - x: 1892.5
+        y: 82
+        z: 0.5
+        yaw: -90.0
+      - x: 1908.5
+        y: 82
+        z: 0.5
+        yaw: 90.0
       audience:
       - x: 1900.5
-        y: 87
-        z: -27.5
-      wave2:
-      - x: 1887.5
-        y: 82
-        z: 0.5
-      - x: 1912.5
-        y: 82
-        z: 0.5
-      final:
-      - x: 1893.5
-        y: 82
-        z: 0.5
-      - x: 1906.5
-        y: 82
-        z: 0.5
+        y: 92
+        z: -30.5
+        yaw: 0.0
   diamond-pot:
-    display-name: Diamond Pot - Frostglass
+    display-name: Diamond Pot - Frostglass Temple
     schematic: diamond-pot.schem
     paste:
       x: 2200
       y: 80
       z: 0
     bounds:
-      min-x: 2164
+      min-x: 2150
       min-y: 79
-      min-z: -36
-      max-x: 2235
-      max-y: 100
-      max-z: 35
+      min-z: -50
+      max-x: 2250
+      max-y: 120
+      max-z: 50
     spawns:
       wave1:
-      - x: 2180.5
+      - x: 2224.5
         y: 82
         z: 0.5
-      - x: 2220.5
+        yaw: -90.0
+      - x: 2217.5
+        y: 82
+        z: 17.5
+        yaw: -135.0
+      - x: 2200.5
+        y: 82
+        z: 24.5
+        yaw: 180.0
+      - x: 2183.5
+        y: 82
+        z: 17.5
+        yaw: 135.0
+      - x: 2176.5
         y: 82
         z: 0.5
+        yaw: 90.0
+      - x: 2183.5
+        y: 82
+        z: -16.5
+        yaw: 45.0
+      - x: 2200.5
+        y: 82
+        z: -23.5
+        yaw: 0.0
+      - x: 2217.5
+        y: 82
+        z: -16.5
+        yaw: -45.0
+      wave2:
+      - x: 2215.5
+        y: 82
+        z: 0.5
+        yaw: -90.0
+      - x: 2200.5
+        y: 82
+        z: 15.5
+        yaw: 180.0
+      - x: 2185.5
+        y: 82
+        z: 0.5
+        yaw: 90.0
+      - x: 2200.5
+        y: 82
+        z: -14.5
+        yaw: 0.0
+      final:
+      - x: 2192.5
+        y: 82
+        z: 0.5
+        yaw: -90.0
+      - x: 2208.5
+        y: 82
+        z: 0.5
+        yaw: 90.0
       audience:
       - x: 2200.5
-        y: 87
+        y: 91
         z: -27.5
-      wave2:
-      - x: 2187.5
-        y: 82
-        z: 0.5
-      - x: 2212.5
-        y: 82
-        z: 0.5
-      final:
-      - x: 2193.5
-        y: 82
-        z: 0.5
-      - x: 2206.5
-        y: 82
-        z: 0.5
+        yaw: 0.0

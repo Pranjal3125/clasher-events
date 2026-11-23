@@ -1,35 +1,104 @@
 # ==============================================================================
-# Clasher Events Configuration
+# Clasher Events v2.0.0 Configuration
 # ==============================================================================
-# All arena schematics are pasted into one shared world (one active event at a time).
+# Zero-dependency plug-and-play PvP tournament & events engine.
+# WorldEdit, WorldGuard, and PlaceholderAPI are 100% optional!
 # Reload live with /ce reload.
 # ==============================================================================
 
 shared-world: clasher_events
+use-void-world: true
+
+# true  = Dedicated Event Server (returns players to configured event lobby)
+# false = Single-Server SMP (returns players to their exact pre-event survival location)
+dedicated-server-mode: true
 
 default-registration-seconds: 120
 kit-delivery-seconds-before-start: 60
 disconnect-grace-seconds: 60
+celebration-seconds: 6
 
 # Audience points awarded to spectators who correctly predict the event winner.
 audience-correct-prediction-points: 10
+
+# Automatic arena pasting (no WorldEdit required!) & post-match zero-lag block rollback.
+arenas:
+  auto-paste-on-first-use: true
+  auto-reset-after-match: true
+  paste-blocks-per-tick: 2500
+  rollback-blocks-per-tick: 300
+
+# Live HUD (Adventure BossBar, Sidebar Scoreboard, Countdown/Victory Titles).
+hud:
+  bossbar: true
+  scoreboard: true
+  titles: true
+
+# Pre-event mode voting (/ce voteopen & /event modevote).
+mode-vote:
+  duration-seconds: 45
+  options:
+    - nethpot
+    - crystal
+    - build-uhc
+    - sword
+    - axe-shield
+    - diamond-pot
+    - team-wars
+    - tournament
+
+# Strict command whitelist while a player is participating in an event (blocks /ec, /ah, /home, /spawn, etc.).
+security:
+  block-disallowed-commands: true
+  block-containers-during-event: true
+  allowed-commands-during-event:
+    - event
+    - ce
+    - msg
+    - r
+    - reply
+    - tell
+    - w
+    - help
 
 # AFK elimination rules during live combat.
 afk:
   enabled: true
   eliminate-after-seconds: 300
 
-# Per-player world borders used because all arenas share one world.
+# Per-player world borders (centered automatically on arena bounds!).
 world-border:
   wave1:
-    size: 140
+    size: 84
     shrink-seconds: 60
   wave2:
-    size: 80
+    size: 52
     shrink-seconds: 60
   final:
-    size: 35
+    size: 28
     shrink-seconds: 30
+
+# Optional automatic event hosting (set enabled: true to auto-run events without staff online).
+auto-scheduler:
+  enabled: false
+  timezone: Asia/Kolkata
+  min-online-players: 4
+  interval-minutes: 60
+  # Leave fixed-times empty to use interval-minutes, or specify 24h times like ["18:00", "21:00"]
+  fixed-times: []
+  use-mode-vote: true
+  mode-rotation:
+    - nethpot
+    - sword
+    - build-uhc
+    - crystal
+    - team-wars
+    - tournament
+
+# Optional Discord Webhook notifications (Event Open + Winner & MVP embed card).
+discord:
+  enabled: false
+  webhook-url: ""
 
 # Console commands executed when a winner is decided.
 # Placeholders: {player}, {uuid}, {arena}, {mode}

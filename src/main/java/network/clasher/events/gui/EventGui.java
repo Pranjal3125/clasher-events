@@ -1,9 +1,11 @@
 package network.clasher.events.gui;
 
 import net.kyori.adventure.text.Component;
+import network.clasher.events.arena.ArenaManager;
 import network.clasher.events.kit.KitManager;
 import network.clasher.events.match.EventManager;
 import network.clasher.events.model.EventMode;
+import network.clasher.events.storage.DataStore;
 import network.clasher.events.util.FormatUtil;
 import org.bukkit.Bukkit;
 import org.bukkit.GameMode;
@@ -26,19 +28,26 @@ import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
 
 /**
  * Secure InventoryHolder-based GUIs for admin controls, countdown selection,
- * kit previews, winner predictions, and spectator target selection.
+ * pre-event mode voting, multi-tab Elo/Wins/Kills leaderboards, kit previews,
+ * winner predictions, and spectator target selection.
  */
 public final class EventGui implements Listener {
+    private final JavaPlugin plugin;
+    private final ArenaManager arenas;
     private final EventManager events;
     private final KitManager kits;
     private final NamespacedKey actionKey;
     private final NamespacedKey valueKey;
 
-    public EventGui(JavaPlugin plugin, EventManager events, KitManager kits) {
+    public EventGui(JavaPlugin plugin, ArenaManager arenas, EventManager events, KitManager kits) {
+        this.plugin = plugin;
+        this.arenas = arenas;
         this.events = events;
         this.kits = kits;
         this.actionKey = new NamespacedKey(plugin, "ce-gui-action");
@@ -73,6 +82,13 @@ public final class EventGui implements Listener {
             ));
         }
 
+        inv.setItem(29, button(
+                Material.BELL,
+                "<aqua><bold>Open Mode Vote</bold></aqua>",
+                List.of("<gray>Let players vote on the next PvP mode!</gray>"),
+                "start-mode-vote",
+                ""
+        ));
         inv.setItem(30, button(
                 Material.CLOCK,
                 "<yellow><bold>Registration Countdown</bold></yellow>",
@@ -90,8 +106,15 @@ public final class EventGui implements Listener {
         inv.setItem(32, button(
                 Material.BARRIER,
                 "<red><bold>Stop Event</bold></red>",
-                List.of("<gray>End active event and restore all players.</gray>"),
+                List.of("<gray>End active event, rollback arena, & restore players.</gray>"),
                 "stop",
+                ""
+        ));
+        inv.setItem(33, button(
+                Material.GRASS_BLOCK,
+                "<green><bold>Paste All Arenas</bold></green>",
+                List.of("<gray>Zero-lag batched paste for all 8 schematics.</gray>"),
+                "paste-all",
                 ""
         ));
         inv.setItem(40, button(
@@ -107,6 +130,100 @@ public final class EventGui implements Listener {
                 ""
         ));
         admin.openInventory(inv);
+    }
+
+    // -------------------------------------------------------------------------
+    // Pre-Event Player Mode Voting GUI (36 slots)
+    // -------------------------------------------------------------------------
+
+    public void openModeVoteGui(Player player) {
+        if (!events.isModeVoteOpen()) {
+            player.sendMessage(FormatUtil.mm("<red>Mode voting is not currently open.</red>"));
+            return;
+        }
+        EventMenuHolder holder = new EventMenuHolder(EventMenuHolder.ViewType.MODE_VOTE);
+        Inventory inv = Bukkit.createInventory(holder, 36, FormatUtil.mm("<dark_gray><bold>Vote Next Event Mode</bold></dark_gray> <gray>(" + events.modeVoteRemaining() + "s)</gray>"));
+        holder.setInventory(inv);
+        fillBorder(inv, 36);
+
+        Map<String, Integer> counts = events.modeVoteCounts();
+        int slot = 10;
+        for (EventMode mode : events.modeVoteOptions()) {
+            slot = nextInteriorSlot(slot, 26);
+            if (slot < 0) break;
+            int votes = counts.getOrDefault(mode.id(), 0);
+            inv.setItem(slot++, button(
+                    mode.icon(),
+                    "<yellow><bold>" + mode.displayName() + "</bold></yellow>",
+                    List.of(
+                            "<gray>Current Votes:</gray> <green><bold>" + votes + "</bold></green>",
+                            "",
+                            "<aqua>Click to vote for this mode!</aqua>"
+                    ),
+                    "mode-vote",
+                    mode.id()
+            ));
+        }
+        player.openInventory(inv);
+    }
+
+    // -------------------------------------------------------------------------
+    // Multi-Tab Leaderboard GUI (45 slots — Elo / Wins / Kills / Audience Points)
+    // -------------------------------------------------------------------------
+
+    public void openLeaderboardGui(Player viewer, String tabRaw) {
+        String tab = tabRaw == null ? "elo" : tabRaw.toLowerCase(Locale.ROOT);
+        if (!List.of("elo", "wins", "kills", "points").contains(tab)) tab = "elo";
+
+        String titleLabel = switch (tab) {
+            case "wins" -> "Top Wins";
+            case "kills" -> "Top Kills";
+            case "points" -> "Audience Points";
+            default -> "Top Elo";
+        };
+        EventMenuHolder holder = new EventMenuHolder(EventMenuHolder.ViewType.LEADERBOARD);
+        Inventory inv = Bukkit.createInventory(holder, 45, FormatUtil.mm("<dark_gray><bold>Leaderboard</bold></dark_gray> <gray>|</gray> <gold>" + titleLabel + "</gold>"));
+        holder.setInventory(inv);
+        fillBorder(inv, 45);
+
+        List<DataStore.LeaderboardEntry> entries = switch (tab) {
+            case "wins" -> events.data().topWins(14);
+            case "kills" -> events.data().topKills(14);
+            case "points" -> events.data().topAudiencePoints(14);
+            default -> events.data().topElo(14);
+        };
+
+        int slot = 10;
+        for (int i = 0; i < entries.size(); i++) {
+            slot = nextInteriorSlot(slot, 26);
+            if (slot < 0) break;
+            DataStore.LeaderboardEntry e = entries.get(i);
+            Material mat = i == 0 ? Material.GOLD_BLOCK : i == 1 ? Material.IRON_BLOCK : i == 2 ? Material.COPPER_BLOCK : Material.PAPER;
+            String valueLine = switch (tab) {
+                case "wins" -> "<yellow>" + e.value() + " Wins</yellow> <gray>(Elo " + e.secondary() + ")</gray>";
+                case "kills" -> "<red>" + e.value() + " Kills</red> <gray>(" + e.secondary() + " Deaths)</gray>";
+                case "points" -> "<aqua>" + e.value() + " Audience Points</aqua>";
+                default -> "<gold>" + e.value() + " Elo</gold> <gray>(" + e.secondary() + " Wins)</gray>";
+            };
+            inv.setItem(slot++, button(
+                    mat,
+                    "<gold><bold>#" + (i + 1) + "</bold></gold> <white>" + FormatUtil.escape(e.name()) + "</white>",
+                    List.of(valueLine),
+                    "noop",
+                    ""
+            ));
+        }
+
+        if (entries.isEmpty()) {
+            inv.setItem(22, button(Material.BARRIER, "<gray>No leaderboard data yet</gray>", List.of("<dark_gray>Play an event to rank up!</dark_gray>"), "noop", ""));
+        }
+
+        // Bottom category tabs
+        inv.setItem(38, button(Material.NETHER_STAR, (tab.equals("elo") ? "<green><bold>● " : "<yellow>") + "Top Elo" + (tab.equals("elo") ? "</bold></green>" : "</yellow>"), List.of("<gray>Click to sort by Elo rating</gray>"), "lb-tab", "elo"));
+        inv.setItem(39, button(Material.GOLDEN_HELMET, (tab.equals("wins") ? "<green><bold>● " : "<yellow>") + "Top Wins" + (tab.equals("wins") ? "</bold></green>" : "</yellow>"), List.of("<gray>Click to sort by Event Wins</gray>"), "lb-tab", "wins"));
+        inv.setItem(41, button(Material.DIAMOND_SWORD, (tab.equals("kills") ? "<green><bold>● " : "<yellow>") + "Top Kills" + (tab.equals("kills") ? "</bold></green>" : "</yellow>"), List.of("<gray>Click to sort by PvP Kills</gray>"), "lb-tab", "kills"));
+        inv.setItem(42, button(Material.GOLD_INGOT, (tab.equals("points") ? "<green><bold>● " : "<yellow>") + "Audience Points" + (tab.equals("points") ? "</bold></green>" : "</yellow>"), List.of("<gray>Click to sort by Prediction Points</gray>"), "lb-tab", "points"));
+        viewer.openInventory(inv);
     }
 
     // -------------------------------------------------------------------------
@@ -262,7 +379,7 @@ public final class EventGui implements Listener {
         ItemMeta meta = clicked.getItemMeta();
         if (meta == null) return;
         String action = meta.getPersistentDataContainer().get(actionKey, PersistentDataType.STRING);
-        if (action == null || action.isEmpty()) return;
+        if (action == null || action.isEmpty() || action.equals("noop")) return;
         String value = meta.getPersistentDataContainer().getOrDefault(valueKey, PersistentDataType.STRING, "");
 
         player.playSound(player.getLocation(), Sound.UI_BUTTON_CLICK, 0.5f, 1.2f);
@@ -271,6 +388,16 @@ public final class EventGui implements Listener {
                 if (!player.hasPermission("clasherevents.admin")) return;
                 player.closeInventory();
                 events.createEvent(value);
+            }
+            case "start-mode-vote" -> {
+                if (!player.hasPermission("clasherevents.admin")) return;
+                player.closeInventory();
+                events.startModeVote(plugin.getConfig().getInt("mode-vote.duration-seconds", 45));
+            }
+            case "paste-all" -> {
+                if (!player.hasPermission("clasherevents.admin")) return;
+                player.closeInventory();
+                arenas.pasteAllArenas(player, events::isArenaInUse);
             }
             case "countdown" -> {
                 if (!player.hasPermission("clasherevents.admin")) return;
@@ -290,9 +417,7 @@ public final class EventGui implements Listener {
                     } else {
                         player.sendMessage(FormatUtil.mm("<red>No registration is currently open.</red>"));
                     }
-                } catch (NumberFormatException ignored) {
-                    // Ignore malformed value.
-                }
+                } catch (NumberFormatException ignored) {}
                 player.closeInventory();
             }
             case "toggle-pause" -> {
@@ -317,6 +442,11 @@ public final class EventGui implements Listener {
                 events.handleVote(player, value);
                 player.closeInventory();
             }
+            case "mode-vote" -> {
+                events.castModeVote(player, value);
+                openModeVoteGui(player);
+            }
+            case "lb-tab" -> openLeaderboardGui(player, value);
             case "spectate" -> {
                 Player target = Bukkit.getPlayerExact(value);
                 if (target != null && player.getGameMode() == GameMode.SPECTATOR) {
@@ -324,9 +454,7 @@ public final class EventGui implements Listener {
                     player.closeInventory();
                 }
             }
-            default -> {
-                // Ignore unknown action.
-            }
+            default -> {}
         }
     }
 

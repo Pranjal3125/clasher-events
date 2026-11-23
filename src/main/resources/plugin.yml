@@ -2,20 +2,20 @@ name: ClasherEvents
 version: '${project.version}'
 main: network.clasher.events.ClasherEventsPlugin
 api-version: '26.2'
-softdepend: [WorldEdit, WorldGuard]
+softdepend: [WorldEdit, WorldGuard, PlaceholderAPI]
 authors: [Clasher Network]
 website: https://github.com/Pranjal3125/clasher-events
 description: Modular PvP tournament and events engine for Clasher Network.
 
 commands:
   ce:
-    description: Clasher Events administration and arena management
+    description: Clasher Events administration, mode voting, and arena management
     usage: /ce help
     aliases: [clasherevents]
     permission: clasherevents.admin
   event:
-    description: Join, spectate, vote, cheer, and view stats for Clasher Events
-    usage: /event <join|leave|vote|cheer|team|points|stats|top|history|spectate>
+    description: Join, spectate, vote, cheer, and view stats/leaderboards for Clasher Events
+    usage: /event <join|leave|modevote|vote|cheer|team|points|stats|top|history|spectate>
   latejoin:
     description: Admin force-join an online player into an active event
     usage: /latejoin <playername>
@@ -23,7 +23,7 @@ commands:
 
 permissions:
   clasherevents.admin:
-    description: Manage events, arenas, kits, spawns, and late joins
+    description: Manage events, arenas, kits, spawns, mode votes, and late joins
     default: op
   clasherevents.join:
     description: Join and participate in Clasher Events

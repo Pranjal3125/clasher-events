@@ -1,20 +1,5 @@
 package network.clasher.events.arena;
 
-import com.sk89q.worldedit.EditSession;
-import com.sk89q.worldedit.WorldEdit;
-import com.sk89q.worldedit.bukkit.BukkitAdapter;
-import com.sk89q.worldedit.extent.clipboard.BlockArrayClipboard;
-import com.sk89q.worldedit.extent.clipboard.Clipboard;
-import com.sk89q.worldedit.extent.clipboard.io.ClipboardFormat;
-import com.sk89q.worldedit.extent.clipboard.io.ClipboardFormats;
-import com.sk89q.worldedit.extent.clipboard.io.ClipboardReader;
-import com.sk89q.worldedit.extent.clipboard.io.ClipboardWriter;
-import com.sk89q.worldedit.function.operation.ForwardExtentCopy;
-import com.sk89q.worldedit.function.operation.Operation;
-import com.sk89q.worldedit.function.operation.Operations;
-import com.sk89q.worldedit.math.BlockVector3;
-import com.sk89q.worldedit.regions.CuboidRegion;
-import com.sk89q.worldedit.session.ClipboardHolder;
 import com.sk89q.worldguard.WorldGuard;
 import com.sk89q.worldguard.protection.flags.Flags;
 import com.sk89q.worldguard.protection.flags.RegionGroup;
@@ -23,11 +8,16 @@ import com.sk89q.worldguard.protection.managers.RegionManager;
 import com.sk89q.worldguard.protection.regions.ProtectedCuboidRegion;
 import com.sk89q.worldguard.protection.regions.ProtectedRegion;
 import com.sk89q.worldguard.protection.regions.RegionContainer;
+import com.sk89q.worldedit.bukkit.BukkitAdapter;
+import com.sk89q.worldedit.math.BlockVector3;
 import network.clasher.events.model.Arena;
 import network.clasher.events.storage.YamlAtomicStorage;
 import network.clasher.events.util.FormatUtil;
 import org.bukkit.Bukkit;
+import org.bukkit.Difficulty;
+import org.bukkit.GameRules;
 import org.bukkit.Location;
+import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.WorldCreator;
 import org.bukkit.command.CommandSender;
@@ -38,10 +28,10 @@ import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Deque;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -50,17 +40,20 @@ import java.util.Set;
 import java.util.UUID;
 
 /**
- * Manages shared-world arena definitions, spawn editing, WorldEdit schematic pasting/backups,
- * entity cleanup, and optional WorldGuard region protection.
+ * Manages shared-world void arena creation, spawn editing, zero-dependency Sponge v2
+ * tick-batched schematic pasting & auto-pasting, entity cleanup, and optional WorldGuard protection.
  */
 public final class ArenaManager {
     private static final List<String> VALID_PHASES = List.of("wave1", "wave2", "final", "audience");
 
     private final JavaPlugin plugin;
     private final Map<String, Arena> arenas = new LinkedHashMap<>();
+    private final File pastedMarkerFile;
+    private YamlConfiguration pastedMarkers;
 
     public ArenaManager(JavaPlugin plugin) {
         this.plugin = plugin;
+        this.pastedMarkerFile = new File(plugin.getDataFolder(), "pasted-arenas.yml");
     }
 
     public void load() {
@@ -68,20 +61,22 @@ public final class ArenaManager {
         File file = new File(plugin.getDataFolder(), "arenas.yml");
         YamlConfiguration yml = YamlConfiguration.loadConfiguration(file);
         ConfigurationSection root = yml.getConfigurationSection("arenas");
-        if (root == null) return;
-        for (String id : root.getKeys(false)) {
-            ConfigurationSection section = root.getConfigurationSection(id);
-            if (section == null) continue;
-            arenas.put(id.toLowerCase(Locale.ROOT), new Arena(
-                    id,
-                    section.getString("display-name", id),
-                    section.getString("schematic", id + ".schem"),
-                    section.getInt("paste.x"),
-                    section.getInt("paste.y"),
-                    section.getInt("paste.z"),
-                    section
-            ));
+        if (root != null) {
+            for (String id : root.getKeys(false)) {
+                ConfigurationSection section = root.getConfigurationSection(id);
+                if (section == null) continue;
+                arenas.put(id.toLowerCase(Locale.ROOT), new Arena(
+                        id,
+                        section.getString("display-name", id),
+                        section.getString("schematic", id + ".schem"),
+                        section.getInt("paste.x"),
+                        section.getInt("paste.y"),
+                        section.getInt("paste.z"),
+                        section
+                ));
+            }
         }
+        pastedMarkers = YamlConfiguration.loadConfiguration(pastedMarkerFile);
     }
 
     public Arena get(String id) {
@@ -103,17 +98,41 @@ public final class ArenaManager {
     public World getOrCreateSharedWorld(CommandSender sender) {
         String name = sharedWorldName();
         World world = Bukkit.getWorld(name);
-        if (world == null) world = new WorldCreator(name).createWorld();
+        if (world == null) {
+            WorldCreator creator = new WorldCreator(name);
+            if (plugin.getConfig().getBoolean("use-void-world", true)) {
+                creator.generator(new VoidChunkGenerator());
+            }
+            world = creator.createWorld();
+            if (world != null) {
+                configureArenaWorldRules(world);
+            }
+        }
         if (world == null && sender != null) {
             sender.sendMessage(FormatUtil.mm("<red>Could not load or create shared world '" + FormatUtil.escape(name) + "'.</red>"));
         }
         return world;
     }
 
+    private void configureArenaWorldRules(World world) {
+        try {
+            world.setDifficulty(Difficulty.NORMAL);
+            world.setAutoSave(true);
+            world.setGameRule(GameRules.SPAWN_MOBS, false);
+            world.setGameRule(GameRules.ADVANCE_WEATHER, false);
+            world.setGameRule(GameRules.ADVANCE_TIME, false);
+            world.setGameRule(GameRules.SHOW_ADVANCEMENT_MESSAGES, false);
+            world.setTime(6000L);
+            world.setStorm(false);
+        } catch (Throwable ignored) {
+            // Safe fallback across minor API differences.
+        }
+    }
+
     public List<Location> spawns(Arena arena, String phase) {
         List<Location> out = new ArrayList<>();
         if (arena == null) return out;
-        World world = Bukkit.getWorld(sharedWorldName());
+        World world = getOrCreateSharedWorld(null);
         if (world == null) return out;
         for (Map<?, ?> row : arena.section().getMapList("spawns." + phase)) {
             Object x = row.get("x"), y = row.get("y"), z = row.get("z");
@@ -168,86 +187,151 @@ public final class ArenaManager {
             player.sendMessage(FormatUtil.mm("<green>" + (append ? "Added" : "Set") + " " + FormatUtil.escape(arena.displayName())
                     + " " + phaseKey + " spawn at "
                     + String.format(Locale.ROOT, "%.2f, %.2f, %.2f", loc.getX(), loc.getY(), loc.getZ()) + ".</green>"));
-            player.sendMessage(FormatUtil.mm(append
-                    ? "<gray>Spawn point added; existing points were kept.</gray>"
-                    : "<gray>Previous spawn points for this phase were replaced.</gray>"));
         } else {
             player.sendMessage(FormatUtil.mm("<red>Could not save arenas.yml. Check console for details.</red>"));
         }
     }
 
+    /**
+     * Checks whether the arena floor exists in the shared world; if missing and auto-paste is enabled,
+     * pastes the bundled schematic asynchronously in tick-batched slices before invoking onReady.
+     */
+    public void ensureArenaReady(String arenaId, CommandSender feedback, Runnable onReady) {
+        Arena arena = get(arenaId);
+        if (arena == null) {
+            if (onReady != null) onReady.run();
+            return;
+        }
+        World world = getOrCreateSharedWorld(feedback);
+        if (world == null) return;
+
+        boolean autoPaste = plugin.getConfig().getBoolean("arenas.auto-paste-on-first-use", true);
+        if (!autoPaste || isArenaFloorPresent(world, arena)) {
+            ensureWorldGuardRegion(world, arena);
+            if (onReady != null) onReady.run();
+            return;
+        }
+
+        plugin.getLogger().info("Auto-pasting arena '" + arena.id() + "' from " + arena.schematic() + "...");
+        if (feedback != null) {
+            feedback.sendMessage(FormatUtil.mm("<yellow>Auto-pasting arena <gold>" + FormatUtil.escape(arena.displayName()) + "</gold> (zero-lag batched)...</yellow>"));
+        }
+        pasteArenaAsync(feedback, arena.id(), false, () -> {
+            if (onReady != null) onReady.run();
+        });
+    }
+
+    private boolean isArenaFloorPresent(World world, Arena arena) {
+        if (pastedMarkers != null && pastedMarkers.getBoolean("pasted." + arena.id().toLowerCase(Locale.ROOT), false)) {
+            Location first = firstSpawn(arena, "wave1");
+            if (first == null) return true;
+            Material below = world.getBlockAt(first.getBlockX(), first.getBlockY() - 1, first.getBlockZ()).getType();
+            return !below.isAir();
+        }
+        Location first = firstSpawn(arena, "wave1");
+        if (first == null) return false;
+        Material below = world.getBlockAt(first.getBlockX(), first.getBlockY() - 1, first.getBlockZ()).getType();
+        return !below.isAir();
+    }
+
     public boolean pasteArena(CommandSender sender, String id, boolean arenaInUse) {
+        return pasteArenaAsync(sender, id, arenaInUse, null);
+    }
+
+    public boolean pasteArenaAsync(CommandSender sender, String id, boolean arenaInUse, Runnable onComplete) {
         if (arenaInUse) {
-            sender.sendMessage(FormatUtil.mm("<red>You cannot paste an arena while its event is open or running.</red>"));
+            if (sender != null) sender.sendMessage(FormatUtil.mm("<red>You cannot paste an arena while its event is open or running.</red>"));
             return false;
         }
         Arena arena = get(id);
         if (arena == null) {
-            sender.sendMessage(FormatUtil.mm("<red>Unknown arena: " + FormatUtil.escape(id) + "</red>"));
+            if (sender != null) sender.sendMessage(FormatUtil.mm("<red>Unknown arena: " + FormatUtil.escape(id) + "</red>"));
             return false;
         }
         World world = getOrCreateSharedWorld(sender);
         if (world == null) return false;
-        if (Bukkit.getPluginManager().getPlugin("WorldEdit") == null) {
-            sender.sendMessage(FormatUtil.mm("<red>WorldEdit is required for schematic paste/reset.</red>"));
-            return false;
-        }
+
         File source = new File(new File(plugin.getDataFolder(), "schematics"), arena.schematic());
         if (!source.isFile()) {
-            sender.sendMessage(FormatUtil.mm("<red>Missing schematic: " + FormatUtil.escape(source.getPath()) + "</red>"));
+            if (sender != null) sender.sendMessage(FormatUtil.mm("<red>Missing schematic: " + FormatUtil.escape(source.getPath()) + "</red>"));
             return false;
         }
-        try {
-            pasteClipboard(source, world, BlockVector3.at(arena.pasteX(), arena.pasteY(), arena.pasteZ()));
-            clearArenaEntities(world, arena);
-            File backup = arenaBackupFile(arena);
-            if (!backup.exists()) captureArenaBackup(world, arena, backup);
-            ensureWorldGuardRegion(world, arena);
-            sender.sendMessage(FormatUtil.mm("<green>Pasted " + FormatUtil.escape(arena.displayName())
-                    + ". Arena baseline backup " + (backup.exists() ? "is ready" : "could not be created") + ".</green>"));
-            return true;
-        } catch (Exception ex) {
-            plugin.getLogger().severe("Schematic paste failed for " + id + ": " + ex.getMessage());
-            sender.sendMessage(FormatUtil.mm("<red>Paste failed: " + FormatUtil.escape(ex.getMessage()) + "</red>"));
-            return false;
+
+        int blocksPerTick = Math.max(500, plugin.getConfig().getInt("arenas.paste-blocks-per-tick", 2500));
+        // Parse GZIP/NBT asynchronously off main tick thread, then apply tick-batched on main thread
+        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+            try {
+                SpongeSchematicPaster.ParsedSchematic parsed = SpongeSchematicPaster.parse(source);
+                Bukkit.getScheduler().runTask(plugin, () -> {
+                    SpongeSchematicPaster.pasteBatched(
+                            plugin,
+                            world,
+                            parsed,
+                            arena.pasteX(),
+                            arena.pasteY(),
+                            arena.pasteZ(),
+                            blocksPerTick,
+                            false,
+                            () -> {
+                                clearArenaEntities(world, arena);
+                                ensureWorldGuardRegion(world, arena);
+                                markPasted(arena.id());
+                                if (sender != null) {
+                                    sender.sendMessage(FormatUtil.mm("<green>Pasted <gold>" + FormatUtil.escape(arena.displayName())
+                                            + "</gold> (" + parsed.nonAirBlockCount() + " blocks, zero-lag batched).</green>"));
+                                }
+                                if (onComplete != null) onComplete.run();
+                            }
+                    );
+                });
+            } catch (Exception ex) {
+                plugin.getLogger().severe("Schematic paste failed for " + id + ": " + ex.getMessage());
+                if (sender != null) {
+                    Bukkit.getScheduler().runTask(plugin, () ->
+                            sender.sendMessage(FormatUtil.mm("<red>Paste failed for " + FormatUtil.escape(id) + ": " + FormatUtil.escape(ex.getMessage()) + "</red>")));
+                }
+            }
+        });
+        return true;
+    }
+
+    public void pasteAllArenas(CommandSender sender, java.util.function.Predicate<String> inUseCheck) {
+        Deque<String> queue = new ArrayDeque<>();
+        for (String id : arenas.keySet()) {
+            if (!inUseCheck.test(id)) queue.addLast(id);
         }
+        if (queue.isEmpty()) {
+            if (sender != null) sender.sendMessage(FormatUtil.mm("<yellow>No idle arenas available to paste.</yellow>"));
+            return;
+        }
+        if (sender != null) {
+            sender.sendMessage(FormatUtil.mm("<yellow>Starting batched paste for <gold>" + queue.size() + "</gold> arenas...</yellow>"));
+        }
+        pasteNextInQueue(sender, queue);
+    }
+
+    private void pasteNextInQueue(CommandSender sender, Deque<String> queue) {
+        String next = queue.pollFirst();
+        if (next == null) {
+            if (sender != null) sender.sendMessage(FormatUtil.mm("<green><bold>All arenas pasted and ready!</bold></green>"));
+            return;
+        }
+        pasteArenaAsync(sender, next, false, () -> pasteNextInQueue(sender, queue));
     }
 
     public boolean resetArena(CommandSender sender, String id, boolean arenaInUse) {
         if (arenaInUse) {
-            sender.sendMessage(FormatUtil.mm("<red>You cannot reset an arena while its event is open or running.</red>"));
+            if (sender != null) sender.sendMessage(FormatUtil.mm("<red>You cannot reset an arena while its event is open or running.</red>"));
             return false;
         }
-        Arena arena = get(id);
-        if (arena == null) {
-            sender.sendMessage(FormatUtil.mm("<red>Unknown arena: " + FormatUtil.escape(id) + "</red>"));
-            return false;
-        }
-        File backup = arenaBackupFile(arena);
-        if (!backup.isFile()) {
-            sender.sendMessage(FormatUtil.mm("<yellow>No baseline backup exists yet; pasting starter schematic and creating one now.</yellow>"));
-            return pasteArena(sender, id, false);
-        }
-        World world = getOrCreateSharedWorld(sender);
-        if (world == null) return false;
-        try {
-            ClipboardFormat format = ClipboardFormats.findByPath(backup.toPath());
-            if (format == null) throw new IllegalStateException("Unsupported backup schematic format");
-            try (ClipboardReader reader = format.getReader(new FileInputStream(backup))) {
-                Clipboard clipboard = reader.read();
-                try (EditSession session = WorldEdit.getInstance().newEditSession(BukkitAdapter.adapt(world))) {
-                    Operation op = new ClipboardHolder(clipboard).createPaste(session)
-                            .to(clipboard.getOrigin()).ignoreAirBlocks(false).build();
-                    Operations.complete(op);
-                }
-            }
+        return pasteArenaAsync(sender, id, false, null);
+    }
+
+    public void clearArenaEntities(String arenaId) {
+        Arena arena = get(arenaId);
+        World world = Bukkit.getWorld(sharedWorldName());
+        if (arena != null && world != null) {
             clearArenaEntities(world, arena);
-            sender.sendMessage(FormatUtil.mm("<green>Arena " + FormatUtil.escape(arena.displayName()) + " restored to its saved baseline.</green>"));
-            return true;
-        } catch (Exception ex) {
-            plugin.getLogger().severe("Arena reset failed for " + id + ": " + ex.getMessage());
-            sender.sendMessage(FormatUtil.mm("<red>Reset failed: " + FormatUtil.escape(ex.getMessage()) + "</red>"));
-            return false;
         }
     }
 
@@ -263,31 +347,30 @@ public final class ArenaManager {
         for (String phaseName : VALID_PHASES) {
             if (spawns(arena, phaseName).isEmpty()) missing.add(phaseName + " spawn");
         }
-        if (Bukkit.getPluginManager().getPlugin("WorldEdit") == null) missing.add("WorldEdit");
         if (missing.isEmpty()) {
-            sender.sendMessage(FormatUtil.mm("<green>" + FormatUtil.escape(arena.displayName()) + " validation passed.</green>"));
+            World world = Bukkit.getWorld(sharedWorldName());
+            boolean pasted = world != null && isArenaFloorPresent(world, arena);
+            sender.sendMessage(FormatUtil.mm("<green>" + FormatUtil.escape(arena.displayName())
+                    + " validation passed.</green> <gray>(Pasted in world: " + (pasted ? "<green>YES</green>" : "<yellow>NO — will auto-paste on event create</yellow>") + ")</gray>"));
         } else {
             sender.sendMessage(FormatUtil.mm("<red>" + FormatUtil.escape(arena.displayName()) + " missing: " + FormatUtil.escape(String.join(", ", missing)) + "</red>"));
         }
     }
 
     public void ensureAllWorldGuardRegions() {
-        if (Bukkit.getPluginManager().getPlugin("WorldGuard") == null) {
-            plugin.getLogger().warning("WorldGuard not found; arena region protection is disabled.");
+        if (!hasWorldGuard()) {
+            plugin.getLogger().info("WorldGuard not installed; using Clasher Events built-in arena protection.");
             return;
         }
         World world = getOrCreateSharedWorld(null);
-        if (world == null) {
-            plugin.getLogger().warning("Could not load shared world for WorldGuard regions.");
-            return;
-        }
+        if (world == null) return;
         for (Arena arena : arenas.values()) {
             ensureWorldGuardRegion(world, arena);
         }
     }
 
     public void setArenaBuildAllowed(String arenaId, boolean allowed) {
-        if (Bukkit.getPluginManager().getPlugin("WorldGuard") == null) return;
+        if (!hasWorldGuard()) return;
         Arena arena = get(arenaId);
         World world = Bukkit.getWorld(sharedWorldName());
         if (arena == null || world == null) return;
@@ -306,13 +389,13 @@ public final class ArenaManager {
                     region.getMembers().clear();
                 }
             }
-        } catch (Exception ex) {
-            plugin.getLogger().warning("Could not update arena build flag: " + ex.getMessage());
+        } catch (Throwable ex) {
+            plugin.getLogger().warning("Could not update WorldGuard build flag: " + ex.getMessage());
         }
     }
 
     public void addArenaBuilder(String arenaId, UUID playerId) {
-        if (Bukkit.getPluginManager().getPlugin("WorldGuard") == null) return;
+        if (!hasWorldGuard()) return;
         Arena arena = get(arenaId);
         World world = Bukkit.getWorld(sharedWorldName());
         if (arena == null || world == null) return;
@@ -322,25 +405,28 @@ public final class ArenaManager {
             if (manager == null) return;
             ProtectedRegion region = manager.getRegion(arena.worldGuardRegionId());
             if (region != null) region.getMembers().addPlayer(playerId);
-        } catch (Exception ex) {
-            plugin.getLogger().warning("Could not add Build UHC member to region: " + ex.getMessage());
+        } catch (Throwable ex) {
+            plugin.getLogger().warning("Could not add Build UHC member to WorldGuard region: " + ex.getMessage());
         }
     }
 
+    private boolean hasWorldGuard() {
+        return Bukkit.getPluginManager().getPlugin("WorldGuard") != null
+                && Bukkit.getPluginManager().getPlugin("WorldEdit") != null;
+    }
+
     private void ensureWorldGuardRegion(World world, Arena arena) {
-        if (Bukkit.getPluginManager().getPlugin("WorldGuard") == null) return;
+        if (!hasWorldGuard() || !arena.hasBounds()) return;
         try {
             RegionContainer container = WorldGuard.getInstance().getPlatform().getRegionContainer();
             RegionManager manager = container.get(BukkitAdapter.adapt(world));
             if (manager == null) return;
-            ConfigurationSection b = arena.section().getConfigurationSection("bounds");
-            if (b == null) return;
             String regionId = arena.worldGuardRegionId();
             manager.removeRegion(regionId);
             ProtectedCuboidRegion region = new ProtectedCuboidRegion(
                     regionId,
-                    BlockVector3.at(b.getInt("min-x"), b.getInt("min-y"), b.getInt("min-z")),
-                    BlockVector3.at(b.getInt("max-x"), b.getInt("max-y"), b.getInt("max-z"))
+                    BlockVector3.at(arena.minX(), arena.minY(), arena.minZ()),
+                    BlockVector3.at(arena.maxX(), arena.maxY(), arena.maxZ())
             );
             region.setPriority(20);
             region.setFlag(Flags.PVP, StateFlag.State.ALLOW);
@@ -348,55 +434,21 @@ public final class ArenaManager {
             region.setFlag(Flags.CHEST_ACCESS, StateFlag.State.DENY);
             region.setFlag(Flags.TNT, StateFlag.State.DENY);
             manager.addRegion(region);
-        } catch (Exception ex) {
-            plugin.getLogger().severe("Could not create WorldGuard region for " + arena.id() + ": " + ex.getMessage());
+        } catch (Throwable ex) {
+            plugin.getLogger().warning("Could not configure WorldGuard region for " + arena.id() + ": " + ex.getMessage());
         }
     }
 
-    private File arenaBackupFile(Arena arena) {
-        File dir = new File(plugin.getDataFolder(), "arena-backups");
-        if (!dir.exists()) dir.mkdirs();
-        return new File(dir, arena.id().toLowerCase(Locale.ROOT) + ".schem");
-    }
-
-    private void pasteClipboard(File file, World world, BlockVector3 target) throws Exception {
-        ClipboardFormat format = ClipboardFormats.findByPath(file.toPath());
-        if (format == null) throw new IllegalStateException("Unsupported schematic format: " + file.getName());
-        try (ClipboardReader reader = format.getReader(new FileInputStream(file))) {
-            Clipboard clipboard = reader.read();
-            try (EditSession session = WorldEdit.getInstance().newEditSession(BukkitAdapter.adapt(world))) {
-                Operation op = new ClipboardHolder(clipboard).createPaste(session)
-                        .to(target).ignoreAirBlocks(false).build();
-                Operations.complete(op);
-            }
-        }
-    }
-
-    private void captureArenaBackup(World world, Arena arena, File destination) throws Exception {
-        ConfigurationSection b = arena.section().getConfigurationSection("bounds");
-        if (b == null) throw new IllegalStateException("Arena bounds are not configured");
-        BlockVector3 min = BlockVector3.at(b.getInt("min-x"), b.getInt("min-y"), b.getInt("min-z"));
-        BlockVector3 max = BlockVector3.at(b.getInt("max-x"), b.getInt("max-y"), b.getInt("max-z"));
-        CuboidRegion region = new CuboidRegion(BukkitAdapter.adapt(world), min, max);
-        BlockArrayClipboard clipboard = new BlockArrayClipboard(region);
-        clipboard.setOrigin(min);
-        ForwardExtentCopy copy = new ForwardExtentCopy(BukkitAdapter.adapt(world), region, clipboard, min);
-        Operations.complete(copy);
-        File parent = destination.getParentFile();
-        if (!parent.exists()) parent.mkdirs();
-        File formatHint = new File(plugin.getDataFolder(), "schematics/nethpot.schem");
-        ClipboardFormat format = ClipboardFormats.findByPath(formatHint.toPath());
-        if (format == null) throw new IllegalStateException("Could not resolve Sponge schematic writer");
-        try (ClipboardWriter writer = format.getWriter(new FileOutputStream(destination))) {
-            writer.write(clipboard);
-        }
+    private void markPasted(String arenaId) {
+        if (pastedMarkers == null) pastedMarkers = new YamlConfiguration();
+        pastedMarkers.set("pasted." + arenaId.toLowerCase(Locale.ROOT), true);
+        pastedMarkers.set("updated-at." + arenaId.toLowerCase(Locale.ROOT), System.currentTimeMillis());
+        YamlAtomicStorage.saveAtomically(pastedMarkers, pastedMarkerFile, plugin.getLogger(), "Could not save pasted-arenas.yml");
     }
 
     private void clearArenaEntities(World world, Arena arena) {
-        ConfigurationSection b = arena.section().getConfigurationSection("bounds");
-        if (b == null) return;
-        double minX = b.getDouble("min-x"), minY = b.getDouble("min-y"), minZ = b.getDouble("min-z");
-        double maxX = b.getDouble("max-x"), maxY = b.getDouble("max-y"), maxZ = b.getDouble("max-z");
+        double minX = arena.minX(), minY = arena.minY(), minZ = arena.minZ();
+        double maxX = arena.maxX(), maxY = arena.maxY(), maxZ = arena.maxZ();
         Location center = new Location(world, (minX + maxX) / 2.0, (minY + maxY) / 2.0, (minZ + maxZ) / 2.0);
         for (Entity entity : world.getNearbyEntities(
                 center,

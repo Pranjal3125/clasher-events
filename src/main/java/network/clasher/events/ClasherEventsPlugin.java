@@ -1,20 +1,27 @@
 package network.clasher.events;
 
+import network.clasher.events.arena.ArenaBlockTracker;
 import network.clasher.events.arena.ArenaManager;
 import network.clasher.events.command.EventCommands;
 import network.clasher.events.gui.EventGui;
+import network.clasher.events.hook.ClasherEventsExpansion;
+import network.clasher.events.hud.EventHudManager;
 import network.clasher.events.kit.KitManager;
 import network.clasher.events.match.EventManager;
+import network.clasher.events.notify.DiscordWebhookNotifier;
+import network.clasher.events.schedule.EventScheduler;
 import network.clasher.events.storage.DataStore;
 import org.bukkit.Bukkit;
 import org.bukkit.command.PluginCommand;
 import org.bukkit.plugin.java.JavaPlugin;
 
+import java.io.File;
 import java.util.List;
 
 /**
- * Clasher Events entry point. Wires bundled assets, atomic persistence,
- * arena/kit managers, event state machine, GUIs, and commands.
+ * Clasher Events v2.0 entry point. Wires bundled assets, async atomic persistence,
+ * void world & zero-dependency Sponge schematic paster, tick-batched rollback,
+ * live HUD, auto-scheduler, Discord webhooks, optional PlaceholderAPI, GUIs, and commands.
  */
 public final class ClasherEventsPlugin extends JavaPlugin {
     private static final List<String> BUNDLED_ASSETS = List.of(
@@ -41,12 +48,13 @@ public final class ClasherEventsPlugin extends JavaPlugin {
     private ArenaManager arenaManager;
     private KitManager kitManager;
     private EventManager eventManager;
+    private EventScheduler scheduler;
 
     @Override
     public void onEnable() {
         saveDefaultConfig();
         for (String resource : BUNDLED_ASSETS) {
-            if (!new java.io.File(getDataFolder(), resource).exists()) {
+            if (!new File(getDataFolder(), resource).exists()) {
                 saveResource(resource, false);
             }
         }
@@ -58,8 +66,12 @@ public final class ClasherEventsPlugin extends JavaPlugin {
         kitManager.load();
         arenaManager.ensureAllWorldGuardRegions();
 
-        this.eventManager = new EventManager(this, arenaManager, kitManager, dataStore);
-        EventGui eventGui = new EventGui(this, eventManager, kitManager);
+        ArenaBlockTracker blockTracker = new ArenaBlockTracker();
+        EventHudManager hud = new EventHudManager(this);
+        DiscordWebhookNotifier discord = new DiscordWebhookNotifier(this);
+
+        this.eventManager = new EventManager(this, arenaManager, kitManager, dataStore, blockTracker, hud, discord);
+        EventGui eventGui = new EventGui(this, arenaManager, eventManager, kitManager);
         EventCommands commands = new EventCommands(this, arenaManager, kitManager, eventManager, eventGui);
 
         registerCommand("ce", commands);
@@ -69,9 +81,21 @@ public final class ClasherEventsPlugin extends JavaPlugin {
         Bukkit.getPluginManager().registerEvents(eventManager, this);
         Bukkit.getPluginManager().registerEvents(eventGui, this);
 
+        this.scheduler = new EventScheduler(this, eventManager);
+        scheduler.start();
+
+        if (Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI")) {
+            try {
+                new ClasherEventsExpansion(this, eventManager, dataStore).register();
+                getLogger().info("Hooked into PlaceholderAPI (%clasherevents_*%).");
+            } catch (Throwable ex) {
+                getLogger().warning("PlaceholderAPI hook failed: " + ex.getMessage());
+            }
+        }
+
         getLogger().info("Clasher Events v" + getPluginMeta().getVersion()
                 + " enabled (" + arenaManager.arenaIds().size() + " arenas, "
-                + kitManager.kitIds().size() + " kits, shared world: " + arenaManager.sharedWorldName() + ")");
+                + kitManager.kitIds().size() + " kits, world: " + arenaManager.sharedWorldName() + ")");
     }
 
     public void reloadAll() {
@@ -82,8 +106,14 @@ public final class ClasherEventsPlugin extends JavaPlugin {
 
     @Override
     public void onDisable() {
+        if (scheduler != null) {
+            scheduler.stop();
+        }
         if (eventManager != null) {
             eventManager.shutdown();
+        }
+        if (dataStore != null) {
+            dataStore.flushAndShutdown();
         }
     }
 

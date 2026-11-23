@@ -1,14 +1,19 @@
 package network.clasher.events.match;
 
 import io.papermc.paper.event.player.AsyncChatEvent;
+import net.kyori.adventure.bossbar.BossBar;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
+import network.clasher.events.arena.ArenaBlockTracker;
 import network.clasher.events.arena.ArenaManager;
 import network.clasher.events.gui.EventMenuHolder;
+import network.clasher.events.hud.EventHudManager;
 import network.clasher.events.kit.KitManager;
 import network.clasher.events.model.Arena;
 import network.clasher.events.model.EventMode;
 import network.clasher.events.model.PlayerSnapshot;
+import network.clasher.events.notify.DiscordWebhookNotifier;
+import network.clasher.events.stats.EloCalculator;
 import network.clasher.events.storage.DataStore;
 import network.clasher.events.util.FormatUtil;
 import org.bukkit.Bukkit;
@@ -25,6 +30,7 @@ import org.bukkit.WorldBorder;
 import org.bukkit.WorldCreator;
 import org.bukkit.attribute.Attribute;
 import org.bukkit.attribute.AttributeInstance;
+import org.bukkit.block.Block;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Firework;
 import org.bukkit.entity.Player;
@@ -33,15 +39,24 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockBreakEvent;
+import org.bukkit.event.block.BlockExplodeEvent;
+import org.bukkit.event.block.BlockFromToEvent;
+import org.bukkit.event.block.BlockIgniteEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
+import org.bukkit.event.entity.EntityExplodeEvent;
 import org.bukkit.event.entity.EntityRegainHealthEvent;
 import org.bukkit.event.entity.FoodLevelChangeEvent;
 import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryDragEvent;
+import org.bukkit.event.inventory.InventoryOpenEvent;
+import org.bukkit.event.inventory.InventoryType;
 import org.bukkit.event.player.PlayerAttemptPickupItemEvent;
+import org.bukkit.event.player.PlayerBucketEmptyEvent;
+import org.bukkit.event.player.PlayerBucketFillEvent;
+import org.bukkit.event.player.PlayerCommandPreprocessEvent;
 import org.bukkit.event.player.PlayerDropItemEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
@@ -58,8 +73,10 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Deque;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -72,16 +89,29 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Core PvP event lifecycle state machine, combat/lobby listeners, tournament brackets,
- * Team Wars balancing, AFK/disconnect guards, and crash-safe player restoration.
+ * Core PvP event lifecycle engine (v2.0): auto-pasting arenas, tick-batched rollback,
+ * mode voting, tournament brackets, Team Wars, strict command/container shields,
+ * bounds-centered WorldBorders, celebration podiums, live HUD, Elo stats, and Discord embeds.
  */
 public final class EventManager implements Listener {
     private static final String PREFIX = "<gold><bold>CLASHER EVENTS</bold></gold> <dark_gray>»</dark_gray> ";
+    private static final Set<InventoryType> BLOCKED_CONTAINERS = EnumSet.of(
+            InventoryType.ENDER_CHEST,
+            InventoryType.SHULKER_BOX,
+            InventoryType.CHEST,
+            InventoryType.BARREL,
+            InventoryType.HOPPER,
+            InventoryType.DISPENSER,
+            InventoryType.DROPPER
+    );
 
     private final JavaPlugin plugin;
     private final ArenaManager arenaManager;
     private final KitManager kitManager;
     private final DataStore data;
+    private final ArenaBlockTracker blockTracker;
+    private final EventHudManager hud;
+    private final DiscordWebhookNotifier discord;
     private final NamespacedKey rulesBookKey;
     private final Random random = new Random();
 
@@ -90,6 +120,7 @@ public final class EventManager implements Listener {
     private final Set<UUID> spectators = ConcurrentHashMap.newKeySet();
     private final Map<UUID, PlayerSnapshot> snapshots = new HashMap<>();
     private final Map<UUID, UUID> votes = new HashMap<>();
+    private final Map<UUID, String> modeVotes = new LinkedHashMap<>();
     private final Map<UUID, Integer> teams = new HashMap<>();
     private final Deque<UUID> tournamentQueue = new ArrayDeque<>();
     private final List<UUID> tournamentWinners = new ArrayList<>();
@@ -107,9 +138,11 @@ public final class EventManager implements Listener {
     private EventMode eventMode = EventMode.NETHPOT;
     private boolean eventOpen;
     private boolean eventRunning;
+    private boolean celebrating;
     private boolean paused;
     private String phase = "idle";
     private int countdownRemaining;
+    private int countdownInitial = 120;
     private int initialFighters;
     private UUID tournamentPlayerA;
     private UUID tournamentPlayerB;
@@ -118,25 +151,53 @@ public final class EventManager implements Listener {
     private UUID eventWinner;
     private long matchStartedAt;
 
+    // Active WorldBorder tracking so late-joiners/reconnectors never reset the whole arena's shrink timer
+    private double activeBorderStartSize = 140.0;
+    private double activeBorderTargetSize = 84.0;
+    private long activeBorderEndMs = 0L;
+
+    // Pre-event Mode Vote state
+    private boolean modeVoteOpen;
+    private int modeVoteRemaining;
+    private BukkitTask modeVoteTask;
+
     private BukkitTask countdownTask;
     private BukkitTask statusTask;
+    private BukkitTask celebrationTask;
 
-    public EventManager(JavaPlugin plugin, ArenaManager arenaManager, KitManager kitManager, DataStore data) {
+    public EventManager(
+            JavaPlugin plugin,
+            ArenaManager arenaManager,
+            KitManager kitManager,
+            DataStore data,
+            ArenaBlockTracker blockTracker,
+            EventHudManager hud,
+            DiscordWebhookNotifier discord
+    ) {
         this.plugin = plugin;
         this.arenaManager = arenaManager;
         this.kitManager = kitManager;
         this.data = data;
+        this.blockTracker = blockTracker;
+        this.hud = hud;
+        this.discord = discord;
         this.rulesBookKey = new NamespacedKey(plugin, "rules-book");
         startStatusLoop();
     }
 
     public void shutdown() {
         cancelCountdown();
+        cancelModeVote();
+        cancelCelebration();
         if (statusTask != null) {
             statusTask.cancel();
             statusTask = null;
         }
-        stopEvent("Server shutting down");
+        if (blockTracker.isTracking()) {
+            blockTracker.rollbackImmediate();
+        }
+        hud.clearAll();
+        stopEventInternal("Server shutting down", true);
     }
 
     // -------------------------------------------------------------------------
@@ -145,7 +206,10 @@ public final class EventManager implements Listener {
 
     public boolean isEventOpen() { return eventOpen; }
     public boolean isEventRunning() { return eventRunning; }
+    public boolean isCelebrating() { return celebrating; }
     public boolean isPaused() { return paused; }
+    public boolean isModeVoteOpen() { return modeVoteOpen; }
+    public int modeVoteRemaining() { return modeVoteRemaining; }
     public String selectedArena() { return selectedArena; }
     public String selectedKit() { return selectedKit; }
     public EventMode eventMode() { return eventMode; }
@@ -156,11 +220,108 @@ public final class EventManager implements Listener {
     public boolean isParticipant(UUID id) { return participants.contains(id); }
     public boolean isAlive(UUID id) { return alive.contains(id); }
     public boolean isSpectator(UUID id) { return participants.contains(id) && !alive.contains(id) && eventRunning; }
-    public boolean isArenaInUse(String arenaId) { return (eventOpen || eventRunning) && selectedArena.equalsIgnoreCase(arenaId); }
+    public boolean isArenaInUse(String arenaId) { return (eventOpen || eventRunning || celebrating) && selectedArena.equalsIgnoreCase(arenaId); }
     public DataStore data() { return data; }
 
     public void setPaused(boolean paused) {
         this.paused = paused;
+    }
+
+    // -------------------------------------------------------------------------
+    // Pre-Event Player Mode Voting (/ce voteopen & /event modevote)
+    // -------------------------------------------------------------------------
+
+    public List<EventMode> modeVoteOptions() {
+        List<String> raw = plugin.getConfig().getStringList("mode-vote.options");
+        List<EventMode> modes = new ArrayList<>();
+        for (String id : raw) {
+            EventMode.fromInput(id).ifPresent(m -> {
+                if (!modes.contains(m)) modes.add(m);
+            });
+        }
+        if (modes.isEmpty()) {
+            modes.addAll(List.of(EventMode.NETHPOT, EventMode.CRYSTAL, EventMode.BUILD_UHC, EventMode.SWORD, EventMode.AXE_SHIELD, EventMode.DIAMOND_POT, EventMode.TEAM_WARS, EventMode.TOURNAMENT));
+        }
+        return modes;
+    }
+
+    public Map<String, Integer> modeVoteCounts() {
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        for (EventMode m : modeVoteOptions()) counts.put(m.id(), 0);
+        for (String voted : modeVotes.values()) {
+            counts.merge(voted, 1, Integer::sum);
+        }
+        return counts;
+    }
+
+    public void startModeVote(int seconds) {
+        if (eventOpen || eventRunning || celebrating) {
+            broadcast("<red>Cannot start mode voting while an event is already active.</red>");
+            return;
+        }
+        cancelModeVote();
+        modeVotes.clear();
+        modeVoteOpen = true;
+        modeVoteRemaining = Math.max(15, seconds);
+        broadcast("<aqua><bold>MODE VOTING OPEN!</bold></aqua> <gray>Vote for the next PvP event mode within</gray> <yellow>"
+                + FormatUtil.formatDuration(modeVoteRemaining) + "</yellow><gray>:</gray> "
+                + "<green><click:run_command:'/event modevote'><hover:show_text:'<green>Click to vote for the next mode!</green>'>[/event modevote]</hover></click></green>");
+        discord.notifyModeVoteOpen(modeVoteRemaining);
+
+        modeVoteTask = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
+            if (!modeVoteOpen) return;
+            if (modeVoteRemaining <= 0) {
+                finishModeVote();
+                return;
+            }
+            if (modeVoteRemaining == 15 || modeVoteRemaining <= 5) {
+                broadcast("<aqua>Mode voting ends in</aqua> <yellow><bold>" + modeVoteRemaining + "s</bold></yellow><aqua>! Use /event modevote</aqua>");
+            }
+            modeVoteRemaining--;
+        }, 0L, 20L);
+    }
+
+    public void castModeVote(Player player, String rawModeId) {
+        if (!modeVoteOpen) {
+            player.sendMessage(FormatUtil.mm(PREFIX + "<red>Mode voting is not currently open.</red>"));
+            return;
+        }
+        Optional<EventMode> parsed = EventMode.fromInput(rawModeId);
+        if (parsed.isEmpty() || !modeVoteOptions().contains(parsed.get())) {
+            player.sendMessage(FormatUtil.mm(PREFIX + "<red>That mode is not in the current vote pool.</red>"));
+            return;
+        }
+        modeVotes.put(player.getUniqueId(), parsed.get().id());
+        playCue(player, "join");
+        player.sendMessage(FormatUtil.mm(PREFIX + "<green>Voted for</green> <yellow><bold>" + FormatUtil.escape(parsed.get().displayName()) + "</bold></yellow><green>!</green>"));
+    }
+
+    private void finishModeVote() {
+        cancelModeVote();
+        Map<String, Integer> counts = modeVoteCounts();
+        int best = -1;
+        List<String> leaders = new ArrayList<>();
+        for (Map.Entry<String, Integer> e : counts.entrySet()) {
+            if (e.getValue() > best) {
+                best = e.getValue();
+                leaders.clear();
+                leaders.add(e.getKey());
+            } else if (e.getValue() == best) {
+                leaders.add(e.getKey());
+            }
+        }
+        String winningMode = leaders.isEmpty() ? "nethpot" : leaders.get(random.nextInt(leaders.size()));
+        modeVotes.clear();
+        broadcast("<green>Mode vote finished! Winning mode:</green> <gold><bold>" + FormatUtil.escape(winningMode.toUpperCase(Locale.ROOT)) + "</bold></gold> <gray>(" + Math.max(0, best) + " votes)</gray>");
+        createEvent(winningMode);
+    }
+
+    private void cancelModeVote() {
+        modeVoteOpen = false;
+        if (modeVoteTask != null) {
+            modeVoteTask.cancel();
+            modeVoteTask = null;
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -173,6 +334,7 @@ public final class EventManager implements Listener {
             broadcast("<red>Unknown event mode: " + FormatUtil.escape(rawMode) + "</red>");
             return;
         }
+        cancelModeVote();
         stopEvent("Replaced by a new event");
         eventMode = parsed.get();
         if (eventMode == EventMode.RANDOM_KIT) {
@@ -192,8 +354,12 @@ public final class EventManager implements Listener {
             return;
         }
 
-        arenaManager.setArenaBuildAllowed(selectedArena, eventMode == EventMode.BUILD_UHC);
+        // Plug-and-play: ensure arena schematic is pasted into void world automatically!
+        arenaManager.ensureArenaReady(selectedArena, null, null);
+        arenaManager.setArenaBuildAllowed(selectedArena, isDestructibleMode(eventMode));
+
         eventCompleted = false;
+        celebrating = false;
         eventWinner = null;
         matchKills.clear();
         matchStartedAt = System.currentTimeMillis();
@@ -203,6 +369,7 @@ public final class EventManager implements Listener {
         phase = "registration";
         clearCollections();
         countdownRemaining = Math.max(10, plugin.getConfig().getInt("default-registration-seconds", 120));
+        countdownInitial = countdownRemaining;
 
         Arena arena = arenaManager.get(selectedArena);
         String arenaLabel = arena != null ? arena.displayName() : selectedArena;
@@ -210,12 +377,14 @@ public final class EventManager implements Listener {
                 + FormatUtil.escape(arenaLabel) + "</white><gray>) registration is open for</gray> <yellow>"
                 + FormatUtil.formatDuration(countdownRemaining) + "</yellow><gray>! Use</gray> "
                 + "<green><click:run_command:'/event join'><hover:show_text:'<green>Click to join!</green>'>[/event join]</hover></click></green>");
+        discord.notifyEventOpen(eventMode.displayName(), arenaLabel, countdownRemaining);
         startCountdown();
     }
 
     public void setCountdownSeconds(int seconds) {
         if (seconds <= 0 || !eventOpen) return;
         countdownRemaining = seconds;
+        countdownInitial = Math.max(seconds, 1);
         plugin.getConfig().set("default-registration-seconds", seconds);
         plugin.saveConfig();
         startCountdown();
@@ -245,9 +414,20 @@ public final class EventManager implements Listener {
                 startEvent();
                 return;
             }
+            if (countdownRemaining <= 5) {
+                hud.broadcastTitle(participants, "<gold><bold>" + countdownRemaining + "</bold></gold>", "<gray>Prepare for battle...</gray>", 50, 750, 150);
+                for (UUID id : participants) {
+                    Player p = Bukkit.getPlayer(id);
+                    if (p != null) playCue(p, "join");
+                }
+            }
             if (countdownRemaining <= 10 || countdownRemaining % 30 == 0) {
                 broadcast("<yellow>Event starts in</yellow> <gold><bold>" + FormatUtil.formatDuration(countdownRemaining) + "</bold></gold><yellow>.</yellow>");
             }
+            float progress = countdownInitial > 0 ? (float) countdownRemaining / countdownInitial : 0f;
+            hud.updateBossBar("<gold><bold>" + FormatUtil.escape(eventMode.displayName()) + "</bold></gold> <gray>• Starts in</gray> <yellow>"
+                    + FormatUtil.formatDuration(countdownRemaining) + "</yellow> <gray>(" + participants.size() + " joined)</gray>",
+                    progress, BossBar.Color.YELLOW, participants);
             countdownRemaining--;
         }, 0L, 20L);
     }
@@ -256,6 +436,14 @@ public final class EventManager implements Listener {
         if (countdownTask != null) {
             countdownTask.cancel();
             countdownTask = null;
+        }
+    }
+
+    private void cancelCelebration() {
+        celebrating = false;
+        if (celebrationTask != null) {
+            celebrationTask.cancel();
+            celebrationTask = null;
         }
     }
 
@@ -283,9 +471,11 @@ public final class EventManager implements Listener {
             broadcast("<red>Arena config missing: " + FormatUtil.escape(selectedArena) + "</red>");
             return;
         }
+
         eventOpen = false;
         eventRunning = true;
         paused = false;
+        matchStartedAt = System.currentTimeMillis();
         alive.clear();
         spectators.clear();
         for (UUID id : participants) {
@@ -304,6 +494,8 @@ public final class EventManager implements Listener {
             return;
         }
         phase = startingPhase;
+        blockTracker.startTracking(arenaManager.sharedWorldName(), arena);
+
         int index = 0;
         for (UUID id : new ArrayList<>(alive)) {
             Player fighter = Bukkit.getPlayer(id);
@@ -322,6 +514,7 @@ public final class EventManager implements Listener {
         }
         if (eventMode == EventMode.TEAM_WARS) assignTeams();
         applyPhaseBorder(phase);
+        hud.broadcastTitle(alive, "<green><bold>FIGHT!</bold></green>", "<yellow>" + FormatUtil.escape(arena.displayName()) + "</yellow>", 100, 1200, 300);
         broadcast("<green>" + FormatUtil.escape(arena.displayName()) + " has started!</green> <yellow>Fighters: " + alive.size() + "</yellow>");
 
         if (eventMode == EventMode.TEAM_WARS) checkTeamWinner();
@@ -329,16 +522,46 @@ public final class EventManager implements Listener {
     }
 
     public void stopEvent(String reason) {
+        stopEventInternal(reason, false);
+    }
+
+    private void stopEventInternal(String reason, boolean immediateShutdown) {
         cancelCountdown();
-        if (!eventOpen && !eventRunning && participants.isEmpty() && snapshots.isEmpty()) return;
+        cancelCelebration();
+        if (!eventOpen && !eventRunning && !celebrating && participants.isEmpty() && snapshots.isEmpty()) return;
+
+        String arenaToClean = selectedArena;
         restoreAllPlayers();
-        arenaManager.setArenaBuildAllowed(selectedArena, false);
+        hud.clearAll();
+        arenaManager.setArenaBuildAllowed(arenaToClean, false);
         clearCollections();
         eventOpen = false;
         eventRunning = false;
+        celebrating = false;
         paused = false;
         phase = "idle";
         eventWinner = null;
+
+        // Zero-lag automatic arena rollback & entity cleanup!
+        boolean autoReset = plugin.getConfig().getBoolean("arenas.auto-reset-after-match", true);
+        if (autoReset) {
+            if (immediateShutdown) {
+                blockTracker.rollbackImmediate();
+                arenaManager.clearArenaEntities(arenaToClean);
+            } else {
+                int batch = Math.max(100, plugin.getConfig().getInt("arenas.rollback-blocks-per-tick", 300));
+                int tracked = blockTracker.trackedCount();
+                blockTracker.rollbackBatched(plugin, batch, () -> {
+                    arenaManager.clearArenaEntities(arenaToClean);
+                    if (tracked > 0) {
+                        plugin.getLogger().info("Auto-restored " + tracked + " modified blocks in arena '" + arenaToClean + "'.");
+                    }
+                });
+            }
+        } else {
+            blockTracker.snapshotAndClear();
+        }
+
         if (!Bukkit.getOnlinePlayers().isEmpty() && !"Server shutting down".equals(reason)) {
             broadcast("<gray>" + FormatUtil.escape(reason) + ".</gray>");
         }
@@ -382,7 +605,7 @@ public final class EventManager implements Listener {
             return;
         }
         snapshotIfNeeded(player);
-        if (eventMode == EventMode.BUILD_UHC) {
+        if (isDestructibleMode(eventMode)) {
             arenaManager.addArenaBuilder(selectedArena, player.getUniqueId());
         }
         player.getInventory().clear();
@@ -412,9 +635,10 @@ public final class EventManager implements Listener {
         if (dc != null) dc.cancel();
 
         clearPlayerBorder(player);
+        hud.clearForPlayer(player);
         PlayerSnapshot snapshot = snapshots.remove(id);
         if (snapshot != null) {
-            snapshot.restore(player, lobbyLocation());
+            snapshot.restore(player, resolveReturnLocation());
         }
         data.removePersistedSnapshot(id);
         player.sendMessage(FormatUtil.mm(PREFIX + "<green>You left the event and your state was restored.</green>"));
@@ -425,7 +649,7 @@ public final class EventManager implements Listener {
     }
 
     public void forceLateJoin(CommandSender sender, String playerName) {
-        if (!eventRunning || eventOpen) {
+        if (!eventRunning || eventOpen || celebrating) {
             sender.sendMessage(FormatUtil.mm("<red>Late join is only available while an event is actively running.</red>"));
             return;
         }
@@ -456,7 +680,7 @@ public final class EventManager implements Listener {
         alive.add(id);
         spectators.remove(id);
         lastMovementAt.put(id, System.currentTimeMillis());
-        if (eventMode == EventMode.BUILD_UHC) arenaManager.addArenaBuilder(selectedArena, id);
+        if (isDestructibleMode(eventMode)) arenaManager.addArenaBuilder(selectedArena, id);
         if (eventMode == EventMode.TEAM_WARS) {
             long redCount = teams.values().stream().filter(t -> t == 1).count();
             long blueCount = teams.values().stream().filter(t -> t == 2).count();
@@ -469,7 +693,7 @@ public final class EventManager implements Listener {
         removeRulesBooks(target);
         kitManager.giveKit(target, selectedKit);
         kitDelivered.add(id);
-        applyPhaseBorder(phase);
+        applyCurrentBorderToPlayer(target); // Preserves everyone else's active shrink!
         playCue(target, "kit");
         sender.sendMessage(FormatUtil.mm("<green>" + FormatUtil.escape(target.getName()) + " late-joined the event.</green>"));
         broadcast("<yellow>" + FormatUtil.escape(target.getName()) + " joined the event late!</yellow>");
@@ -556,7 +780,8 @@ public final class EventManager implements Listener {
             lastMovementAt.put(id, System.currentTimeMillis());
         }
         applyPhaseBorder(phase);
-        String label = nextPhase.equals("wave2") ? "WAVE 2" : "FINAL";
+        String label = nextPhase.equals("wave2") ? "WAVE 2" : "FINAL DUEL";
+        hud.broadcastTitle(participants, "<gold><bold>" + label + "</bold></gold>", "<green>" + alive.size() + " fighters remain!</green>", 100, 1400, 300);
         broadcast("<yellow><bold>" + label + "</bold> phase started!</yellow> <green>" + alive.size() + " fighters remain.</green>");
     }
 
@@ -615,9 +840,13 @@ public final class EventManager implements Listener {
         }
         if (eventCompleted) return;
         eventCompleted = true;
+        celebrating = true;
         String teamName = team == 1 ? "Red Team" : "Blue Team";
         Bukkit.broadcast(FormatUtil.mm(team == 1 ? "<red><bold>RED TEAM WINS!</bold></red>" : "<blue><bold>BLUE TEAM WINS!</bold></blue>"));
+        hud.broadcastTitle(participants, team == 1 ? "<red><bold>RED TEAM WINS!</bold></red>" : "<blue><bold>BLUE TEAM WINS!</bold></blue>",
+                "<gold>Congratulations champions!</gold>", 150, 3000, 500);
 
+        List<Player> winners = new ArrayList<>();
         for (UUID id : participants) {
             if (Objects.equals(teams.get(id), team)) {
                 OfflinePlayer offline = Bukkit.getOfflinePlayer(id);
@@ -626,13 +855,13 @@ public final class EventManager implements Listener {
                 runRewardCommands("team-winner", id, name);
                 Player online = Bukkit.getPlayer(id);
                 if (online != null) {
+                    winners.add(online);
                     playCue(online, "winner");
-                    spawnCelebrationFirework(online);
                 }
             }
         }
-        recordMatchSummary(teamName, teamName.toLowerCase(Locale.ROOT));
-        stopEvent("Team Wars finished");
+        recordMatchSummaryAndNotify(teamName, teamName.toLowerCase(Locale.ROOT));
+        scheduleCelebrationAndFinish(winners, "Team Wars finished");
     }
 
     private void startTournament() {
@@ -641,9 +870,14 @@ public final class EventManager implements Listener {
             stopEvent("Tournament cancelled: not enough players");
             return;
         }
+        Arena arena = arenaManager.get(selectedArena);
+        if (arena != null) {
+            blockTracker.startTracking(arenaManager.sharedWorldName(), arena);
+        }
         eventOpen = false;
         eventRunning = true;
         paused = false;
+        matchStartedAt = System.currentTimeMillis();
         phase = "tournament";
         List<UUID> entrants = new ArrayList<>();
         for (UUID id : participants) {
@@ -743,6 +977,8 @@ public final class EventManager implements Listener {
             }
         }
         applyPhaseBorder("final");
+        hud.broadcastTitle(participants, "<gold><bold>ROUND " + tournamentRound + "</bold></gold>",
+                "<green>" + FormatUtil.escape(a.getName()) + "</green> <gray>vs</gray> <red>" + FormatUtil.escape(b.getName()) + "</red>", 100, 1500, 300);
         broadcast("<yellow>Round " + tournamentRound + ":</yellow> <green>" + FormatUtil.escape(a.getName())
                 + "</green> <gray>vs</gray> <red>" + FormatUtil.escape(b.getName()) + "</red>");
     }
@@ -774,6 +1010,7 @@ public final class EventManager implements Listener {
     private void finishWinner(UUID winnerId) {
         if (eventCompleted || winnerId == null) return;
         eventCompleted = true;
+        celebrating = true;
         eventWinner = winnerId;
         OfflinePlayer offline = Bukkit.getOfflinePlayer(winnerId);
         String winnerName = offline.getName() == null ? "Player" : offline.getName();
@@ -790,21 +1027,51 @@ public final class EventManager implements Listener {
             }
         }
         data.recordWin(winnerId, winnerName);
-        recordMatchSummary(winnerName, winnerId.toString());
-        broadcast("<yellow><bold>" + FormatUtil.escape(winnerName) + "</bold></yellow> <green>won the event!</green>");
+        recordMatchSummaryAndNotify(winnerName, winnerId.toString());
+        broadcast("<yellow><bold>" + FormatUtil.escape(winnerName) + "</bold></yellow> <green>won the event! (+20 Elo)</green>");
+        hud.broadcastTitle(participants, "<gold><bold>VICTORY!</bold></gold>", "<yellow>" + FormatUtil.escape(winnerName) + " is the champion!</yellow>", 150, 3200, 500);
         runRewardCommands("winner", winnerId, winnerName);
 
+        List<Player> celebrateList = new ArrayList<>();
         Player onlineWinner = Bukkit.getPlayer(winnerId);
         if (onlineWinner != null) {
             Location winnerLoc = configuredLocation("winner");
             if (winnerLoc != null) onlineWinner.teleport(winnerLoc);
             playCue(onlineWinner, "winner");
-            spawnCelebrationFirework(onlineWinner);
+            celebrateList.add(onlineWinner);
         }
-        stopEvent("Event finished");
+        scheduleCelebrationAndFinish(celebrateList, "Event finished");
     }
 
-    private void recordMatchSummary(String winnerName, String winnerId) {
+    private void scheduleCelebrationAndFinish(List<Player> celebratePlayers, String stopReason) {
+        int celebSec = Math.max(0, plugin.getConfig().getInt("celebration-seconds", 6));
+        if (celebSec == 0) {
+            stopEvent(stopReason);
+            return;
+        }
+        for (Player p : celebratePlayers) {
+            if (p.isOnline()) spawnCelebrationFirework(p);
+        }
+        if (celebSec >= 3) {
+            Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                if (!celebrating) return;
+                for (Player p : celebratePlayers) {
+                    if (p.isOnline()) spawnCelebrationFirework(p);
+                }
+            }, 35L);
+        }
+        if (celebSec >= 5) {
+            Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                if (!celebrating) return;
+                for (Player p : celebratePlayers) {
+                    if (p.isOnline()) spawnCelebrationFirework(p);
+                }
+            }, 70L);
+        }
+        celebrationTask = Bukkit.getScheduler().runTaskLater(plugin, () -> stopEvent(stopReason), celebSec * 20L);
+    }
+
+    private void recordMatchSummaryAndNotify(String winnerName, String winnerId) {
         UUID mvpId = matchKills.entrySet().stream()
                 .max(Map.Entry.comparingByValue())
                 .map(Map.Entry::getKey)
@@ -817,11 +1084,22 @@ public final class EventManager implements Listener {
             if (mvpName == null) mvpName = "Unknown";
             mvpKills = matchKills.getOrDefault(mvpId, 0);
         }
+        long durationSec = Math.max(0L, (System.currentTimeMillis() - matchStartedAt) / 1000L);
         data.recordMatch(selectedArena, eventMode.id(), winnerName, winnerId, matchStartedAt, participants, mvpName, mvpKills);
         if (mvpKills > 0) {
             Bukkit.broadcast(FormatUtil.mm("<gold>[MVP]</gold> <yellow>" + FormatUtil.escape(mvpName)
                     + "</yellow> <gray>was match MVP with</gray> <yellow>" + mvpKills + "</yellow> <gray>kill(s)!</gray>"));
         }
+        Arena arena = arenaManager.get(selectedArena);
+        discord.notifyMatchFinished(
+                eventMode.displayName(),
+                arena != null ? arena.displayName() : selectedArena,
+                winnerName,
+                mvpName,
+                mvpKills,
+                Math.max(initialFighters, participants.size()),
+                FormatUtil.formatDuration(durationSec)
+        );
     }
 
     private void runRewardCommands(String rewardType, UUID playerId, String playerName) {
@@ -835,71 +1113,141 @@ public final class EventManager implements Listener {
     }
 
     // -------------------------------------------------------------------------
-    // Status / AFK loop
+    // Status / HUD / AFK loop
     // -------------------------------------------------------------------------
 
     private void startStatusLoop() {
         statusTask = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
-            if (!eventRunning) return;
-            long now = System.currentTimeMillis();
-            boolean afkEnabled = plugin.getConfig().getBoolean("afk.enabled", true);
-            long afkLimit = Math.max(30L, plugin.getConfig().getLong("afk.eliminate-after-seconds", 300L)) * 1000L;
+            if (!eventOpen && !eventRunning) return;
+            Arena arena = arenaManager.get(selectedArena);
+            String arenaLabel = arena != null ? arena.displayName() : selectedArena;
 
-            if (afkEnabled) {
-                for (UUID fighterId : new HashSet<>(alive)) {
-                    Player fighter = Bukkit.getPlayer(fighterId);
-                    if (fighter == null) continue;
-                    long lastMove = lastMovementAt.getOrDefault(fighterId, now);
-                    long lastCombat = lastCombatAt.getOrDefault(fighterId, 0L);
-                    long lastActive = Math.max(lastMove, lastCombat);
-                    if (now - lastActive >= afkLimit) {
-                        alive.remove(fighterId);
-                        spectators.add(fighterId);
-                        fighter.setGameMode(GameMode.SPECTATOR);
-                        teleportToConfigured(fighter, "spectator");
-                        fighter.sendMessage(FormatUtil.mm(PREFIX + "<red>You were eliminated for being AFK.</red>"));
-                        broadcast("<gray>" + FormatUtil.escape(fighter.getName()) + " was eliminated for being AFK.</gray>");
-                        afkWarned.remove(fighterId);
-                        processEliminationAfterDisconnect();
-                    } else if (now - lastActive >= Math.max(60_000L, afkLimit - 60_000L) && afkWarned.add(fighterId)) {
-                        fighter.sendMessage(FormatUtil.mm(PREFIX + "<yellow>AFK warning: move or fight within 60 seconds or you will be eliminated!</yellow>"));
+            if (eventRunning && !celebrating) {
+                long now = System.currentTimeMillis();
+                boolean afkEnabled = plugin.getConfig().getBoolean("afk.enabled", true);
+                long afkLimit = Math.max(30L, plugin.getConfig().getLong("afk.eliminate-after-seconds", 300L)) * 1000L;
+
+                if (afkEnabled) {
+                    for (UUID fighterId : new HashSet<>(alive)) {
+                        Player fighter = Bukkit.getPlayer(fighterId);
+                        if (fighter == null) continue;
+                        long lastMove = lastMovementAt.getOrDefault(fighterId, now);
+                        long lastCombat = lastCombatAt.getOrDefault(fighterId, 0L);
+                        long lastActive = Math.max(lastMove, lastCombat);
+                        if (now - lastActive >= afkLimit) {
+                            alive.remove(fighterId);
+                            spectators.add(fighterId);
+                            fighter.getInventory().clear();
+                            fighter.setGameMode(GameMode.SPECTATOR);
+                            teleportToConfigured(fighter, "spectator");
+                            fighter.sendMessage(FormatUtil.mm(PREFIX + "<red>You were eliminated for being AFK.</red>"));
+                            broadcast("<gray>" + FormatUtil.escape(fighter.getName()) + " was eliminated for being AFK.</gray>");
+                            afkWarned.remove(fighterId);
+                            processEliminationAfterDisconnect();
+                        } else if (now - lastActive >= Math.max(60_000L, afkLimit - 60_000L) && afkWarned.add(fighterId)) {
+                            fighter.sendMessage(FormatUtil.mm(PREFIX + "<yellow>AFK warning: move or fight within 60 seconds or you will be eliminated!</yellow>"));
+                        }
                     }
+                }
+
+                float aliveRatio = initialFighters > 0 ? (float) alive.size() / initialFighters : 1.0f;
+                BossBar.Color barColor = aliveRatio > 0.5f ? BossBar.Color.GREEN : (aliveRatio > 0.25f ? BossBar.Color.YELLOW : BossBar.Color.RED);
+                hud.updateBossBar(
+                        "<gold><bold>" + FormatUtil.escape(eventMode.displayName()) + "</bold></gold> <dark_gray>|</dark_gray> <green>"
+                                + alive.size() + " Alive</green> <dark_gray>|</dark_gray> <aqua>" + phase.toUpperCase(Locale.ROOT) + "</aqua>",
+                        aliveRatio, barColor, participants
+                );
+
+                Component actionBar = FormatUtil.mm("<gold><bold>" + FormatUtil.escape(eventMode.displayName())
+                        + "</bold></gold> <dark_gray>|</dark_gray> <yellow>" + alive.size() + " alive</yellow>"
+                        + " <dark_gray>|</dark_gray> <green>" + phase.toUpperCase(Locale.ROOT) + "</green>");
+                for (UUID id : participants) {
+                    Player viewer = Bukkit.getPlayer(id);
+                    if (viewer != null) viewer.sendActionBar(actionBar);
                 }
             }
 
-            Component actionBar = FormatUtil.mm("<gold><bold>" + FormatUtil.escape(eventMode.displayName())
-                    + "</bold></gold> <dark_gray>|</dark_gray> <yellow>" + alive.size() + " alive</yellow>"
-                    + " <dark_gray>|</dark_gray> <green>" + phase.toUpperCase(Locale.ROOT) + "</green>");
+            // Refresh clean per-player event sidebar
             for (UUID id : participants) {
                 Player viewer = Bukkit.getPlayer(id);
-                if (viewer != null) viewer.sendActionBar(actionBar);
+                if (viewer == null || !viewer.isOnline()) continue;
+                hud.updateSidebar(
+                        viewer,
+                        eventMode.displayName(),
+                        arenaLabel,
+                        phase,
+                        alive.size(),
+                        participants.size(),
+                        matchKills.getOrDefault(id, 0),
+                        data.stats(id),
+                        teams.get(id),
+                        countdownRemaining,
+                        eventOpen
+                );
             }
         }, 40L, 40L);
     }
 
     // -------------------------------------------------------------------------
-    // WorldBorder, Snapshots, Locations, Rules Book, Sounds
+    // WorldBorder (True Bounds Center + Preserved Shrink Progress)
     // -------------------------------------------------------------------------
 
     private void applyPhaseBorder(String phaseName) {
         Arena arena = arenaManager.get(selectedArena);
         if (arena == null) return;
-        double defaultSize = phaseName.equals("wave1") ? 140.0 : phaseName.equals("wave2") ? 80.0 : 35.0;
-        double size = plugin.getConfig().getDouble("world-border." + phaseName + ".size", defaultSize);
+        double defaultSize = phaseName.equals("wave1") ? 84.0 : phaseName.equals("wave2") ? 52.0 : 28.0;
+        double targetSize = plugin.getConfig().getDouble("world-border." + phaseName + ".size", defaultSize);
         long shrinkSeconds = Math.max(0L, plugin.getConfig().getLong("world-border." + phaseName + ".shrink-seconds", 60L));
+        double startSize = Math.max(targetSize, (arena.maxX() - arena.minX()));
+
+        this.activeBorderStartSize = startSize;
+        this.activeBorderTargetSize = targetSize;
+        this.activeBorderEndMs = System.currentTimeMillis() + shrinkSeconds * 1000L;
+
         for (UUID id : alive) {
             Player fighter = Bukkit.getPlayer(id);
-            if (fighter == null) continue;
-            WorldBorder border = Bukkit.createWorldBorder();
-            border.setCenter(arena.pasteX(), arena.pasteZ());
-            border.changeSize(size, shrinkSeconds * 20L);
-            border.setWarningDistance(10);
-            fighter.setWorldBorder(border);
+            if (fighter != null) applyBorderToPlayer(fighter, arena, startSize, targetSize, shrinkSeconds);
         }
+    }
+
+    private void applyCurrentBorderToPlayer(Player fighter) {
+        Arena arena = arenaManager.get(selectedArena);
+        if (arena == null || fighter == null) return;
+        long remainSec = Math.max(0L, (activeBorderEndMs - System.currentTimeMillis()) / 1000L);
+        applyBorderToPlayer(fighter, arena, remainSec > 0 ? activeBorderStartSize : activeBorderTargetSize, activeBorderTargetSize, remainSec);
+    }
+
+    private void applyBorderToPlayer(Player fighter, Arena arena, double startSize, double targetSize, long shrinkSeconds) {
+        WorldBorder border = Bukkit.createWorldBorder();
+        border.setCenter(arena.centerX(), arena.centerZ());
+        border.setSize(Math.max(10.0, startSize));
+        if (shrinkSeconds > 0 && targetSize < startSize) {
+            border.changeSize(Math.max(10.0, targetSize), shrinkSeconds * 20L);
+        } else {
+            border.setSize(Math.max(10.0, targetSize));
+        }
+        border.setWarningDistance(8);
+        fighter.setWorldBorder(border);
     }
 
     private void clearPlayerBorder(Player player) {
         player.setWorldBorder(null);
+    }
+
+    // -------------------------------------------------------------------------
+    // Snapshots, Return Locations, Rules Book, Sounds
+    // -------------------------------------------------------------------------
+
+    private boolean isDedicatedServerMode() {
+        return plugin.getConfig().getBoolean("dedicated-server-mode", true);
+    }
+
+    private Location resolveReturnLocation() {
+        return isDedicatedServerMode() ? lobbyLocation() : null;
+    }
+
+    private static boolean isDestructibleMode(EventMode mode) {
+        return mode == EventMode.BUILD_UHC || mode == EventMode.CRYSTAL || mode == EventMode.UHC || mode == EventMode.SMP;
     }
 
     private void snapshotIfNeeded(Player player) {
@@ -912,10 +1260,8 @@ public final class EventManager implements Listener {
             Player player = Bukkit.getPlayer(entry.getKey());
             if (player != null && !player.isDead()) {
                 clearPlayerBorder(player);
-                Location dest = eventWinner != null && eventWinner.equals(entry.getKey())
-                        ? configuredLocation("winner")
-                        : lobbyLocation();
-                entry.getValue().restore(player, dest != null ? dest : lobbyLocation());
+                hud.clearForPlayer(player);
+                entry.getValue().restore(player, resolveReturnLocation());
                 snapshots.remove(entry.getKey());
                 data.removePersistedSnapshot(entry.getKey());
             }
@@ -929,7 +1275,13 @@ public final class EventManager implements Listener {
         }
         String worldName = plugin.getConfig().getString(path + ".world", arenaManager.sharedWorldName());
         World world = Bukkit.getWorld(worldName);
-        if (world == null) world = new WorldCreator(worldName).createWorld();
+        if (world == null) {
+            if (worldName.equalsIgnoreCase(arenaManager.sharedWorldName())) {
+                world = arenaManager.getOrCreateSharedWorld(null);
+            } else {
+                world = new WorldCreator(worldName).createWorld();
+            }
+        }
         if (world == null) return null;
         return new Location(
                 world,
@@ -979,7 +1331,7 @@ public final class EventManager implements Listener {
         var fm = fw.getFireworkMeta();
         fm.addEffect(FireworkEffect.builder()
                 .with(FireworkEffect.Type.BALL_LARGE)
-                .withColor(Color.ORANGE, Color.PURPLE)
+                .withColor(Color.ORANGE, Color.AQUA, Color.PURPLE)
                 .withFade(Color.WHITE)
                 .trail(true)
                 .build());
@@ -1012,9 +1364,7 @@ public final class EventManager implements Listener {
             );
         }
         List<Component> pages = new ArrayList<>(rawPages.size());
-        for (String page : rawPages) {
-            pages.add(FormatUtil.parseFlexible(page));
-        }
+        for (String page : rawPages) pages.add(FormatUtil.parseFlexible(page));
         meta.pages(pages);
         book.setItemMeta(meta);
         player.getInventory().addItem(book);
@@ -1052,13 +1402,117 @@ public final class EventManager implements Listener {
     }
 
     // -------------------------------------------------------------------------
-    // Listeners: Combat, Spectator Chat, Lobby Protection, Death/Respawn, Join/Quit
+    // Security Listeners: Command Whitelist & Container Shield
+    // -------------------------------------------------------------------------
+
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onCommandPreprocess(PlayerCommandPreprocessEvent event) {
+        Player player = event.getPlayer();
+        if (!participants.contains(player.getUniqueId())) return;
+        if (player.hasPermission("clasherevents.admin")) return;
+        if (!plugin.getConfig().getBoolean("security.block-disallowed-commands", true)) return;
+
+        List<String> allowed = plugin.getConfig().getStringList("security.allowed-commands-during-event");
+        if (!CommandGuard.isCommandAllowed(event.getMessage(), allowed)) {
+            event.setCancelled(true);
+            player.sendMessage(FormatUtil.mm(PREFIX + "<red>That command is disabled during an event! Use <yellow>/event leave</yellow> first.</red>"));
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onContainerOpen(InventoryOpenEvent event) {
+        if (!(event.getPlayer() instanceof Player player)) return;
+        if (!participants.contains(player.getUniqueId()) || player.hasPermission("clasherevents.admin")) return;
+        if (event.getInventory().getHolder() instanceof EventMenuHolder) return;
+        if (!plugin.getConfig().getBoolean("security.block-containers-during-event", true)) return;
+        if (BLOCKED_CONTAINERS.contains(event.getInventory().getType())) {
+            event.setCancelled(true);
+            player.sendMessage(FormatUtil.mm(PREFIX + "<red>Containers and Ender Chests are locked during events.</red>"));
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Built-In Arena Protection + Automatic Block Rollback Listeners
+    // -------------------------------------------------------------------------
+
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onArenaBlockBreakGuard(BlockBreakEvent event) {
+        Player player = event.getPlayer();
+        if (player.hasPermission("clasherevents.admin")) return;
+        if (inWaitingLobby(player)) {
+            event.setCancelled(true);
+            return;
+        }
+        if (eventRunning && alive.contains(player.getUniqueId()) && !isDestructibleMode(eventMode)) {
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onArenaBlockPlaceGuard(BlockPlaceEvent event) {
+        Player player = event.getPlayer();
+        if (player.hasPermission("clasherevents.admin")) return;
+        if (inWaitingLobby(player)) {
+            event.setCancelled(true);
+            return;
+        }
+        if (eventRunning && alive.contains(player.getUniqueId()) && !isDestructibleMode(eventMode)) {
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onTrackPlace(BlockPlaceEvent event) {
+        if (blockTracker.isTracking()) {
+            Block b = event.getBlock();
+            blockTracker.recordBeforeChange(new ArenaBlockTracker.BlockPos(b.getX(), b.getY(), b.getZ()), event.getBlockReplacedState().getBlockData());
+        }
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onTrackBreak(BlockBreakEvent event) {
+        if (blockTracker.isTracking()) blockTracker.recordBeforeChange(event.getBlock());
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onTrackLiquidFlow(BlockFromToEvent event) {
+        if (blockTracker.isTracking()) blockTracker.recordBeforeChange(event.getToBlock());
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onTrackIgnite(BlockIgniteEvent event) {
+        if (blockTracker.isTracking()) blockTracker.recordBeforeChange(event.getBlock());
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onTrackEntityExplode(EntityExplodeEvent event) {
+        if (!blockTracker.isTracking()) return;
+        for (Block b : event.blockList()) blockTracker.recordBeforeChange(b);
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onTrackBlockExplode(BlockExplodeEvent event) {
+        if (!blockTracker.isTracking()) return;
+        for (Block b : event.blockList()) blockTracker.recordBeforeChange(b);
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onTrackBucketEmpty(PlayerBucketEmptyEvent event) {
+        if (blockTracker.isTracking()) blockTracker.recordBeforeChange(event.getBlock());
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onTrackBucketFill(PlayerBucketFillEvent event) {
+        if (blockTracker.isTracking()) blockTracker.recordBeforeChange(event.getBlock());
+    }
+
+    // -------------------------------------------------------------------------
+    // Combat, Spectator Chat, Lobby Protection, Death/Respawn, Join/Quit
     // -------------------------------------------------------------------------
 
     @EventHandler(priority = EventPriority.HIGH)
     public void onSpectatorChat(AsyncChatEvent event) {
         UUID id = event.getPlayer().getUniqueId();
-        // CRITICAL: Only intercept chat for active event spectators; never touch normal server chat!
         if (!spectators.contains(id)) return;
         event.setCancelled(true);
         String name = event.getPlayer().getName();
@@ -1076,10 +1530,22 @@ public final class EventManager implements Listener {
     @EventHandler
     public void onTeamFriendlyFire(EntityDamageByEntityEvent event) {
         if (!eventRunning || !(event.getEntity() instanceof Player victim)) return;
+        if (!alive.contains(victim.getUniqueId())) return;
+        if (celebrating) {
+            event.setCancelled(true);
+            return;
+        }
         Player attacker = null;
         if (event.getDamager() instanceof Player direct) attacker = direct;
         else if (event.getDamager() instanceof Projectile proj && proj.getShooter() instanceof Player shooter) attacker = shooter;
-        if (attacker == null) return;
+        if (attacker == null || !alive.contains(attacker.getUniqueId())) return;
+
+        Integer teamA = teams.get(attacker.getUniqueId());
+        Integer teamV = teams.get(victim.getUniqueId());
+        if (teamA != null && teamA.equals(teamV)) {
+            event.setCancelled(true);
+            return;
+        }
 
         lastDamager.put(victim.getUniqueId(), attacker.getUniqueId());
         long now = System.currentTimeMillis();
@@ -1088,29 +1554,28 @@ public final class EventManager implements Listener {
         lastMovementAt.put(victim.getUniqueId(), now);
         afkWarned.remove(victim.getUniqueId());
         afkWarned.remove(attacker.getUniqueId());
-
-        Integer teamA = teams.get(attacker.getUniqueId());
-        Integer teamV = teams.get(victim.getUniqueId());
-        if (teamA != null && teamA.equals(teamV)) {
-            event.setCancelled(true);
-        }
     }
 
     @EventHandler
     public void onFighterMove(PlayerMoveEvent event) {
-        if (event.getTo() == null) return;
+        if (!eventRunning || event.getTo() == null) return;
+        UUID id = event.getPlayer().getUniqueId();
+        if (!alive.contains(id)) return;
         if (event.getFrom().getBlockX() == event.getTo().getBlockX()
                 && event.getFrom().getBlockY() == event.getTo().getBlockY()
                 && event.getFrom().getBlockZ() == event.getTo().getBlockZ()) {
             return;
         }
-        lastMovementAt.put(event.getPlayer().getUniqueId(), System.currentTimeMillis());
+        lastMovementAt.put(id, System.currentTimeMillis());
     }
 
     @EventHandler
     public void onLobbyDamage(EntityDamageEvent event) {
-        if (event.getEntity() instanceof Player player
-                && (inWaitingLobby(player) || (eventOpen && participants.contains(player.getUniqueId()) && !eventRunning))) {
+        if (!(event.getEntity() instanceof Player player)) return;
+        UUID id = player.getUniqueId();
+        if (inWaitingLobby(player)
+                || (eventOpen && participants.contains(id) && !eventRunning)
+                || (celebrating && participants.contains(id))) {
             event.setCancelled(true);
         }
     }
@@ -1119,20 +1584,6 @@ public final class EventManager implements Listener {
     public void onLobbyFood(FoodLevelChangeEvent event) {
         if (event.getEntity() instanceof Player player
                 && (inWaitingLobby(player) || (eventOpen && participants.contains(player.getUniqueId()) && !eventRunning))) {
-            event.setCancelled(true);
-        }
-    }
-
-    @EventHandler
-    public void onLobbyBreak(BlockBreakEvent event) {
-        if (!event.getPlayer().hasPermission("clasherevents.admin") && inWaitingLobby(event.getPlayer())) {
-            event.setCancelled(true);
-        }
-    }
-
-    @EventHandler
-    public void onLobbyPlace(BlockPlaceEvent event) {
-        if (!event.getPlayer().hasPermission("clasherevents.admin") && inWaitingLobby(event.getPlayer())) {
             event.setCancelled(true);
         }
     }
@@ -1147,7 +1598,7 @@ public final class EventManager implements Listener {
     @EventHandler
     public void onLobbyInteract(PlayerInteractEvent event) {
         if (event.getPlayer().hasPermission("clasherevents.admin")) return;
-        if (isRulesBook(event.getItem())) return; // Allow opening the rules book in the waiting lobby!
+        if (isRulesBook(event.getItem())) return;
         if (inWaitingLobby(event.getPlayer())) {
             event.setCancelled(true);
         }
@@ -1182,7 +1633,7 @@ public final class EventManager implements Listener {
 
     @EventHandler
     public void onPausedDamage(EntityDamageEvent event) {
-        if (paused && event.getEntity() instanceof Player) {
+        if (paused && event.getEntity() instanceof Player player && participants.contains(player.getUniqueId())) {
             event.setCancelled(true);
         }
     }
@@ -1190,7 +1641,8 @@ public final class EventManager implements Listener {
     @EventHandler
     public void onUhcNaturalRegen(EntityRegainHealthEvent event) {
         if (eventRunning && eventMode == EventMode.UHC
-                && event.getEntity() instanceof Player
+                && event.getEntity() instanceof Player player
+                && alive.contains(player.getUniqueId())
                 && event.getRegainReason() == EntityRegainHealthEvent.RegainReason.SATIATED) {
             event.setCancelled(true);
         }
@@ -1208,11 +1660,12 @@ public final class EventManager implements Listener {
         if (killerId != null) {
             Player killer = Bukkit.getPlayer(killerId);
             if (killer != null && !killer.getUniqueId().equals(id)) {
-                data.recordKill(killer.getUniqueId(), killer.getName(), id, victim.getName());
+                EloCalculator.EloDelta eloDelta = data.recordKill(killer.getUniqueId(), killer.getName(), id, victim.getName());
                 matchKills.merge(killer.getUniqueId(), 1, Integer::sum);
                 Bukkit.broadcast(FormatUtil.mm("<dark_gray>[<red>KILL</red>]</dark_gray> <yellow>"
                         + FormatUtil.escape(killer.getName()) + "</yellow> <gray>eliminated</gray> <yellow>"
-                        + FormatUtil.escape(victim.getName()) + "</yellow>"));
+                        + FormatUtil.escape(victim.getName()) + "</yellow> <dark_gray>(</dark_gray><green>+"
+                        + eloDelta.gained() + " Elo</green><dark_gray>)</dark_gray>"));
             } else {
                 data.recordDeath(id, victim.getName());
             }
@@ -1252,7 +1705,7 @@ public final class EventManager implements Listener {
             PlayerSnapshot pending = snapshots.remove(id);
             if (pending != null) {
                 Bukkit.getScheduler().runTask(plugin, () -> {
-                    pending.restore(event.getPlayer(), lobbyLocation());
+                    pending.restore(event.getPlayer(), resolveReturnLocation());
                     data.removePersistedSnapshot(id);
                 });
             }
@@ -1265,6 +1718,7 @@ public final class EventManager implements Listener {
         Bukkit.getScheduler().runTask(plugin, () -> {
             Player p = event.getPlayer();
             if (participants.contains(id) && !alive.contains(id)) {
+                p.getInventory().clear();
                 p.setGameMode(GameMode.SPECTATOR);
                 spectators.add(id);
             }
@@ -1274,7 +1728,7 @@ public final class EventManager implements Listener {
     @EventHandler
     public void onJoin(PlayerJoinEvent event) {
         UUID id = event.getPlayer().getUniqueId();
-        if (disconnectedFighters.contains(id) && eventRunning) {
+        if (disconnectedFighters.contains(id) && eventRunning && !celebrating) {
             BukkitTask timer = disconnectTasks.remove(id);
             if (timer != null) timer.cancel();
             disconnectedFighters.remove(id);
@@ -1289,7 +1743,7 @@ public final class EventManager implements Listener {
                 if (!points.isEmpty()) player.teleport(points.get(random.nextInt(points.size())));
                 player.setGameMode(GameMode.SURVIVAL);
                 player.sendMessage(FormatUtil.mm(PREFIX + "<green>Reconnected! Your event state has been restored (no fresh kit issued).</green>"));
-                applyPhaseBorder(phase);
+                applyCurrentBorderToPlayer(player);
             });
             return;
         }
@@ -1298,7 +1752,7 @@ public final class EventManager implements Listener {
         Bukkit.getScheduler().runTask(plugin, () -> {
             Player player = event.getPlayer();
             if (player.isOnline()) {
-                pending.restore(player, lobbyLocation());
+                pending.restore(player, resolveReturnLocation());
                 data.removePersistedSnapshot(id);
                 snapshots.remove(id);
                 participants.remove(id);
@@ -1313,7 +1767,8 @@ public final class EventManager implements Listener {
     public void onQuit(PlayerQuitEvent event) {
         UUID id = event.getPlayer().getUniqueId();
         clearPlayerBorder(event.getPlayer());
-        if (eventRunning && alive.contains(id)) {
+        hud.clearForPlayer(event.getPlayer());
+        if (eventRunning && !celebrating && alive.contains(id)) {
             long graceSec = Math.max(10L, plugin.getConfig().getLong("disconnect-grace-seconds", 60L));
             disconnectedFighters.add(id);
             broadcast("<yellow>" + FormatUtil.escape(event.getPlayer().getName()) + " disconnected! " + graceSec + "s to reconnect.</yellow>");
@@ -1335,6 +1790,7 @@ public final class EventManager implements Listener {
     }
 
     private void processEliminationAfterDisconnect() {
+        if (celebrating) return;
         if (eventMode == EventMode.TOURNAMENT) {
             UUID winnerId = alive.isEmpty() ? null : alive.iterator().next();
             Bukkit.getScheduler().runTask(plugin, () -> completeTournamentMatch(winnerId));
