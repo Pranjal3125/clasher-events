@@ -6,6 +6,7 @@ import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import network.clasher.events.arena.ArenaBlockTracker;
 import network.clasher.events.arena.ArenaManager;
+import network.clasher.events.gui.EventGui;
 import network.clasher.events.gui.EventMenuHolder;
 import network.clasher.events.hud.EventHudManager;
 import network.clasher.events.kit.KitManager;
@@ -113,7 +114,9 @@ public final class EventManager implements Listener {
     private final EventHudManager hud;
     private final DiscordWebhookNotifier discord;
     private final NamespacedKey rulesBookKey;
+    private final NamespacedKey lobbyItemKey;
     private final Random random = new Random();
+    private EventGui gui;
 
     private final Set<UUID> participants = new LinkedHashSet<>();
     private final Set<UUID> alive = new LinkedHashSet<>();
@@ -148,6 +151,7 @@ public final class EventManager implements Listener {
     private UUID tournamentPlayerB;
     private int tournamentRound = 1;
     private boolean eventCompleted;
+    private boolean firstBloodClaimed;
     private UUID eventWinner;
     private long matchStartedAt;
 
@@ -182,7 +186,12 @@ public final class EventManager implements Listener {
         this.hud = hud;
         this.discord = discord;
         this.rulesBookKey = new NamespacedKey(plugin, "rules-book");
+        this.lobbyItemKey = new NamespacedKey(plugin, "lobby-item");
         startStatusLoop();
+    }
+
+    public void setGui(EventGui gui) {
+        this.gui = gui;
     }
 
     public void shutdown() {
@@ -354,11 +363,14 @@ public final class EventManager implements Listener {
             return;
         }
 
-        // Plug-and-play: ensure arena schematic is pasted into void world automatically!
+        // Plug-and-play: ensure arena, Spawn Lobby, and Winner Podium are pasted automatically!
         arenaManager.ensureArenaReady(selectedArena, null, null);
+        arenaManager.ensureLobbyReady(null);
+        arenaManager.ensureWinnerPodiumReady(null);
         arenaManager.setArenaBuildAllowed(selectedArena, isDestructibleMode(eventMode));
 
         eventCompleted = false;
+        firstBloodClaimed = false;
         celebrating = false;
         eventWinner = null;
         matchKills.clear();
@@ -677,7 +689,12 @@ public final class EventManager implements Listener {
         }
         player.getInventory().clear();
         player.setGameMode(GameMode.ADVENTURE);
-        teleportToConfigured(player, "lobby");
+        arenaManager.ensureLobbyReady(() -> {
+            if (player.isOnline() && participants.contains(player.getUniqueId()) && eventOpen) {
+                teleportToConfigured(player, "lobby");
+                giveLobbyHotbar(player);
+            }
+        });
         Bukkit.getScheduler().runTaskLater(plugin, () -> {
             if (player.isOnline() && participants.contains(player.getUniqueId()) && eventOpen) {
                 giveRulesBook(player);
@@ -914,6 +931,8 @@ public final class EventManager implements Listener {
                 "<gold>Congratulations champions!</gold>", 150, 3000, 500);
 
         List<Player> winners = new ArrayList<>();
+        Location winnerLoc = configuredLocation("winner");
+        Location crowdLoc = configuredLocation("winner-crowd");
         for (UUID id : participants) {
             if (Objects.equals(teams.get(id), team)) {
                 OfflinePlayer offline = Bukkit.getOfflinePlayer(id);
@@ -922,8 +941,16 @@ public final class EventManager implements Listener {
                 runRewardCommands("team-winner", id, name);
                 Player online = Bukkit.getPlayer(id);
                 if (online != null) {
+                    online.setGameMode(GameMode.ADVENTURE);
+                    if (winnerLoc != null) online.teleport(winnerLoc);
                     winners.add(online);
                     playCue(online, "winner");
+                }
+            } else if (crowdLoc != null) {
+                Player crowd = Bukkit.getPlayer(id);
+                if (crowd != null && crowd.isOnline() && !crowd.isDead()) {
+                    crowd.setGameMode(GameMode.ADVENTURE);
+                    crowd.teleport(crowdLoc);
                 }
             }
         }
@@ -1101,11 +1128,25 @@ public final class EventManager implements Listener {
 
         List<Player> celebrateList = new ArrayList<>();
         Player onlineWinner = Bukkit.getPlayer(winnerId);
+        Location winnerLoc = configuredLocation("winner");
+        Location crowdLoc = configuredLocation("winner-crowd");
         if (onlineWinner != null) {
-            Location winnerLoc = configuredLocation("winner");
+            onlineWinner.setGameMode(GameMode.ADVENTURE);
             if (winnerLoc != null) onlineWinner.teleport(winnerLoc);
             playCue(onlineWinner, "winner");
             celebrateList.add(onlineWinner);
+        }
+        // Bring all other online participants/spectators to the Winner Hall crowd gallery!
+        if (crowdLoc != null) {
+            for (UUID id : participants) {
+                if (winnerId.equals(id)) continue;
+                Player crowd = Bukkit.getPlayer(id);
+                if (crowd != null && crowd.isOnline() && !crowd.isDead()) {
+                    crowd.setGameMode(GameMode.ADVENTURE);
+                    crowd.teleport(crowdLoc);
+                    playCue(crowd, "winner");
+                }
+            }
         }
         scheduleCelebrationAndFinish(celebrateList, "Event finished");
     }
@@ -1434,9 +1475,33 @@ public final class EventManager implements Listener {
         for (String page : rawPages) pages.add(FormatUtil.parseFlexible(page));
         meta.pages(pages);
         book.setItemMeta(meta);
-        player.getInventory().addItem(book);
+        player.getInventory().setItem(4, book);
         player.openBook(book);
         playCue(player, "rules-book");
+    }
+
+    private void giveLobbyHotbar(Player player) {
+        if (!plugin.getConfig().getBoolean("lobby-protection.give-lobby-hotbar", true)) return;
+        player.getInventory().setItem(0, lobbyHotbarItem(Material.IRON_SWORD, "<green><bold>Preview Event Kit</bold></green> <gray>(Right-Click)</gray>", "kit-preview"));
+        player.getInventory().setItem(2, lobbyHotbarItem(Material.BELL, "<aqua><bold>Vote Next Mode</bold></aqua> <gray>(Right-Click)</gray>", "mode-vote"));
+        player.getInventory().setItem(6, lobbyHotbarItem(Material.NETHER_STAR, "<gold><bold>Leaderboards</bold></gold> <gray>(Right-Click)</gray>", "leaderboard"));
+        player.getInventory().setItem(8, lobbyHotbarItem(Material.RED_DYE, "<red><bold>Leave Event</bold></red> <gray>(Right-Click)</gray>", "leave"));
+    }
+
+    private ItemStack lobbyHotbarItem(Material mat, String displayMini, String action) {
+        ItemStack stack = new ItemStack(mat);
+        var meta = stack.getItemMeta();
+        if (meta != null) {
+            meta.displayName(FormatUtil.noItalic(FormatUtil.mm(displayMini)));
+            meta.getPersistentDataContainer().set(lobbyItemKey, PersistentDataType.STRING, action);
+            stack.setItemMeta(meta);
+        }
+        return stack;
+    }
+
+    private String lobbyItemAction(ItemStack item) {
+        if (item == null || !item.hasItemMeta()) return null;
+        return item.getItemMeta().getPersistentDataContainer().get(lobbyItemKey, PersistentDataType.STRING);
     }
 
     private boolean isRulesBook(ItemStack item) {
@@ -1446,7 +1511,8 @@ public final class EventManager implements Listener {
 
     private void removeRulesBooks(Player player) {
         for (int slot = 0; slot < player.getInventory().getSize(); slot++) {
-            if (isRulesBook(player.getInventory().getItem(slot))) {
+            ItemStack item = player.getInventory().getItem(slot);
+            if (isRulesBook(item) || lobbyItemAction(item) != null) {
                 player.getInventory().setItem(slot, null);
             }
         }
@@ -1625,9 +1691,26 @@ public final class EventManager implements Listener {
 
     @EventHandler
     public void onFighterMove(PlayerMoveEvent event) {
-        if (!eventRunning || event.getTo() == null) return;
-        UUID id = event.getPlayer().getUniqueId();
-        if (!alive.contains(id)) return;
+        if (event.getTo() == null) return;
+        Player player = event.getPlayer();
+        UUID id = player.getUniqueId();
+
+        // Catch void falls around the floating Spawn Lobby / Parkour!
+        if (!alive.contains(id) && plugin.getConfig().getBoolean("lobby-protection.catch-void-fall", true)) {
+            Location lobby = configuredLocation("lobby");
+            if (lobby != null && lobby.getWorld() != null && player.getWorld().equals(lobby.getWorld())) {
+                double dx = event.getTo().getX() - lobby.getX();
+                double dz = event.getTo().getZ() - lobby.getZ();
+                if ((dx * dx + dz * dz) <= 65.0 * 65.0 && event.getTo().getY() < lobby.getY() - 12.0) {
+                    player.setFallDistance(0f);
+                    player.teleport(lobby);
+                    player.sendMessage(FormatUtil.mm(PREFIX + "<gray>Caught your fall — back at the Event Spawn Lobby!</gray>"));
+                    return;
+                }
+            }
+        }
+
+        if (!eventRunning || !alive.contains(id)) return;
         if (event.getFrom().getBlockX() == event.getTo().getBlockX()
                 && event.getFrom().getBlockY() == event.getTo().getBlockY()
                 && event.getFrom().getBlockZ() == event.getTo().getBlockZ()) {
@@ -1664,9 +1747,25 @@ public final class EventManager implements Listener {
 
     @EventHandler
     public void onLobbyInteract(PlayerInteractEvent event) {
-        if (event.getPlayer().hasPermission("clasherevents.admin")) return;
+        Player player = event.getPlayer();
+        String lobbyAction = lobbyItemAction(event.getItem());
+        if (lobbyAction != null && event.getAction().isRightClick()) {
+            event.setCancelled(true);
+            switch (lobbyAction) {
+                case "kit-preview" -> {
+                    if (gui != null && selectedKit != null && !selectedKit.isEmpty()) gui.openKitPreview(player, selectedKit);
+                    else player.sendMessage(FormatUtil.mm(PREFIX + "<yellow>No active event kit to preview right now.</yellow>"));
+                }
+                case "mode-vote" -> { if (gui != null) gui.openModeVoteGui(player); }
+                case "leaderboard" -> { if (gui != null) gui.openLeaderboardGui(player, "elo"); }
+                case "leave" -> leaveEvent(player);
+                default -> {}
+            }
+            return;
+        }
+        if (player.hasPermission("clasherevents.admin")) return;
         if (isRulesBook(event.getItem())) return;
-        if (inWaitingLobby(event.getPlayer())) {
+        if (inWaitingLobby(player)) {
             event.setCancelled(true);
         }
     }
@@ -1722,17 +1821,37 @@ public final class EventManager implements Listener {
         if (!alive.remove(id)) return;
         spectators.add(id);
 
+        if (plugin.getConfig().getBoolean("effects.kill-lightning", true)) {
+            victim.getWorld().strikeLightningEffect(victim.getLocation());
+        }
+
         UUID killerId = lastDamager.remove(id);
         lastCombatAt.remove(id);
         if (killerId != null) {
             Player killer = Bukkit.getPlayer(killerId);
             if (killer != null && !killer.getUniqueId().equals(id)) {
                 EloCalculator.EloDelta eloDelta = data.recordKill(killer.getUniqueId(), killer.getName(), id, victim.getName());
-                matchKills.merge(killer.getUniqueId(), 1, Integer::sum);
+                int newMatchKills = matchKills.merge(killer.getUniqueId(), 1, Integer::sum);
                 Bukkit.broadcast(FormatUtil.mm("<dark_gray>[<red>KILL</red>]</dark_gray> <yellow>"
                         + FormatUtil.escape(killer.getName()) + "</yellow> <gray>eliminated</gray> <yellow>"
                         + FormatUtil.escape(victim.getName()) + "</yellow> <dark_gray>(</dark_gray><green>+"
                         + eloDelta.gained() + " Elo</green><dark_gray>)</dark_gray>"));
+
+                if (!firstBloodClaimed && plugin.getConfig().getBoolean("effects.first-blood", true)) {
+                    firstBloodClaimed = true;
+                    Bukkit.broadcast(FormatUtil.mm("<dark_red><bold>🩸 FIRST BLOOD!</bold></dark_red> <yellow>"
+                            + FormatUtil.escape(killer.getName()) + "</yellow> <gray>drew first blood!</gray>"));
+                }
+                if (plugin.getConfig().getBoolean("effects.kill-streaks", true)) {
+                    String streakTag = newMatchKills == 3 ? "<gold><bold>🔥 RAMPAGE!</bold></gold>"
+                            : newMatchKills == 5 ? "<red><bold>🔥 UNSTOPPABLE!</bold></red>"
+                            : newMatchKills >= 7 && newMatchKills % 2 == 1 ? "<light_purple><bold>⚡ GODLIKE!</bold></light_purple>"
+                            : null;
+                    if (streakTag != null) {
+                        Bukkit.broadcast(FormatUtil.mm(streakTag + " <yellow>" + FormatUtil.escape(killer.getName())
+                                + "</yellow> <gray>is on a</gray> <red><bold>" + newMatchKills + "-kill streak</bold></red><gray>!</gray>"));
+                    }
+                }
             } else {
                 data.recordDeath(id, victim.getName());
             }
@@ -1745,6 +1864,14 @@ public final class EventManager implements Listener {
         event.setKeepInventory(true);
         event.setKeepLevel(true);
         broadcast("<gray>" + FormatUtil.escape(victim.getName()) + " has been eliminated!</gray> <yellow>" + alive.size() + " fighters remain.</yellow>");
+
+        if (plugin.getConfig().getBoolean("effects.auto-respawn", true)) {
+            Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                if (victim.isOnline() && victim.isDead()) {
+                    victim.spigot().respawn();
+                }
+            }, 2L);
+        }
 
         if (eventMode == EventMode.TOURNAMENT) {
             UUID winnerId = alive.isEmpty() ? null : alive.iterator().next();
@@ -1779,8 +1906,9 @@ public final class EventManager implements Listener {
             return;
         }
         Arena arena = arenaManager.get(selectedArena);
-        Location spectator = configuredLocation("spectator");
-        if (spectator == null && arena != null) spectator = arenaManager.firstSpawn(arena, "audience");
+        // Prioritize the active arena's own elevated audience gallery so spectators watch the fight live!
+        Location spectator = arena != null ? arenaManager.firstSpawn(arena, "audience") : null;
+        if (spectator == null) spectator = configuredLocation("spectator");
         if (spectator != null) event.setRespawnLocation(spectator);
         Bukkit.getScheduler().runTask(plugin, () -> {
             Player p = event.getPlayer();
@@ -1815,19 +1943,35 @@ public final class EventManager implements Listener {
             return;
         }
         PlayerSnapshot pending = data.loadPersistedSnapshot(id);
-        if (pending == null) return;
-        Bukkit.getScheduler().runTask(plugin, () -> {
+        if (pending != null) {
+            Bukkit.getScheduler().runTask(plugin, () -> {
+                Player player = event.getPlayer();
+                if (player.isOnline()) {
+                    pending.restore(player, resolveReturnLocation());
+                    data.removePersistedSnapshot(id);
+                    snapshots.remove(id);
+                    participants.remove(id);
+                    alive.remove(id);
+                    spectators.remove(id);
+                    player.sendMessage(FormatUtil.mm(PREFIX + "<green>Your inventory and player state were recovered from the previous event session.</green>"));
+                }
+            });
+            return;
+        }
+        if (plugin.getConfig().getBoolean("dedicated-server-mode", true)
+                && plugin.getConfig().getBoolean("lobby-protection.teleport-on-server-join", true)
+                && !event.getPlayer().hasPermission("clasherevents.admin")) {
             Player player = event.getPlayer();
-            if (player.isOnline()) {
-                pending.restore(player, resolveReturnLocation());
-                data.removePersistedSnapshot(id);
-                snapshots.remove(id);
-                participants.remove(id);
-                alive.remove(id);
-                spectators.remove(id);
-                player.sendMessage(FormatUtil.mm(PREFIX + "<green>Your inventory and player state were recovered from the previous event session.</green>"));
-            }
-        });
+            arenaManager.ensureLobbyReady(() -> {
+                if (player.isOnline() && !alive.contains(player.getUniqueId())) {
+                    Location lobby = lobbyLocation();
+                    if (lobby != null) {
+                        player.setFallDistance(0f);
+                        player.teleport(lobby);
+                    }
+                }
+            });
+        }
     }
 
     @EventHandler

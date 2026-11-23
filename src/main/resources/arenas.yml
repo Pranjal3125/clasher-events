@@ -1,6 +1,6 @@
 arenas:
   nethpot:
-    display-name: NethPot - Nether Citadel
+    display-name: NethPot - Gothic Nether Citadel
     schematic: nethpot.schem
     paste:
       x: 0
@@ -11,7 +11,7 @@ arenas:
       min-y: 79
       min-z: -66
       max-x: 66
-      max-y: 124
+      max-y: 134
       max-z: 66
     spawns:
       wave1:
@@ -79,19 +79,19 @@ arenas:
         z: -31.5
         yaw: 0.0
   axe-shield:
-    display-name: Axe & Shield - Ironkeep
+    display-name: Axe & Shield - Ironkeep Castle
     schematic: axe-shield.schem
     paste:
       x: 300
       y: 80
       z: 0
     bounds:
-      min-x: 250
+      min-x: 244
       min-y: 79
-      min-z: -50
-      max-x: 350
-      max-y: 120
-      max-z: 50
+      min-z: -56
+      max-x: 356
+      max-y: 132
+      max-z: 56
     spawns:
       wave1:
       - x: 324.5
@@ -154,23 +154,23 @@ arenas:
         yaw: 90.0
       audience:
       - x: 300.5
-        y: 91
-        z: -27.5
+        y: 92
+        z: -28.5
         yaw: 0.0
   build-uhc:
-    display-name: Build UHC - Verdant Basin
+    display-name: Build UHC - Verdant Valley
     schematic: build-uhc.schem
     paste:
       x: 600
       y: 80
       z: 0
     bounds:
-      min-x: 550
+      min-x: 542
       min-y: 79
-      min-z: -50
-      max-x: 650
-      max-y: 122
-      max-z: 50
+      min-z: -58
+      max-x: 658
+      max-y: 132
+      max-z: 58
     spawns:
       wave1:
       - x: 622.5
@@ -233,23 +233,23 @@ arenas:
         yaw: 90.0
       audience:
       - x: 600.5
-        y: 93
-        z: -27.5
+        y: 94
+        z: -28.5
         yaw: 0.0
   sword:
-    display-name: Sword - Grand Colosseum
+    display-name: Sword - Grand Roman Colosseum
     schematic: sword.schem
     paste:
       x: 900
       y: 80
       z: 0
     bounds:
-      min-x: 850
+      min-x: 842
       min-y: 79
-      min-z: -50
-      max-x: 950
-      max-y: 120
-      max-z: 50
+      min-z: -58
+      max-x: 958
+      max-y: 134
+      max-z: 58
     spawns:
       wave1:
       - x: 924.5
@@ -312,23 +312,23 @@ arenas:
         yaw: 90.0
       audience:
       - x: 900.5
-        y: 90
+        y: 91
         z: -27.5
         yaw: 0.0
   uhc:
-    display-name: UHC - Wild Frontier
+    display-name: UHC - Alpine Wild Frontier
     schematic: uhc.schem
     paste:
       x: 1200
       y: 80
       z: 0
     bounds:
-      min-x: 1146
+      min-x: 1142
       min-y: 79
-      min-z: -54
-      max-x: 1254
-      max-y: 122
-      max-z: 54
+      min-z: -58
+      max-x: 1258
+      max-y: 134
+      max-z: 58
     spawns:
       wave1:
       - x: 1224.5
@@ -391,23 +391,23 @@ arenas:
         yaw: 90.0
       audience:
       - x: 1200.5
-        y: 93
+        y: 94
         z: -30.5
         yaw: 0.0
   crystal:
-    display-name: Crystal - End Rift
+    display-name: Crystal - End Rift Spires
     schematic: crystal.schem
     paste:
       x: 1600
       y: 80
       z: 0
     bounds:
-      min-x: 1546
+      min-x: 1542
       min-y: 79
-      min-z: -54
-      max-x: 1654
-      max-y: 118
-      max-z: 54
+      min-z: -58
+      max-x: 1658
+      max-y: 132
+      max-z: 58
     spawns:
       wave1:
       - x: 1626.5
@@ -470,23 +470,23 @@ arenas:
         yaw: 90.0
       audience:
       - x: 1600.5
-        y: 91
+        y: 92
         z: -30.5
         yaw: 0.0
   smp:
-    display-name: SMP - Fallen Kingdom
+    display-name: SMP - Fallen Cathedral
     schematic: smp.schem
     paste:
       x: 1900
       y: 80
       z: 0
     bounds:
-      min-x: 1846
+      min-x: 1842
       min-y: 79
-      min-z: -54
-      max-x: 1954
-      max-y: 120
-      max-z: 54
+      min-z: -58
+      max-x: 1958
+      max-y: 132
+      max-z: 58
     spawns:
       wave1:
       - x: 1926.5
@@ -549,23 +549,23 @@ arenas:
         yaw: 90.0
       audience:
       - x: 1900.5
-        y: 92
+        y: 93
         z: -30.5
         yaw: 0.0
   diamond-pot:
-    display-name: Diamond Pot - Frostglass Temple
+    display-name: Diamond Pot - Frostglass Cathedral
     schematic: diamond-pot.schem
     paste:
       x: 2200
       y: 80
       z: 0
     bounds:
-      min-x: 2150
+      min-x: 2144
       min-y: 79
-      min-z: -50
-      max-x: 2250
-      max-y: 120
-      max-z: 50
+      min-z: -56
+      max-x: 2256
+      max-y: 132
+      max-z: 56
     spawns:
       wave1:
       - x: 2224.5

@@ -169,23 +169,25 @@ public final class SpongeSchematicPaster {
             }
         }
 
-        final int batch = Math.max(250, blocksPerTick);
+        final int batch = Math.max(500, blocksPerTick);
+        final int maxScanPerTick = batch * 8;
         final int[] cursor = {0};
         final BukkitTask[] holder = new BukkitTask[1];
 
         holder[0] = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
-            int end = Math.min(ops.size(), cursor[0] + batch);
-            for (int i = cursor[0]; i < end; i++) {
-                long[] op = ops.get(i);
-                int bx = (int) op[0];
-                int by = (int) op[1];
-                int bz = (int) op[2];
+            int placed = 0;
+            int scanned = 0;
+            while (cursor[0] < ops.size() && placed < batch && scanned < maxScanPerTick) {
+                long[] op = ops.get(cursor[0]++);
+                scanned++;
                 BlockData bd = resolvedPalette[(int) op[3]];
-                if (bd != null) {
-                    world.getBlockAt(bx, by, bz).setBlockData(bd, false);
-                }
+                if (bd == null) continue;
+                var block = world.getBlockAt((int) op[0], (int) op[1], (int) op[2]);
+                // Turbo void optimization: never waste tick budget setting air over existing air!
+                if (bd.getMaterial().isAir() && block.getType().isAir()) continue;
+                block.setBlockData(bd, false);
+                placed++;
             }
-            cursor[0] = end;
             if (cursor[0] >= ops.size()) {
                 if (holder[0] != null) holder[0].cancel();
                 if (onComplete != null) onComplete.run();

@@ -26,6 +26,8 @@ import java.util.List;
 public final class ClasherEventsPlugin extends JavaPlugin {
     private static final List<String> BUNDLED_ASSETS = List.of(
             "arenas.yml",
+            "schematics/lobby.schem",
+            "schematics/winner-podium.schem",
             "schematics/nethpot.schem",
             "schematics/axe-shield.schem",
             "schematics/build-uhc.schem",
@@ -72,6 +74,7 @@ public final class ClasherEventsPlugin extends JavaPlugin {
 
         this.eventManager = new EventManager(this, arenaManager, kitManager, dataStore, blockTracker, hud, discord);
         EventGui eventGui = new EventGui(this, arenaManager, eventManager, kitManager);
+        eventManager.setGui(eventGui);
         EventCommands commands = new EventCommands(this, arenaManager, kitManager, eventManager, eventGui);
 
         registerCommand("ce", commands);
@@ -102,6 +105,25 @@ public final class ClasherEventsPlugin extends JavaPlugin {
         reloadConfig();
         if (arenaManager != null) arenaManager.load();
         if (kitManager != null) kitManager.load();
+    }
+
+    /**
+     * Re-extracts bundled schematics and arenas.yml from the plugin JAR (used by /ce setup refresh
+     * when upgrading from older Clasher Events versions to overwrite legacy arenas with v2.1 builds).
+     */
+    public int refreshBundledArenasAndSchematics() {
+        int count = 0;
+        for (String resource : BUNDLED_ASSETS) {
+            if (resource.equals("arenas.yml") || resource.startsWith("schematics/")) {
+                saveResource(resource, true);
+                count++;
+            } else if (!new File(getDataFolder(), resource).exists()) {
+                saveResource(resource, false);
+                count++;
+            }
+        }
+        if (arenaManager != null) arenaManager.load();
+        return count;
     }
 
     @Override

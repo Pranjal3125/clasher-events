@@ -112,9 +112,12 @@ public final class EventGui implements Listener {
         ));
         inv.setItem(33, button(
                 Material.GRASS_BLOCK,
-                "<green><bold>Paste All Arenas</bold></green>",
-                List.of("<gray>Zero-lag batched paste for all 8 schematics.</gray>"),
-                "paste-all",
+                "<green><bold>Full Server Setup</bold></green>",
+                List.of(
+                        "<gray>Left-Click: Paste Lobby, Podium & all 8 arenas</gray>",
+                        "<yellow>Shift-Click: Refresh bundled v2.1 builds & paste all</yellow>"
+                ),
+                "full-setup",
                 ""
         ));
         inv.setItem(34, button(
@@ -400,6 +403,11 @@ public final class EventGui implements Listener {
                 if (!player.hasPermission("clasherevents.admin")) return;
                 player.closeInventory();
                 events.startModeVote(plugin.getConfig().getInt("mode-vote.duration-seconds", 45));
+            }
+            case "full-setup" -> {
+                if (!player.hasPermission("clasherevents.admin")) return;
+                player.closeInventory();
+                arenas.runFullSetup(player, events::isArenaInUse, event.isShiftClick());
             }
             case "paste-all" -> {
                 if (!player.hasPermission("clasherevents.admin")) return;

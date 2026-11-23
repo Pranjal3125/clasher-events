@@ -10,6 +10,7 @@ import com.sk89q.worldguard.protection.regions.ProtectedRegion;
 import com.sk89q.worldguard.protection.regions.RegionContainer;
 import com.sk89q.worldedit.bukkit.BukkitAdapter;
 import com.sk89q.worldedit.math.BlockVector3;
+import network.clasher.events.ClasherEventsPlugin;
 import network.clasher.events.model.Arena;
 import network.clasher.events.storage.YamlAtomicStorage;
 import network.clasher.events.util.FormatUtil;
@@ -45,6 +46,12 @@ import java.util.UUID;
  */
 public final class ArenaManager {
     private static final List<String> VALID_PHASES = List.of("wave1", "wave2", "final", "audience");
+    public static final int LOBBY_ORIGIN_X = -400;
+    public static final int LOBBY_ORIGIN_Y = 100;
+    public static final int LOBBY_ORIGIN_Z = 0;
+    public static final int WINNER_ORIGIN_X = -600;
+    public static final int WINNER_ORIGIN_Y = 100;
+    public static final int WINNER_ORIGIN_Z = 0;
 
     private final JavaPlugin plugin;
     private final Map<String, Arena> arenas = new LinkedHashMap<>();
@@ -328,17 +335,167 @@ public final class ArenaManager {
     }
 
     /**
-     * Teleports an admin directly to the arena's viewing platform (or safe center overlook)
-     * inside the shared event world, auto-loading the world if needed.
+     * Pastes a standalone structure schematic (such as lobby.schem or winner-podium.schem) tick-batched.
      */
-    public void teleportAdminToArena(Player admin, String id) {
-        Arena arena = get(id);
-        if (arena == null) {
-            admin.sendMessage(FormatUtil.mm("<red>Unknown arena: " + FormatUtil.escape(id) + ". Use <yellow>/ce arena list</yellow>.</red>"));
+    public void pasteStructureAsync(CommandSender sender, String schemFileName, String displayName, int ox, int oy, int oz, Runnable onComplete) {
+        World world = getOrCreateSharedWorld(sender);
+        if (world == null) return;
+        File source = new File(new File(plugin.getDataFolder(), "schematics"), schemFileName);
+        if (!source.isFile()) {
+            if (sender != null) sender.sendMessage(FormatUtil.mm("<red>Missing schematic: " + FormatUtil.escape(source.getPath()) + "</red>"));
+            if (onComplete != null) onComplete.run();
             return;
         }
+        int blocksPerTick = Math.max(500, plugin.getConfig().getInt("arenas.paste-blocks-per-tick", 2500));
+        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+            try {
+                SpongeSchematicPaster.ParsedSchematic parsed = SpongeSchematicPaster.parse(source);
+                Bukkit.getScheduler().runTask(plugin, () -> SpongeSchematicPaster.pasteBatched(
+                        plugin, world, parsed, ox, oy, oz, blocksPerTick, false, () -> {
+                            markPasted(schemFileName.replace(".schem", ""));
+                            if (sender != null) {
+                                sender.sendMessage(FormatUtil.mm("<green>Pasted <gold>" + FormatUtil.escape(displayName)
+                                        + "</gold> (" + parsed.nonAirBlockCount() + " blocks).</green>"));
+                            }
+                            if (onComplete != null) onComplete.run();
+                        }
+                ));
+            } catch (Exception ex) {
+                plugin.getLogger().severe("Structure paste failed for " + schemFileName + ": " + ex.getMessage());
+                if (onComplete != null) Bukkit.getScheduler().runTask(plugin, onComplete);
+            }
+        });
+    }
+
+    public void ensureLobbyReady(Runnable onReady) {
+        World world = getOrCreateSharedWorld(null);
+        if (world == null) { if (onReady != null) onReady.run(); return; }
+        Material floor = world.getBlockAt(LOBBY_ORIGIN_X, LOBBY_ORIGIN_Y + 1, LOBBY_ORIGIN_Z).getType();
+        if (!floor.isAir()) {
+            if (onReady != null) onReady.run();
+            return;
+        }
+        pasteStructureAsync(null, "lobby.schem", "Grand Event Spawn Lobby", LOBBY_ORIGIN_X, LOBBY_ORIGIN_Y, LOBBY_ORIGIN_Z, onReady);
+    }
+
+    public void ensureWinnerPodiumReady(Runnable onReady) {
+        World world = getOrCreateSharedWorld(null);
+        if (world == null) { if (onReady != null) onReady.run(); return; }
+        Material floor = world.getBlockAt(WINNER_ORIGIN_X, WINNER_ORIGIN_Y + 4, WINNER_ORIGIN_Z - 6).getType();
+        if (!floor.isAir()) {
+            if (onReady != null) onReady.run();
+            return;
+        }
+        pasteStructureAsync(null, "winner-podium.schem", "Champions Winner Podium", WINNER_ORIGIN_X, WINNER_ORIGIN_Y, WINNER_ORIGIN_Z, onReady);
+    }
+
+    /**
+     * One-command full turnkey setup (/ce setup [refresh]): creates void world, optionally refreshes
+     * bundled v2.1 architectural schematics + arenas.yml, pastes Grand Event Spawn Lobby,
+     * Champions Winner Podium, and all 8 PvP arenas, configures locations, and teleports admin to Lobby!
+     */
+    public void runFullSetup(CommandSender sender, java.util.function.Predicate<String> inUseCheck) {
+        runFullSetup(sender, inUseCheck, false);
+    }
+
+    public void runFullSetup(CommandSender sender, java.util.function.Predicate<String> inUseCheck, boolean refreshBundled) {
+        if (refreshBundled && plugin instanceof ClasherEventsPlugin cep) {
+            int refreshed = cep.refreshBundledArenasAndSchematics();
+            if (sender != null) {
+                sender.sendMessage(FormatUtil.mm("<aqua>Refreshed <white>" + refreshed + "</white> bundled v2.1 architectural schematics & arenas.yml from JAR.</aqua>"));
+            }
+        }
+        World world = getOrCreateSharedWorld(sender);
+        if (world == null) return;
+
+        // Save turnkey Lobby, Spectator, Winner Podium, & Crowd coordinates cleanly to config.yml
+        String wn = world.getName();
+        saveLocConfig("locations.lobby", wn, LOBBY_ORIGIN_X + 0.5, LOBBY_ORIGIN_Y + 2.0, LOBBY_ORIGIN_Z + 0.5, 180.0f, 0.0f);
+        saveLocConfig("locations.spectator", wn, LOBBY_ORIGIN_X + 0.5, LOBBY_ORIGIN_Y + 2.0, LOBBY_ORIGIN_Z + 0.5, 180.0f, 0.0f);
+        saveLocConfig("locations.winner", wn, WINNER_ORIGIN_X + 0.5, WINNER_ORIGIN_Y + 5.0, WINNER_ORIGIN_Z - 5.5, 0.0f, 0.0f);
+        saveLocConfig("locations.winner-crowd", wn, WINNER_ORIGIN_X + 0.5, WINNER_ORIGIN_Y + 2.0, WINNER_ORIGIN_Z + 9.5, 180.0f, 0.0f);
+        plugin.saveConfig();
+
+        if (sender != null) {
+            sender.sendMessage(FormatUtil.mm("<gold><bold>CLASHER EVENTS SETUP</bold></gold> <gray>— Pasting Sky Citadel Spawn Lobby, Winner Podium, and all 8 architectural arenas (zero-lag batched)...</gray>"));
+            if (!refreshBundled) {
+                sender.sendMessage(FormatUtil.mm("<gray>(Upgrading from v2.0? Use <yellow>/ce setup refresh</yellow> to replace old schematics with the new v2.1 builds!)</gray>"));
+            }
+        }
+        pasteStructureAsync(sender, "lobby.schem", "Grand Event Spawn Lobby", LOBBY_ORIGIN_X, LOBBY_ORIGIN_Y, LOBBY_ORIGIN_Z, () ->
+                pasteStructureAsync(sender, "winner-podium.schem", "Champions Winner Podium", WINNER_ORIGIN_X, WINNER_ORIGIN_Y, WINNER_ORIGIN_Z, () -> {
+                    pasteAllArenas(sender, inUseCheck);
+                    if (sender instanceof Player admin && admin.isOnline()) {
+                        admin.teleport(new Location(world, LOBBY_ORIGIN_X + 0.5, LOBBY_ORIGIN_Y + 2.0, LOBBY_ORIGIN_Z + 0.5, 180.0f, 0.0f));
+                        admin.sendMessage(FormatUtil.mm("<green><bold>Welcome to your new Grand Event Spawn Lobby!</bold></green> <gray>Use <yellow>/ce tp winner</yellow>, <yellow>/ce tp crowd</yellow>, or <yellow>/ce tp <arena></yellow> to inspect everything!</gray>"));
+                    }
+                })
+        );
+    }
+
+    private void saveLocConfig(String path, String world, double x, double y, double z, float yaw, float pitch) {
+        plugin.getConfig().set(path + ".world", world);
+        plugin.getConfig().set(path + ".x", x);
+        plugin.getConfig().set(path + ".y", y);
+        plugin.getConfig().set(path + ".z", z);
+        plugin.getConfig().set(path + ".yaw", yaw);
+        plugin.getConfig().set(path + ".pitch", pitch);
+    }
+
+    private Location resolveStructureLocation(World sharedWorld, String configKey, double defX, double defY, double defZ, float defYaw) {
+        String path = "locations." + configKey;
+        String wName = plugin.getConfig().getString(path + ".world", "");
+        if (wName != null && wName.equalsIgnoreCase(sharedWorld.getName())) {
+            return new Location(
+                    sharedWorld,
+                    plugin.getConfig().getDouble(path + ".x", defX),
+                    plugin.getConfig().getDouble(path + ".y", defY),
+                    plugin.getConfig().getDouble(path + ".z", defZ),
+                    (float) plugin.getConfig().getDouble(path + ".yaw", defYaw),
+                    (float) plugin.getConfig().getDouble(path + ".pitch", 0.0)
+            );
+        }
+        return new Location(sharedWorld, defX, defY, defZ, defYaw, 0.0f);
+    }
+
+    /**
+     * Teleports an admin directly to the Spawn Lobby, Winner Podium, Crowd Gallery, or any Arena.
+     */
+    public void teleportAdminToArena(Player admin, String id) {
+        String key = id == null ? "" : id.trim().toLowerCase(Locale.ROOT);
         World world = getOrCreateSharedWorld(admin);
         if (world == null) return;
+
+        if (key.equals("lobby") || key.equals("spawn")) {
+            ensureLobbyReady(() -> {
+                Location loc = resolveStructureLocation(world, "lobby", LOBBY_ORIGIN_X + 0.5, LOBBY_ORIGIN_Y + 2.0, LOBBY_ORIGIN_Z + 0.5, 180.0f);
+                admin.teleport(loc);
+                admin.sendMessage(FormatUtil.mm("<green>Teleported to <gold>Grand Event Spawn Lobby</gold>!</green>"));
+            });
+            return;
+        }
+        if (key.equals("winner") || key.equals("podium")) {
+            ensureWinnerPodiumReady(() -> {
+                Location loc = resolveStructureLocation(world, "winner", WINNER_ORIGIN_X + 0.5, WINNER_ORIGIN_Y + 5.0, WINNER_ORIGIN_Z - 5.5, 0.0f);
+                admin.teleport(loc);
+                admin.sendMessage(FormatUtil.mm("<green>Teleported to <gold>Champions Winner Podium</gold>!</green>"));
+            });
+            return;
+        }
+        if (key.equals("crowd") || key.equals("winner-crowd")) {
+            ensureWinnerPodiumReady(() -> {
+                Location loc = resolveStructureLocation(world, "winner-crowd", WINNER_ORIGIN_X + 0.5, WINNER_ORIGIN_Y + 2.0, WINNER_ORIGIN_Z + 9.5, 180.0f);
+                admin.teleport(loc);
+                admin.sendMessage(FormatUtil.mm("<green>Teleported to <gold>Winner Hall Crowd Area</gold>!</green>"));
+            });
+            return;
+        }
+
+        Arena arena = get(id);
+        if (arena == null) {
+            admin.sendMessage(FormatUtil.mm("<red>Unknown target: " + FormatUtil.escape(id) + ". Try <yellow>lobby</yellow>, <yellow>winner</yellow>, or <yellow>/ce arena list</yellow>.</red>"));
+            return;
+        }
         Location dest = firstSpawn(arena, "audience");
         if (dest == null) dest = firstSpawn(arena, "wave1");
         if (dest == null) {
@@ -347,7 +504,7 @@ public final class ArenaManager {
         admin.teleport(dest);
         boolean pasted = isArenaFloorPresent(world, arena);
         admin.sendMessage(FormatUtil.mm("<green>Teleported to <gold>" + FormatUtil.escape(arena.displayName()) + "</gold></green>"
-                + (pasted ? "" : " <yellow>(Not pasted yet — run <white>/ce arena paste " + FormatUtil.escape(arena.id()) + "</white> or <white>/ce arena pasteall</white>)</yellow>")));
+                + (pasted ? "" : " <yellow>(Not pasted yet — run <white>/ce arena paste " + FormatUtil.escape(arena.id()) + "</white> or <white>/ce setup</white>)</yellow>")));
     }
 
     public void clearArenaEntities(String arenaId) {

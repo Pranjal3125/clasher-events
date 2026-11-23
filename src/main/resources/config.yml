@@ -1,5 +1,5 @@
 # ==============================================================================
-# Clasher Events v2.0.0 Configuration
+# Clasher Events v2.1.0 Configuration
 # ==============================================================================
 # Zero-dependency plug-and-play PvP tournament & events engine.
 # WorldEdit, WorldGuard, and PlaceholderAPI are 100% optional!
@@ -108,32 +108,50 @@ rewards:
   team-winner:
     commands: []
 
-# Named locations — configure in-game with /ce setlobby, /ce setspectator, /ce setwinner.
+# Named locations — auto-configured by /ce setup, or customize in-game with /ce setlobby, /ce setspectator, /ce setwinner.
 locations:
   lobby:
     world: clasher_events
-    x: 0.5
-    y: 100.0
+    x: -399.5
+    y: 102.0
     z: 0.5
-    yaw: 0.0
+    yaw: 180.0
     pitch: 0.0
   spectator:
     world: clasher_events
-    x: 0.5
-    y: 100.0
+    x: -399.5
+    y: 102.0
     z: 0.5
-    yaw: 0.0
+    yaw: 180.0
     pitch: 0.0
   winner:
     world: clasher_events
-    x: 0.5
-    y: 100.0
-    z: 0.5
+    x: -599.5
+    y: 105.0
+    z: -5.5
     yaw: 0.0
+    pitch: 0.0
+  winner-crowd:
+    world: clasher_events
+    x: -599.5
+    y: 102.0
+    z: 9.5
+    yaw: 180.0
     pitch: 0.0
 
 lobby-protection:
-  radius: 35
+  radius: 46
+  catch-void-fall: true
+  give-lobby-hotbar: true
+  # In dedicated-server-mode, automatically send non-staff players to the Event Spawn Lobby when joining the server.
+  teleport-on-server-join: true
+
+# Cinematic PvP effects (visual lightning on kill, First Blood, Kill Streak broadcasts, auto-respawn).
+effects:
+  kill-lightning: true
+  first-blood: true
+  kill-streaks: true
+  auto-respawn: true
 
 rules-book:
   enabled: true
