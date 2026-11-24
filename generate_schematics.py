@@ -313,6 +313,106 @@ class VoxelCanvas:
         # Guarantee open sightline & clear spawn
         self.fill_box(-5, y_floor + 1, z_center - 2, 5, y_floor + 4, z_center + 2, "air")
 
+    def add_waiting_skybox(
+        self,
+        y_floor: int,
+        frame_blk: str,
+        trim_blk: str,
+        center_blk: str,
+        floor_glass: str,
+        wall_glass: str,
+        roof_slab: str,
+        light_blk: str,
+        glow_blk: str = "sea_lantern",
+    ) -> None:
+        """Builds a 100%-sealed, panoramic 19x9x19 themed waiting skybox directly above the arena center."""
+        r = 9
+        y_roof = y_floor + 7
+        # 1. Decorative exterior floating underside brackets (y_floor - 1)
+        for sx in (-1, 1):
+            for sz in (-1, 1):
+                for ox in (r - 2, r - 1, r):
+                    for oz in (r - 2, r - 1, r):
+                        if ox + oz >= 2 * r - 2:
+                            self.rel_put(sx * ox, y_floor - 1, sz * oz, trim_blk)
+        for d in (-3, 0, 3):
+            self.rel_put(d, y_floor - 1, -r, trim_blk)
+            self.rel_put(d, y_floor - 1, r, trim_blk)
+            self.rel_put(-r, y_floor - 1, d, trim_blk)
+            self.rel_put(r, y_floor - 1, d, trim_blk)
+
+        # 2. Panoramic glass floor + solid frame + themed cross walkways + central 5x5 spawn emblem
+        for dx in range(-r, r + 1):
+            for dz in range(-r, r + 1):
+                edge = max(abs(dx), abs(dz))
+                if edge == r:
+                    blk = frame_blk
+                elif abs(dx) <= 2 and abs(dz) <= 2:
+                    if dx == 0 and dz == 0:
+                        blk = center_blk
+                    elif max(abs(dx), abs(dz)) == 1:
+                        blk = trim_blk
+                    else:
+                        blk = frame_blk
+                elif abs(dx) <= 1 or abs(dz) <= 1:
+                    if (abs(dx) == 5 and dz == 0) or (abs(dz) == 5 and dx == 0):
+                        blk = glow_blk
+                    else:
+                        blk = trim_blk if (dx == 0 or dz == 0) else frame_blk
+                else:
+                    blk = floor_glass
+                self.rel_put(dx, y_floor, dz, blk)
+
+        # 3. Clear interior (100% open & roomy) + sealed panoramic glass walls + architectural columns
+        self.fill_box(-(r - 1), y_floor + 1, -(r - 1), r - 1, y_roof - 1, r - 1, "air")
+        for y in range(y_floor + 1, y_roof):
+            for dx in range(-r, r + 1):
+                for dz in range(-r, r + 1):
+                    if max(abs(dx), abs(dz)) != r:
+                        continue
+                    is_corner = abs(dx) >= r - 1 and abs(dz) >= r - 1
+                    is_pillar = (abs(dx) == r and dz in (-3, 3)) or (abs(dz) == r and dx in (-3, 3))
+                    if y == y_roof - 1:
+                        blk = trim_blk if (is_corner or is_pillar) else frame_blk
+                    elif is_corner:
+                        blk = frame_blk if y % 2 == 0 else trim_blk
+                    elif is_pillar:
+                        blk = trim_blk
+                    elif y == y_floor + 1:
+                        blk = trim_blk if (abs(dx) == r and abs(dz) <= 2) or (abs(dz) == r and abs(dx) <= 2) else wall_glass
+                    else:
+                        blk = wall_glass
+                    self.rel_put(dx, y, dz, blk)
+
+        # 4. Sealed stepped skylight roof (y_roof & y_roof + 1) — zero gaps!
+        for dx in range(-r, r + 1):
+            for dz in range(-r, r + 1):
+                edge = max(abs(dx), abs(dz))
+                if edge >= r - 2:
+                    self.rel_put(dx, y_roof, dz, frame_blk if edge == r else trim_blk)
+                    if edge == r:
+                        self.rel_put(dx, y_roof + 1, dz, roof_slab)
+                else:
+                    self.rel_put(dx, y_roof, dz, floor_glass)
+                    if edge == r - 3:
+                        self.rel_put(dx, y_roof + 1, dz, roof_slab)
+
+        # 5. Hanging corner lights inside the pavilion
+        for sx in (-1, 1):
+            for sz in (-1, 1):
+                self.rel_put(sx * (r - 2), y_roof - 1, sz * (r - 2), light_blk)
+        # 6. Verify 100% sealed enclosure (no air holes on floor, walls, or roof)
+        for dx in range(-r, r + 1):
+            for dz in range(-r, r + 1):
+                if self.rel_get(dx, y_floor, dz) == "minecraft:air":
+                    raise AssertionError(f"Skybox floor hole at ({dx},{y_floor},{dz})")
+                if self.rel_get(dx, y_roof, dz) == "minecraft:air":
+                    raise AssertionError(f"Skybox roof hole at ({dx},{y_roof},{dz})")
+                if max(abs(dx), abs(dz)) == r:
+                    for y in range(y_floor + 1, y_roof):
+                        if self.rel_get(dx, y, dz) == "minecraft:air":
+                            raise AssertionError(f"Skybox wall hole at ({dx},{y},{dz})")
+
     def encode(self) -> bytes:
         data = b"".join(varint(v) for v in self.grid)
         pal_tags = [int_tag(k, i) for i, k in enumerate(self.palette)]
@@ -344,7 +444,7 @@ class VoxelCanvas:
 # ---------------------------------------------------------------------------
 
 def build_nethpot() -> VoxelCanvas:
-    c = VoxelCanvas(128, 44, 128)
+    c = VoxelCanvas(128, 52, 128)
     floor_pal = ["polished_blackstone_bricks", "polished_blackstone", "cracked_polished_blackstone_bricks", "blackstone"]
     wall_pal = ["blackstone", "polished_blackstone_bricks", "basalt", "deepslate_bricks", "cracked_polished_blackstone_bricks"]
 
@@ -457,7 +557,7 @@ def build_nethpot() -> VoxelCanvas:
 # ---------------------------------------------------------------------------
 
 def build_sword() -> VoxelCanvas:
-    c = VoxelCanvas(112, 44, 112)
+    c = VoxelCanvas(112, 52, 112)
     sand_pal = ["smooth_sandstone", "sandstone", "cut_sandstone", "stripped_birch_wood"]
     marble_pal = ["quartz_bricks", "smooth_quartz", "chiseled_quartz_block", "smooth_sandstone"]
 
@@ -551,7 +651,7 @@ def build_sword() -> VoxelCanvas:
 # ---------------------------------------------------------------------------
 
 def build_crystal() -> VoxelCanvas:
-    c = VoxelCanvas(112, 42, 112)
+    c = VoxelCanvas(112, 52, 112)
     end_pal = ["end_stone_bricks", "end_stone", "purpur_block", "obsidian"]
 
     # Blast-proof bedrock foundation + textured obsidian/end-stone Crystal PvP deck
@@ -630,7 +730,7 @@ def build_crystal() -> VoxelCanvas:
 # ---------------------------------------------------------------------------
 
 def build_build_uhc() -> VoxelCanvas:
-    c = VoxelCanvas(112, 42, 112)
+    c = VoxelCanvas(112, 52, 112)
     cliff_pal = ["deepslate", "tuff", "stone", "andesite", "cobblestone", "mossy_cobblestone"]
 
     c.disk(52, 0, "bedrock")
@@ -718,7 +818,7 @@ def build_build_uhc() -> VoxelCanvas:
 # ---------------------------------------------------------------------------
 
 def build_axe_shield() -> VoxelCanvas:
-    c = VoxelCanvas(108, 42, 108)
+    c = VoxelCanvas(108, 52, 108)
     stone_pal = ["stone_bricks", "cracked_stone_bricks", "mossy_stone_bricks", "andesite", "polished_andesite"]
     keep_pal = ["deepslate_bricks", "deepslate_tiles", "tuff_bricks", "stone_bricks"]
 
@@ -784,7 +884,7 @@ def build_axe_shield() -> VoxelCanvas:
 # ---------------------------------------------------------------------------
 
 def build_uhc() -> VoxelCanvas:
-    c = VoxelCanvas(112, 44, 112)
+    c = VoxelCanvas(112, 52, 112)
     c.disk(52, 0, "bedrock")
     for dx in range(-40, 41):
         for dz in range(-40, 41):
@@ -842,7 +942,7 @@ def build_uhc() -> VoxelCanvas:
 # ---------------------------------------------------------------------------
 
 def build_smp() -> VoxelCanvas:
-    c = VoxelCanvas(112, 42, 112)
+    c = VoxelCanvas(112, 52, 112)
     ruin_pal = ["stone_bricks", "mossy_stone_bricks", "cracked_stone_bricks", "cobblestone", "mossy_cobblestone"]
 
     c.disk(42, 0, "cobblestone")
@@ -915,7 +1015,7 @@ def build_smp() -> VoxelCanvas:
 # ---------------------------------------------------------------------------
 
 def build_diamond_pot() -> VoxelCanvas:
-    c = VoxelCanvas(108, 42, 108)
+    c = VoxelCanvas(108, 52, 108)
     # 100% NON-SLIPPERY frosted marble/prismarine/diorite floor (zero ice on walkable deck!)
     floor_pal = ["quartz_bricks", "polished_diorite", "smooth_quartz", "prismarine_bricks"]
 
@@ -1142,15 +1242,99 @@ def build_winner_podium() -> VoxelCanvas:
 # ---------------------------------------------------------------------------
 
 ARENA_SPECS = [
-    ("nethpot", "NethPot - Gothic Nether Citadel", 0, 80, 0, build_nethpot, 30, 18, 10, -32, 12),
-    ("axe-shield", "Axe & Shield - Ironkeep Castle", 300, 80, 0, build_axe_shield, 24, 15, 8, -29, 12),
-    ("build-uhc", "Build UHC - Verdant Valley", 600, 80, 0, build_build_uhc, 22, 14, 8, -29, 14),
-    ("sword", "Sword - Grand Roman Colosseum", 900, 80, 0, build_sword, 24, 15, 8, -28, 11),
-    ("uhc", "UHC - Alpine Wild Frontier", 1200, 80, 0, build_uhc, 24, 15, 8, -31, 14),
-    ("crystal", "Crystal - End Rift Spires", 1600, 80, 0, build_crystal, 26, 16, 8, -31, 12),
-    ("smp", "SMP - Fallen Cathedral", 1900, 80, 0, build_smp, 26, 16, 8, -31, 13),
-    ("diamond-pot", "Diamond Pot - Frostglass Cathedral", 2200, 80, 0, build_diamond_pot, 24, 15, 8, -28, 11),
+    # (id, display, px, py, pz, builder, r_w1, r_w2, r_fin, aud_dz, aud_dy, playable_r)
+    ("nethpot", "NethPot - Gothic Nether Citadel", 0, 80, 0, build_nethpot, 30, 18, 10, -32, 12, 52),
+    ("axe-shield", "Axe & Shield - Ironkeep Castle", 300, 80, 0, build_axe_shield, 24, 15, 8, -29, 12, 38),
+    ("build-uhc", "Build UHC - Verdant Valley", 600, 80, 0, build_build_uhc, 22, 14, 8, -29, 14, 42),
+    ("sword", "Sword - Grand Roman Colosseum", 900, 80, 0, build_sword, 24, 15, 8, -28, 11, 42),
+    ("uhc", "UHC - Alpine Wild Frontier", 1200, 80, 0, build_uhc, 24, 15, 8, -31, 14, 42),
+    ("crystal", "Crystal - End Rift Spires", 1600, 80, 0, build_crystal, 26, 16, 8, -31, 12, 42),
+    ("smp", "SMP - Fallen Cathedral", 1900, 80, 0, build_smp, 26, 16, 8, -31, 13, 41),
+    ("diamond-pot", "Diamond Pot - Frostglass Cathedral", 2200, 80, 0, build_diamond_pot, 24, 15, 8, -28, 11, 39),
 ]
+
+WAITING_SKYBOX_THEMES = {
+    "nethpot": dict(
+        frame_blk="polished_blackstone_bricks",
+        trim_blk="red_nether_bricks",
+        center_blk="gilded_blackstone",
+        floor_glass="red_stained_glass",
+        wall_glass="black_stained_glass",
+        roof_slab="polished_blackstone_brick_slab[type=bottom]",
+        light_blk="soul_lantern[hanging=true]",
+        glow_blk="shroomlight",
+    ),
+    "axe-shield": dict(
+        frame_blk="deepslate_bricks",
+        trim_blk="polished_tuff",
+        center_blk="iron_block",
+        floor_glass="light_blue_stained_glass",
+        wall_glass="blue_stained_glass",
+        roof_slab="deepslate_brick_slab[type=bottom]",
+        light_blk="lantern[hanging=true]",
+        glow_blk="sea_lantern",
+    ),
+    "build-uhc": dict(
+        frame_blk="stone_bricks",
+        trim_blk="stripped_oak_log",
+        center_blk="gold_block",
+        floor_glass="white_stained_glass",
+        wall_glass="lime_stained_glass",
+        roof_slab="spruce_slab[type=bottom]",
+        light_blk="lantern[hanging=true]",
+        glow_blk="glowstone",
+    ),
+    "sword": dict(
+        frame_blk="smooth_sandstone",
+        trim_blk="quartz_bricks",
+        center_blk="gold_block",
+        floor_glass="yellow_stained_glass",
+        wall_glass="white_stained_glass",
+        roof_slab="quartz_slab[type=bottom]",
+        light_blk="lantern[hanging=true]",
+        glow_blk="sea_lantern",
+    ),
+    "uhc": dict(
+        frame_blk="stripped_spruce_log",
+        trim_blk="calcite",
+        center_blk="diamond_block",
+        floor_glass="light_blue_stained_glass",
+        wall_glass="white_stained_glass",
+        roof_slab="spruce_slab[type=bottom]",
+        light_blk="lantern[hanging=true]",
+        glow_blk="sea_lantern",
+    ),
+    "crystal": dict(
+        frame_blk="obsidian",
+        trim_blk="purpur_block",
+        center_blk="amethyst_block",
+        floor_glass="purple_stained_glass",
+        wall_glass="magenta_stained_glass",
+        roof_slab="purpur_slab[type=bottom]",
+        light_blk="end_rod[facing=down]",
+        glow_blk="sea_lantern",
+    ),
+    "smp": dict(
+        frame_blk="mossy_stone_bricks",
+        trim_blk="polished_andesite",
+        center_blk="gold_block",
+        floor_glass="white_stained_glass",
+        wall_glass="light_blue_stained_glass",
+        roof_slab="deepslate_tile_slab[type=bottom]",
+        light_blk="lantern[hanging=true]",
+        glow_blk="glowstone",
+    ),
+    "diamond-pot": dict(
+        frame_blk="quartz_bricks",
+        trim_blk="prismarine_bricks",
+        center_blk="diamond_block",
+        floor_glass="cyan_stained_glass",
+        wall_glass="light_blue_stained_glass",
+        roof_slab="quartz_slab[type=bottom]",
+        light_blk="soul_lantern[hanging=true]",
+        glow_blk="sea_lantern",
+    ),
+}
 
 
 def verify_and_clear_spawn(c: VoxelCanvas, dx: int, dy: int, dz: int, label: str) -> None:
@@ -1185,10 +1369,10 @@ def write_arenas_yml(entries: list[dict]) -> None:
         lines.append(f"      y: {e['py']}")
         lines.append(f"      z: {e['pz']}")
         lines.append("    bounds:")
-        for k in ("min-x", "min-y", "min-z", "max-x", "max-y", "max-z"):
+        for k in ("min-x", "min-y", "min-z", "max-x", "max-y", "max-z", "combat-max-y", "playable-radius"):
             lines.append(f"      {k}: {e['bounds'][k]}")
         lines.append("    spawns:")
-        for phase in ("wave1", "wave2", "final", "audience"):
+        for phase in ("wave1", "wave2", "final", "audience", "waiting"):
             lines.append(f"      {phase}:")
             for sp in e["spawns"][phase]:
                 lines.append(f"      - x: {sp['x']}")
@@ -1205,8 +1389,10 @@ def main() -> None:
         os.makedirs(d, exist_ok=True)
 
     yml_entries = []
-    for arena_id, display, px, py, pz, builder, r_w1, r_w2, r_fin, aud_dz, aud_dy in ARENA_SPECS:
+    for arena_id, display, px, py, pz, builder, r_w1, r_w2, r_fin, aud_dz, aud_dy, playable_r in ARENA_SPECS:
         canvas = builder()
+        # Add 100%-sealed themed panoramic Waiting Skybox directly above arena center (dy=42..50)!
+        canvas.add_waiting_skybox(42, **WAITING_SKYBOX_THEMES[arena_id])
 
         w1 = ring_spawns(px, py, pz, r_w1, 8, dy=2)
         w2 = ring_spawns(px, py, pz, r_w2, 4, dy=2)
@@ -1217,10 +1403,13 @@ def main() -> None:
         aud = [
             {"dx": 0, "dy": aud_dy, "dz": aud_dz, "x": px + 0.5, "y": py + aud_dy, "z": pz + aud_dz + 0.5, "yaw": 0.0}
         ]
+        wait = [
+            {"dx": 0, "dy": 43, "dz": 0, "x": px + 0.5, "y": py + 43, "z": pz + 0.5, "yaw": 0.0}
+        ]
 
-        for group_name, group in (("wave1", w1), ("wave2", w2), ("final", fin), ("audience", aud)):
+        for group_name, group in (("wave1", w1), ("wave2", w2), ("final", fin), ("audience", aud), ("waiting", wait)):
             for idx, sp in enumerate(group):
-                if group_name != "audience":
+                if group_name not in ("audience", "waiting"):
                     canvas.clear_cylinder(sp["dx"], sp["dz"], sp["dy"], sp["dy"] + 3, 1.5)
                 verify_and_clear_spawn(canvas, sp["dx"], sp["dy"], sp["dz"], f"{arena_id}.{group_name}[{idx}]")
 
@@ -1231,7 +1420,8 @@ def main() -> None:
 
         half_w = canvas.w // 2
         half_l = canvas.l // 2
-        max_y = py + max(canvas.h + 10, 48 if arena_id == "build-uhc" else 44)
+        max_y = py + canvas.h + 2
+        combat_max_y = py + 36
         yml_entries.append(
             {
                 "id": arena_id,
@@ -1246,11 +1436,13 @@ def main() -> None:
                     "max-x": px + half_w + 2,
                     "max-y": max_y,
                     "max-z": pz + half_l + 2,
+                    "combat-max-y": combat_max_y,
+                    "playable-radius": playable_r,
                 },
-                "spawns": {"wave1": w1, "wave2": w2, "final": fin, "audience": aud},
+                "spawns": {"wave1": w1, "wave2": w2, "final": fin, "audience": aud, "waiting": wait},
             }
         )
-        print(f"OK {arena_id:13s} | {canvas.w:3d}x{canvas.h:2d}x{canvas.l:3d} | palette={len(canvas.palette):2d} | {len(payload):6d} bytes | all 15 spawns verified")
+        print(f"OK {arena_id:13s} | {canvas.w:3d}x{canvas.h:2d}x{canvas.l:3d} | palette={len(canvas.palette):2d} | {len(payload):6d} bytes | all 16 spawns + sealed skybox verified")
 
     write_arenas_yml(yml_entries)
     print(f"Updated {ARENAS_YML}")

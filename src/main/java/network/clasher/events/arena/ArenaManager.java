@@ -45,7 +45,8 @@ import java.util.UUID;
  * tick-batched schematic pasting & auto-pasting, entity cleanup, and optional WorldGuard protection.
  */
 public final class ArenaManager {
-    private static final List<String> VALID_PHASES = List.of("wave1", "wave2", "final", "audience");
+    private static final List<String> VALID_PHASES = List.of("wave1", "wave2", "final", "audience", "waiting");
+    private static final List<String> REQUIRED_PHASES = List.of("wave1", "wave2", "final", "audience");
     public static final int LOBBY_ORIGIN_X = -400;
     public static final int LOBBY_ORIGIN_Y = 100;
     public static final int LOBBY_ORIGIN_Z = 0;
@@ -139,14 +140,20 @@ public final class ArenaManager {
     public List<Location> spawns(Arena arena, String phase) {
         List<Location> out = new ArrayList<>();
         if (arena == null) return out;
-        World world = getOrCreateSharedWorld(null);
-        if (world == null) return out;
+        World defaultWorld = getOrCreateSharedWorld(null);
+        if (defaultWorld == null) return out;
         for (Map<?, ?> row : arena.section().getMapList("spawns." + phase)) {
             Object x = row.get("x"), y = row.get("y"), z = row.get("z");
             if (x instanceof Number nx && y instanceof Number ny && z instanceof Number nz) {
+                World targetWorld = defaultWorld;
+                Object wObj = row.get("world");
+                if (wObj instanceof String wName && !wName.isBlank() && !wName.equalsIgnoreCase(defaultWorld.getName())) {
+                    World custom = Bukkit.getWorld(wName);
+                    if (custom != null) targetWorld = custom;
+                }
                 float yaw = row.get("yaw") instanceof Number nyaw ? nyaw.floatValue() : 0.0f;
                 float pitch = row.get("pitch") instanceof Number npitch ? npitch.floatValue() : 0.0f;
-                out.add(new Location(world, nx.doubleValue(), ny.doubleValue(), nz.doubleValue(), yaw, pitch));
+                out.add(new Location(targetWorld, nx.doubleValue(), ny.doubleValue(), nz.doubleValue(), yaw, pitch));
             }
         }
         return out;
@@ -161,7 +168,7 @@ public final class ArenaManager {
         String id = arenaId.toLowerCase(Locale.ROOT);
         String phaseKey = phaseName.toLowerCase(Locale.ROOT);
         if (!VALID_PHASES.contains(phaseKey)) {
-            player.sendMessage(FormatUtil.mm("<red>Phase must be wave1, wave2, final, or audience.</red>"));
+            player.sendMessage(FormatUtil.mm("<red>Phase must be wave1, wave2, final, audience, or waiting.</red>"));
             return;
         }
         Arena arena = arenas.get(id);
@@ -170,7 +177,7 @@ public final class ArenaManager {
             return;
         }
         String sharedWorld = sharedWorldName();
-        if (!player.getWorld().getName().equalsIgnoreCase(sharedWorld)) {
+        if (!phaseKey.equals("waiting") && !player.getWorld().getName().equalsIgnoreCase(sharedWorld)) {
             player.sendMessage(FormatUtil.mm("<red>Stand inside the shared arena world '" + FormatUtil.escape(sharedWorld) + "' before setting this spawn.</red>"));
             return;
         }
@@ -179,6 +186,9 @@ public final class ArenaManager {
         String path = "arenas." + id + ".spawns." + phaseKey;
         Location loc = player.getLocation();
         Map<String, Object> spawn = new LinkedHashMap<>();
+        if (phaseKey.equals("waiting") && !loc.getWorld().getName().equalsIgnoreCase(sharedWorld)) {
+            spawn.put("world", loc.getWorld().getName());
+        }
         spawn.put("x", loc.getX());
         spawn.put("y", loc.getY());
         spawn.put("z", loc.getZ());
@@ -191,11 +201,29 @@ public final class ArenaManager {
 
         if (YamlAtomicStorage.saveAtomically(yml, file, plugin.getLogger(), "Could not save arena spawn for " + id)) {
             load();
-            player.sendMessage(FormatUtil.mm("<green>" + (append ? "Added" : "Set") + " " + FormatUtil.escape(arena.displayName())
-                    + " " + phaseKey + " spawn at "
-                    + String.format(Locale.ROOT, "%.2f, %.2f, %.2f", loc.getX(), loc.getY(), loc.getZ()) + ".</green>"));
+            player.sendMessage(FormatUtil.mm("<green>" + (append ? "Added" : "Set") + " <gold>" + FormatUtil.escape(arena.displayName())
+                    + "</gold> <yellow>" + phaseKey + "</yellow> spawn at "
+                    + String.format(Locale.ROOT, "%.2f, %.2f, %.2f", loc.getX(), loc.getY(), loc.getZ())
+                    + " (" + FormatUtil.escape(loc.getWorld().getName()) + ").</green>"));
         } else {
             player.sendMessage(FormatUtil.mm("<red>Could not save arenas.yml. Check console for details.</red>"));
+        }
+    }
+
+    public void clearWaitingSpawn(CommandSender sender, String arenaId) {
+        String id = arenaId.toLowerCase(Locale.ROOT);
+        Arena arena = arenas.get(id);
+        if (arena == null) {
+            sender.sendMessage(FormatUtil.mm("<red>Unknown arena: " + FormatUtil.escape(arenaId) + "</red>"));
+            return;
+        }
+        File file = new File(plugin.getDataFolder(), "arenas.yml");
+        YamlConfiguration yml = YamlConfiguration.loadConfiguration(file);
+        yml.set("arenas." + id + ".spawns.waiting", null);
+        if (YamlAtomicStorage.saveAtomically(yml, file, plugin.getLogger(), "Could not clear waiting spawn for " + id)) {
+            load();
+            sender.sendMessage(FormatUtil.mm("<green>Cleared custom waiting lobby for <gold>" + FormatUtil.escape(arena.displayName())
+                    + "</gold> — it will now fall back to the global Spawn Lobby.</green>"));
         }
     }
 
@@ -402,7 +430,7 @@ public final class ArenaManager {
         if (refreshBundled && plugin instanceof ClasherEventsPlugin cep) {
             int refreshed = cep.refreshBundledArenasAndSchematics();
             if (sender != null) {
-                sender.sendMessage(FormatUtil.mm("<aqua>Refreshed <white>" + refreshed + "</white> bundled v2.1 architectural schematics & arenas.yml from JAR.</aqua>"));
+                sender.sendMessage(FormatUtil.mm("<aqua>Refreshed <white>" + refreshed + "</white> bundled v2.2 architectural schematics & arenas.yml from JAR.</aqua>"));
             }
         }
         World world = getOrCreateSharedWorld(sender);
@@ -417,9 +445,9 @@ public final class ArenaManager {
         plugin.saveConfig();
 
         if (sender != null) {
-            sender.sendMessage(FormatUtil.mm("<gold><bold>CLASHER EVENTS SETUP</bold></gold> <gray>— Pasting Sky Citadel Spawn Lobby, Winner Podium, and all 8 architectural arenas (zero-lag batched)...</gray>"));
+            sender.sendMessage(FormatUtil.mm("<gold><bold>CLASHER EVENTS SETUP</bold></gold> <gray>— Pasting Sky Citadel Spawn Lobby, Winner Podium, and all 8 arenas with themed waiting skyboxes (zero-lag batched)...</gray>"));
             if (!refreshBundled) {
-                sender.sendMessage(FormatUtil.mm("<gray>(Upgrading from v2.0? Use <yellow>/ce setup refresh</yellow> to replace old schematics with the new v2.1 builds!)</gray>"));
+                sender.sendMessage(FormatUtil.mm("<gray>(Upgrading? Use <yellow>/ce setup refresh</yellow> to update bundled schematics & waiting skyboxes!)</gray>"));
             }
         }
         pasteStructureAsync(sender, "lobby.schem", "Grand Event Spawn Lobby", LOBBY_ORIGIN_X, LOBBY_ORIGIN_Y, LOBBY_ORIGIN_Z, () ->
@@ -459,9 +487,13 @@ public final class ArenaManager {
     }
 
     /**
-     * Teleports an admin directly to the Spawn Lobby, Winner Podium, Crowd Gallery, or any Arena.
+     * Teleports an admin directly to the Spawn Lobby, Winner Podium, Crowd Gallery, or any Arena (or its waiting/audience/wave spawn).
      */
     public void teleportAdminToArena(Player admin, String id) {
+        teleportAdminToArena(admin, id, null);
+    }
+
+    public void teleportAdminToArena(Player admin, String id, String subPhase) {
         String key = id == null ? "" : id.trim().toLowerCase(Locale.ROOT);
         World world = getOrCreateSharedWorld(admin);
         if (world == null) return;
@@ -496,15 +528,22 @@ public final class ArenaManager {
             admin.sendMessage(FormatUtil.mm("<red>Unknown target: " + FormatUtil.escape(id) + ". Try <yellow>lobby</yellow>, <yellow>winner</yellow>, or <yellow>/ce arena list</yellow>.</red>"));
             return;
         }
-        Location dest = firstSpawn(arena, "audience");
+        String requestedPhase = subPhase == null ? "" : subPhase.trim().toLowerCase(Locale.ROOT);
+        Location dest = null;
+        String labelSuffix = "";
+        if (!requestedPhase.isEmpty() && VALID_PHASES.contains(requestedPhase)) {
+            dest = firstSpawn(arena, requestedPhase);
+            if (dest != null) labelSuffix = " (" + requestedPhase + ")";
+        }
+        if (dest == null) dest = firstSpawn(arena, "audience");
         if (dest == null) dest = firstSpawn(arena, "wave1");
         if (dest == null) {
             dest = new Location(world, arena.centerX(), arena.pasteY() + 6.0, arena.centerZ());
         }
         admin.teleport(dest);
         boolean pasted = isArenaFloorPresent(world, arena);
-        admin.sendMessage(FormatUtil.mm("<green>Teleported to <gold>" + FormatUtil.escape(arena.displayName()) + "</gold></green>"
-                + (pasted ? "" : " <yellow>(Not pasted yet — run <white>/ce arena paste " + FormatUtil.escape(arena.id()) + "</white> or <white>/ce setup</white>)</yellow>")));
+        admin.sendMessage(FormatUtil.mm("<green>Teleported to <gold>" + FormatUtil.escape(arena.displayName() + labelSuffix) + "</gold></green>"
+                + (pasted ? "" : " <yellow>(Not pasted yet — run <white>/ce arena paste " + FormatUtil.escape(arena.id()) + "</white> or <white>/ce setup refresh</white>)</yellow>")));
     }
 
     public void clearArenaEntities(String arenaId) {
@@ -524,14 +563,16 @@ public final class ArenaManager {
         File schematic = new File(new File(plugin.getDataFolder(), "schematics"), arena.schematic());
         List<String> missing = new ArrayList<>();
         if (!schematic.isFile()) missing.add("schematic file");
-        for (String phaseName : VALID_PHASES) {
+        for (String phaseName : REQUIRED_PHASES) {
             if (spawns(arena, phaseName).isEmpty()) missing.add(phaseName + " spawn");
         }
         if (missing.isEmpty()) {
             World world = Bukkit.getWorld(sharedWorldName());
             boolean pasted = world != null && isArenaFloorPresent(world, arena);
+            boolean hasWaiting = !spawns(arena, "waiting").isEmpty();
             sender.sendMessage(FormatUtil.mm("<green>" + FormatUtil.escape(arena.displayName())
-                    + " validation passed.</green> <gray>(Pasted in world: " + (pasted ? "<green>YES</green>" : "<yellow>NO — will auto-paste on event create</yellow>") + ")</gray>"));
+                    + " validation passed.</green> <gray>(Pasted: " + (pasted ? "<green>YES</green>" : "<yellow>NO</yellow>")
+                    + ", Waiting Lobby: " + (hasWaiting ? "<green>PER-ARENA</green>" : "<aqua>GLOBAL</aqua>") + ")</gray>"));
         } else {
             sender.sendMessage(FormatUtil.mm("<red>" + FormatUtil.escape(arena.displayName()) + " missing: " + FormatUtil.escape(String.join(", ", missing)) + "</red>"));
         }

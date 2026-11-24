@@ -30,7 +30,7 @@ public final class EventCommands implements CommandExecutor, TabCompleter {
     );
     private static final List<String> CE_SUBS = List.of(
             "help", "setup", "create", "voteopen", "start", "skip", "timeskip", "stop", "pause", "resume", "status", "reload",
-            "gui", "countdown", "tp", "setlobby", "setspectator", "setwinner", "setcrowd",
+            "gui", "countdown", "tp", "setlobby", "setwaiting", "clearwaiting", "setspectator", "setwinner", "setcrowd",
             "setspawn", "addspawn", "arena", "kit"
     );
 
@@ -136,7 +136,7 @@ public final class EventCommands implements CommandExecutor, TabCompleter {
                 else player.sendMessage(FormatUtil.mm("<red>Only eliminated event spectators can use this command.</red>"));
             }
             default -> {
-                player.sendMessage(FormatUtil.mm("<gold><bold>Clasher Events v2.1 Commands</bold></gold>"));
+                player.sendMessage(FormatUtil.mm("<gold><bold>Clasher Events v2.2 Commands</bold></gold>"));
                 player.sendMessage(FormatUtil.mm("<yellow>/event join</yellow> <dark_gray>-</dark_gray> <gray>Join open event registration</gray>"));
                 player.sendMessage(FormatUtil.mm("<yellow>/event leave</yellow> <dark_gray>-</dark_gray> <gray>Leave current event and restore inventory</gray>"));
                 player.sendMessage(FormatUtil.mm("<yellow>/event modevote [mode]</yellow> <dark_gray>-</dark_gray> <gray>Vote for the next event mode</gray>"));
@@ -157,13 +157,14 @@ public final class EventCommands implements CommandExecutor, TabCompleter {
         String sub = args.length == 0 ? "help" : args[0].toLowerCase(Locale.ROOT);
         switch (sub) {
             case "help" -> {
-                sender.sendMessage(FormatUtil.mm("<gold><bold>Clasher Events v2.1 Admin Commands</bold></gold>"));
-                sender.sendMessage(FormatUtil.mm("<yellow>/ce setup [refresh]</yellow> <dark_gray>-</dark_gray> <gray>Paste Sky Citadel Lobby, Winner Podium & all 8 architectural arenas!</gray>"));
+                sender.sendMessage(FormatUtil.mm("<gold><bold>Clasher Events v2.2 Admin Commands</bold></gold>"));
+                sender.sendMessage(FormatUtil.mm("<yellow>/ce setup [refresh]</yellow> <dark_gray>-</dark_gray> <gray>Paste Sky Citadel Lobby, Winner Podium & 8 arenas + waiting skyboxes!</gray>"));
                 sender.sendMessage(FormatUtil.mm("<yellow>/ce gui</yellow> <dark_gray>|</dark_gray> <yellow>/ce create <mode></yellow> <dark_gray>|</dark_gray> <yellow>/ce voteopen [sec]</yellow> <dark_gray>|</dark_gray> <yellow>/ce skip [sec|now]</yellow>"));
                 sender.sendMessage(FormatUtil.mm("<yellow>/ce start</yellow> <dark_gray>|</dark_gray> <yellow>/ce stop</yellow> <dark_gray>|</dark_gray> <yellow>/ce pause</yellow> <dark_gray>|</dark_gray> <yellow>/ce resume</yellow> <dark_gray>|</dark_gray> <yellow>/ce countdown</yellow> <dark_gray>|</dark_gray> <yellow>/ce status</yellow> <dark_gray>|</dark_gray> <yellow>/ce reload</yellow>"));
-                sender.sendMessage(FormatUtil.mm("<yellow>/ce tp <lobby|winner|crowd|arena></yellow> <dark_gray>|</dark_gray> <yellow>/ce setlobby</yellow> <dark_gray>|</dark_gray> <yellow>/ce setspectator</yellow> <dark_gray>|</dark_gray> <yellow>/ce setwinner</yellow> <dark_gray>|</dark_gray> <yellow>/ce setcrowd</yellow>"));
-                sender.sendMessage(FormatUtil.mm("<yellow>/ce setspawn <mode|arena> [wave1|wave2|final|audience]</yellow>"));
-                sender.sendMessage(FormatUtil.mm("<yellow>/ce addspawn <mode|arena> [wave1|wave2|final|audience]</yellow>"));
+                sender.sendMessage(FormatUtil.mm("<yellow>/ce tp <lobby|winner|crowd|arena> [waiting|audience|wave1|final]</yellow>"));
+                sender.sendMessage(FormatUtil.mm("<yellow>/ce setwaiting <arena></yellow> <dark_gray>|</dark_gray> <yellow>/ce clearwaiting <arena></yellow> <dark_gray>|</dark_gray> <yellow>/ce setlobby</yellow> <dark_gray>|</dark_gray> <yellow>/ce setwinner</yellow> <dark_gray>|</dark_gray> <yellow>/ce setcrowd</yellow>"));
+                sender.sendMessage(FormatUtil.mm("<yellow>/ce setspawn <mode|arena> [wave1|wave2|final|audience|waiting]</yellow>"));
+                sender.sendMessage(FormatUtil.mm("<yellow>/ce addspawn <mode|arena> [wave1|wave2|final|audience|waiting]</yellow>"));
                 sender.sendMessage(FormatUtil.mm("<yellow>/ce arena list|tp|paste|pasteall|reset|info|validate <arena></yellow>"));
                 sender.sendMessage(FormatUtil.mm("<yellow>/ce kit list|give <kit> <player>|preview <kit> <player>|reload</yellow>"));
                 sender.sendMessage(FormatUtil.mm("<yellow>/latejoin <player></yellow> <dark_gray>-</dark_gray> <gray>Force-add an online player to an active match</gray>"));
@@ -201,8 +202,8 @@ public final class EventCommands implements CommandExecutor, TabCompleter {
             }
             case "tp" -> {
                 if (!(sender instanceof Player admin)) sender.sendMessage(FormatUtil.mm("<red>Players only.</red>"));
-                else if (args.length >= 2) arenas.teleportAdminToArena(admin, args[1]);
-                else sender.sendMessage(FormatUtil.mm("<red>Usage:</red> <yellow>/ce tp <lobby|winner|crowd|arena></yellow>"));
+                else if (args.length >= 2) arenas.teleportAdminToArena(admin, args[1], args.length >= 3 ? args[2] : null);
+                else sender.sendMessage(FormatUtil.mm("<red>Usage:</red> <yellow>/ce tp <lobby|winner|crowd|arena> [waiting|audience|wave1|final]</yellow>"));
             }
             case "stop" -> events.stopEvent("Event stopped by admin");
             case "pause" -> {
@@ -243,13 +244,47 @@ public final class EventCommands implements CommandExecutor, TabCompleter {
                 if (sender instanceof Player admin) events.setNamedLocation(admin, "winner-crowd");
                 else sender.sendMessage(FormatUtil.mm("<red>Players only.</red>"));
             }
+            case "setwaiting" -> {
+                if (!(sender instanceof Player admin)) {
+                    sender.sendMessage(FormatUtil.mm("<red>Players only.</red>"));
+                    return;
+                }
+                if (args.length < 2) {
+                    sender.sendMessage(FormatUtil.mm("<red>Usage:</red> <yellow>/ce setwaiting <mode|arena></yellow>"));
+                    return;
+                }
+                String requested = args[1].toLowerCase(Locale.ROOT);
+                String arenaId = EventMode.fromInput(requested)
+                        .map(EventMode::defaultArenaId)
+                        .orElse(arenas.exists(requested) ? requested : null);
+                if (arenaId == null) {
+                    sender.sendMessage(FormatUtil.mm("<red>Unknown mode/arena: " + FormatUtil.escape(requested) + ". Use /ce arena list.</red>"));
+                    return;
+                }
+                arenas.setSpawn(admin, arenaId, "waiting", false);
+            }
+            case "clearwaiting" -> {
+                if (args.length < 2) {
+                    sender.sendMessage(FormatUtil.mm("<red>Usage:</red> <yellow>/ce clearwaiting <mode|arena></yellow>"));
+                    return;
+                }
+                String requested = args[1].toLowerCase(Locale.ROOT);
+                String arenaId = EventMode.fromInput(requested)
+                        .map(EventMode::defaultArenaId)
+                        .orElse(arenas.exists(requested) ? requested : null);
+                if (arenaId == null) {
+                    sender.sendMessage(FormatUtil.mm("<red>Unknown mode/arena: " + FormatUtil.escape(requested) + ". Use /ce arena list.</red>"));
+                    return;
+                }
+                arenas.clearWaitingSpawn(sender, arenaId);
+            }
             case "setspawn", "addspawn" -> {
                 if (!(sender instanceof Player admin)) {
                     sender.sendMessage(FormatUtil.mm("<red>Players only.</red>"));
                     return;
                 }
                 if (args.length < 2) {
-                    sender.sendMessage(FormatUtil.mm("<red>Usage:</red> <yellow>/ce " + sub + " <mode|arena> [wave1|wave2|final|audience]</yellow>"));
+                    sender.sendMessage(FormatUtil.mm("<red>Usage:</red> <yellow>/ce " + sub + " <mode|arena> [wave1|wave2|final|audience|waiting]</yellow>"));
                     return;
                 }
                 String requested = args[1].toLowerCase(Locale.ROOT);
@@ -293,8 +328,8 @@ public final class EventCommands implements CommandExecutor, TabCompleter {
             case "list" -> sender.sendMessage(FormatUtil.mm("<gold>Arenas:</gold> <white>" + String.join(", ", arenas.arenaIds()) + "</white>"));
             case "tp", "goto" -> {
                 if (!(sender instanceof Player admin)) sender.sendMessage(FormatUtil.mm("<red>Players only.</red>"));
-                else if (args.length >= 3) arenas.teleportAdminToArena(admin, args[2]);
-                else sender.sendMessage(FormatUtil.mm("<red>Usage:</red> <yellow>/ce arena tp <arena></yellow>"));
+                else if (args.length >= 3) arenas.teleportAdminToArena(admin, args[2], args.length >= 4 ? args[3] : null);
+                else sender.sendMessage(FormatUtil.mm("<red>Usage:</red> <yellow>/ce arena tp <arena> [waiting|audience|wave1|final]</yellow>"));
             }
             case "pasteall" -> arenas.pasteAllArenas(sender, events::isArenaInUse);
             case "paste" -> {
@@ -385,14 +420,23 @@ public final class EventCommands implements CommandExecutor, TabCompleter {
                 options.addAll(List.of("lobby", "winner", "crowd"));
                 options.addAll(arenas.arenaIds());
             }
+            else if (args.length == 3 && args[0].equalsIgnoreCase("tp") && arenas.exists(args[1])) {
+                options.addAll(List.of("waiting", "audience", "wave1", "wave2", "final"));
+            }
+            else if (args.length == 2 && List.of("setwaiting", "clearwaiting").contains(args[0].toLowerCase(Locale.ROOT))) {
+                options.addAll(arenas.arenaIds());
+            }
             else if (args.length == 2 && List.of("skip", "timeskip").contains(args[0].toLowerCase(Locale.ROOT))) options.addAll(List.of("now", "10", "30", "60"));
             else if (args.length == 2 && args[0].equalsIgnoreCase("arena")) options.addAll(List.of("list", "tp", "paste", "pasteall", "reset", "info", "validate"));
             else if (args.length == 2 && List.of("setspawn", "addspawn").contains(args[0].toLowerCase(Locale.ROOT))) options.addAll(EventMode.allIds());
-            else if (args.length == 3 && List.of("setspawn", "addspawn").contains(args[0].toLowerCase(Locale.ROOT))) options.addAll(List.of("wave1", "wave2", "final", "audience"));
+            else if (args.length == 3 && List.of("setspawn", "addspawn").contains(args[0].toLowerCase(Locale.ROOT))) options.addAll(List.of("wave1", "wave2", "final", "audience", "waiting"));
             else if (args.length == 2 && args[0].equalsIgnoreCase("kit")) options.addAll(List.of("list", "give", "preview", "reload"));
             else if (args.length == 3 && args[0].equalsIgnoreCase("arena") && !args[1].equalsIgnoreCase("pasteall")) {
                 if (List.of("tp", "goto").contains(args[1].toLowerCase(Locale.ROOT))) options.addAll(List.of("lobby", "winner", "crowd"));
                 options.addAll(arenas.arenaIds());
+            }
+            else if (args.length == 4 && args[0].equalsIgnoreCase("arena") && List.of("tp", "goto").contains(args[1].toLowerCase(Locale.ROOT)) && arenas.exists(args[2])) {
+                options.addAll(List.of("waiting", "audience", "wave1", "wave2", "final"));
             }
             else if (args.length == 3 && args[0].equalsIgnoreCase("kit") && List.of("give", "preview").contains(args[1].toLowerCase(Locale.ROOT))) options.addAll(kits.kitIds());
             else if (args.length == 4 && args[0].equalsIgnoreCase("kit") && List.of("give", "preview").contains(args[1].toLowerCase(Locale.ROOT))) {

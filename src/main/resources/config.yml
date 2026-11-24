@@ -1,5 +1,5 @@
 # ==============================================================================
-# Clasher Events v2.1.0 Configuration
+# Clasher Events v2.2.0 Configuration
 # ==============================================================================
 # Zero-dependency plug-and-play PvP tournament & events engine.
 # WorldEdit, WorldGuard, and PlaceholderAPI are 100% optional!
@@ -143,8 +143,15 @@ lobby-protection:
   radius: 46
   catch-void-fall: true
   give-lobby-hotbar: true
+  # Use each arena's built-in themed waiting skybox (or custom /ce setwaiting <arena>) during registration.
+  # Set to false to always gather waiting players in the global Sky Citadel Lobby (locations.lobby).
+  per-arena-waiting: true
   # In dedicated-server-mode, automatically send non-staff players to the Event Spawn Lobby when joining the server.
   teleport-on-server-join: true
+
+# Multi-layer anti-escape containment (blocks ender pearls/chorus/towering/wall-breaking/spectator fly-away).
+anti-escape:
+  enabled: true
 
 # Cinematic PvP effects (visual lightning on kill, First Blood, Kill Streak broadcasts, auto-respawn).
 effects:

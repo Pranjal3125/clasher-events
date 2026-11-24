@@ -1,5 +1,6 @@
 package network.clasher.events.arena;
 
+import network.clasher.events.model.Arena;
 import org.bukkit.Material;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.YamlConfiguration;
@@ -46,7 +47,7 @@ final class SpongeSchematicPasterTest {
     }
 
     @Test
-    void parsesAllEightBundledArenasValidatesPalettesAndEverySpawnClearance() throws Exception {
+    void parsesAllEightBundledArenasValidatesPalettesSpawnsSkyboxesAndAntiEscapeBounds() throws Exception {
         File resourcesDir = new File("src/main/resources");
         File arenasFile = new File(resourcesDir, "arenas.yml");
         assertTrue(arenasFile.isFile(), "arenas.yml must exist");
@@ -65,7 +66,7 @@ final class SpongeSchematicPasterTest {
 
             SpongeSchematicPaster.ParsedSchematic parsed = SpongeSchematicPaster.parse(schemFile);
             assertTrue(parsed.width() >= 108, arenaId + " width should be >= 108");
-            assertTrue(parsed.height() >= 42, arenaId + " height should be >= 42");
+            assertTrue(parsed.height() >= 52, arenaId + " height should be >= 52 (includes sealed waiting skybox)");
             assertTrue(parsed.length() >= 108, arenaId + " length should be >= 108");
             assertTrue(parsed.nonAirBlockCount() > 50_000, arenaId + " must have rich architectural detail");
             assertAllPaletteMaterialsValid(arenaId, parsed);
@@ -73,6 +74,7 @@ final class SpongeSchematicPasterTest {
             int pasteX = sec.getInt("paste.x");
             int pasteY = sec.getInt("paste.y");
             int pasteZ = sec.getInt("paste.z");
+            Arena arena = new Arena(arenaId, sec.getString("display-name", arenaId), schemName, pasteX, pasteY, pasteZ, sec);
 
             // Gameplay guarantees for Crystal & Diamond Pot
             if (arenaId.equals("crystal")) {
@@ -84,19 +86,54 @@ final class SpongeSchematicPasterTest {
                 assertFalse(centerFloor.contains("ice"), "Diamond Pot combat floor must NOT be slippery ice: " + centerFloor);
             }
 
-            // Mathematically verify EVERY single spawn has solid non-hazard floor below and pure air at feet & head!
-            for (String phase : List.of("wave1", "wave2", "final", "audience")) {
+            // Anti-escape & build bounds guarantees
+            assertTrue(arena.playableRadius() >= 36.0 && arena.playableRadius() <= 54.0, arenaId + " playableRadius sanity");
+            assertTrue(arena.combatMaxY() < pasteY + 42, arenaId + " combat ceiling must stay strictly below waiting skybox floor");
+            assertFalse(arena.isInsideBuildBounds(pasteX, pasteY, pasteZ), arenaId + " subfloor must NOT be breakable");
+            assertFalse(arena.isInsideCombatBounds(arena.centerX() + arena.playableRadius() + 2.0, pasteY + 2.0, arena.centerZ()),
+                    arenaId + " outside playable radius must be rejected");
+            assertFalse(arena.isInsideCombatBounds(arena.centerX(), pasteY + 43.0, arena.centerZ()),
+                    arenaId + " waiting skybox height must be outside combat bounds (blocks pearl/tower into skybox)");
+            assertFalse(arena.isInsideBuildBounds(pasteX, pasteY + 42, pasteZ),
+                    arenaId + " waiting skybox must be outside fighter build bounds");
+            assertTrue(arena.isInsideSpectatorBounds(arena.centerX(), pasteY + 43.0, arena.centerZ()),
+                    arenaId + " spectator bounds should allow viewing around arena & skybox");
+            assertFalse(arena.isInsideSpectatorBounds(arena.centerX() + 140.0, pasteY + 10.0, arena.centerZ()),
+                    arenaId + " spectators must NOT fly away to neighboring arenas");
+
+            // Mathematically verify EVERY single spawn (wave1, wave2, final, audience, waiting)
+            for (String phase : List.of("wave1", "wave2", "final", "audience", "waiting")) {
                 List<Map<?, ?>> spawns = sec.getMapList("spawns." + phase);
                 assertFalse(spawns.isEmpty(), arenaId + " missing spawns for " + phase);
                 for (Map<?, ?> sp : spawns) {
-                    assertSpawnClearance(
-                            arenaId + "." + phase,
-                            parsed,
-                            pasteX, pasteY, pasteZ,
-                            ((Number) sp.get("x")).doubleValue(),
-                            ((Number) sp.get("y")).doubleValue(),
-                            ((Number) sp.get("z")).doubleValue()
-                    );
+                    double wx = ((Number) sp.get("x")).doubleValue();
+                    double wy = ((Number) sp.get("y")).doubleValue();
+                    double wz = ((Number) sp.get("z")).doubleValue();
+                    assertSpawnClearance(arenaId + "." + phase, parsed, pasteX, pasteY, pasteZ, wx, wy, wz);
+                    if (List.of("wave1", "wave2", "final").contains(phase)) {
+                        assertTrue(arena.isInsideCombatBounds(wx, wy, wz),
+                                arenaId + "." + phase + " combat spawn must lie strictly inside playable combat bounds");
+                    }
+                }
+            }
+
+            // Verify 100%-sealed 19x9x19 waiting skybox shell (floor y=42, walls y=43..48, roof y=49)
+            int cx = -parsed.offsetX();
+            int cz = -parsed.offsetZ();
+            int yFloor = 42 - parsed.offsetY();
+            int yRoof = 49 - parsed.offsetY();
+            for (int dx = -9; dx <= 9; dx++) {
+                for (int dz = -9; dz <= 9; dz++) {
+                    assertNotEquals("minecraft:air", parsed.blockAt(cx + dx, yFloor, cz + dz),
+                            arenaId + " waiting skybox floor hole at dx=" + dx + ", dz=" + dz);
+                    assertNotEquals("minecraft:air", parsed.blockAt(cx + dx, yRoof, cz + dz),
+                            arenaId + " waiting skybox roof hole at dx=" + dx + ", dz=" + dz);
+                    if (Math.max(Math.abs(dx), Math.abs(dz)) == 9) {
+                        for (int y = yFloor + 1; y < yRoof; y++) {
+                            assertNotEquals("minecraft:air", parsed.blockAt(cx + dx, y, cz + dz),
+                                    arenaId + " waiting skybox wall hole at dx=" + dx + ", y=" + y + ", dz=" + dz);
+                        }
+                    }
                 }
             }
         }

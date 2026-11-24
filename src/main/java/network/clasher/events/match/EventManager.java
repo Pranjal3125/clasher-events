@@ -64,6 +64,7 @@ import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
+import org.bukkit.event.player.PlayerTeleportEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.BookMeta;
 import org.bukkit.persistence.PersistentDataType;
@@ -134,6 +135,16 @@ public final class EventManager implements Listener {
     private final Map<UUID, Long> lastCombatAt = new HashMap<>();
     private final Map<UUID, Long> lastMovementAt = new HashMap<>();
     private final Set<UUID> afkWarned = new HashSet<>();
+    private static final EnumSet<PlayerTeleportEvent.TeleportCause> GUARDED_TP_CAUSES = EnumSet.of(
+            PlayerTeleportEvent.TeleportCause.ENDER_PEARL,
+            PlayerTeleportEvent.TeleportCause.CONSUMABLE_EFFECT,
+            PlayerTeleportEvent.TeleportCause.NETHER_PORTAL,
+            PlayerTeleportEvent.TeleportCause.END_PORTAL,
+            PlayerTeleportEvent.TeleportCause.END_GATEWAY,
+            PlayerTeleportEvent.TeleportCause.SPECTATE
+    );
+
+    private final Map<UUID, Long> lastBoundaryWarnAt = new HashMap<>();
     private final Map<UUID, Integer> matchKills = new HashMap<>();
 
     private String selectedArena = "nethpot";
@@ -655,6 +666,7 @@ public final class EventManager implements Listener {
         lastDamager.clear();
         lastCombatAt.clear();
         lastMovementAt.clear();
+        lastBoundaryWarnAt.clear();
         afkWarned.clear();
         tournamentQueue.clear();
         tournamentWinners.clear();
@@ -689,12 +701,21 @@ public final class EventManager implements Listener {
         }
         player.getInventory().clear();
         player.setGameMode(GameMode.ADVENTURE);
-        arenaManager.ensureLobbyReady(() -> {
+        Runnable finishJoinTp = () -> {
             if (player.isOnline() && participants.contains(player.getUniqueId()) && eventOpen) {
-                teleportToConfigured(player, "lobby");
+                Location waitLoc = activeWaitingLocation();
+                if (waitLoc != null) {
+                    player.setFallDistance(0f);
+                    player.teleport(waitLoc);
+                }
                 giveLobbyHotbar(player);
             }
-        });
+        };
+        if (isUsingPerArenaWaiting()) {
+            arenaManager.ensureArenaReady(selectedArena, null, finishJoinTp);
+        } else {
+            arenaManager.ensureLobbyReady(finishJoinTp);
+        }
         Bukkit.getScheduler().runTaskLater(plugin, () -> {
             if (player.isOnline() && participants.contains(player.getUniqueId()) && eventOpen) {
                 giveRulesBook(player);
@@ -1303,10 +1324,12 @@ public final class EventManager implements Listener {
     private void applyPhaseBorder(String phaseName) {
         Arena arena = arenaManager.get(selectedArena);
         if (arena == null) return;
+        double maxArenaDiameter = Math.max(20.0, arena.playableRadius() * 2.0);
         double defaultSize = phaseName.equals("wave1") ? 84.0 : phaseName.equals("wave2") ? 52.0 : 28.0;
-        double targetSize = plugin.getConfig().getDouble("world-border." + phaseName + ".size", defaultSize);
+        double configuredTarget = plugin.getConfig().getDouble("world-border." + phaseName + ".size", defaultSize);
+        double targetSize = Math.min(maxArenaDiameter, configuredTarget);
         long shrinkSeconds = Math.max(0L, plugin.getConfig().getLong("world-border." + phaseName + ".shrink-seconds", 60L));
-        double startSize = Math.max(targetSize, (arena.maxX() - arena.minX()));
+        double startSize = Math.max(targetSize, maxArenaDiameter);
 
         this.activeBorderStartSize = startSize;
         this.activeBorderTargetSize = targetSize;
@@ -1405,6 +1428,36 @@ public final class EventManager implements Listener {
         Location loc = configuredLocation("lobby");
         if (loc != null) return loc;
         return Bukkit.getWorlds().isEmpty() ? null : Bukkit.getWorlds().get(0).getSpawnLocation();
+    }
+
+    public boolean isUsingPerArenaWaiting() {
+        if (!plugin.getConfig().getBoolean("lobby-protection.per-arena-waiting", true)) return false;
+        Arena arena = arenaManager.get(selectedArena);
+        return arena != null && arenaManager.firstSpawn(arena, "waiting") != null;
+    }
+
+    /**
+     * Resolves the active event's waiting lobby: prefers the selected arena's own themed
+     * waiting skybox / custom `/ce setwaiting <arena>` spawn, falling back cleanly to global Lobby.
+     */
+    public Location activeWaitingLocation() {
+        if (plugin.getConfig().getBoolean("lobby-protection.per-arena-waiting", true)) {
+            Arena arena = arenaManager.get(selectedArena);
+            if (arena != null) {
+                Location arenaWait = arenaManager.firstSpawn(arena, "waiting");
+                if (arenaWait != null) return arenaWait;
+            }
+        }
+        return lobbyLocation();
+    }
+
+    private void warnBoundary(Player player, String miniMsg) {
+        long now = System.currentTimeMillis();
+        Long prev = lastBoundaryWarnAt.get(player.getUniqueId());
+        if (prev == null || (now - prev) >= 2000L) {
+            lastBoundaryWarnAt.put(player.getUniqueId(), now);
+            player.sendMessage(FormatUtil.mm(PREFIX + miniMsg));
+        }
     }
 
     public void setNamedLocation(Player player, String key) {
@@ -1523,11 +1576,23 @@ public final class EventManager implements Listener {
             return true;
         }
         Location lobby = configuredLocation("lobby");
-        if (lobby == null || lobby.getWorld() == null || !player.getWorld().equals(lobby.getWorld())) {
-            return false;
+        if (lobby != null && lobby.getWorld() != null && player.getWorld().equals(lobby.getWorld())) {
+            double radius = plugin.getConfig().getDouble("lobby-protection.radius", 46.0);
+            if (player.getLocation().distanceSquared(lobby) <= radius * radius) {
+                return true;
+            }
         }
-        double radius = plugin.getConfig().getDouble("lobby-protection.radius", 35.0);
-        return player.getLocation().distanceSquared(lobby) <= radius * radius;
+        // Also protect the active arena's waiting skybox / custom waiting room
+        Arena arena = arenaManager.get(selectedArena);
+        if (arena != null) {
+            Location arenaWait = arenaManager.firstSpawn(arena, "waiting");
+            if (arenaWait != null && arenaWait.getWorld() != null && player.getWorld().equals(arenaWait.getWorld())) {
+                if (player.getLocation().distanceSquared(arenaWait) <= 16.0 * 16.0) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private void broadcast(String bodyMini) {
@@ -1576,8 +1641,18 @@ public final class EventManager implements Listener {
             event.setCancelled(true);
             return;
         }
-        if (eventRunning && alive.contains(player.getUniqueId()) && !isDestructibleMode(eventMode)) {
-            event.setCancelled(true);
+        if (eventRunning && alive.contains(player.getUniqueId())) {
+            if (!isDestructibleMode(eventMode)) {
+                event.setCancelled(true);
+                return;
+            }
+            Arena arena = arenaManager.get(selectedArena);
+            Block b = event.getBlock();
+            if (arena != null && plugin.getConfig().getBoolean("anti-escape.enabled", true)
+                    && !arena.isInsideBuildBounds(b.getX(), b.getY(), b.getZ())) {
+                event.setCancelled(true);
+                warnBoundary(player, "<red>You cannot break blocks outside the arena perimeter!</red>");
+            }
         }
     }
 
@@ -1589,8 +1664,82 @@ public final class EventManager implements Listener {
             event.setCancelled(true);
             return;
         }
-        if (eventRunning && alive.contains(player.getUniqueId()) && !isDestructibleMode(eventMode)) {
+        if (eventRunning && alive.contains(player.getUniqueId())) {
+            if (!isDestructibleMode(eventMode)) {
+                event.setCancelled(true);
+                return;
+            }
+            Arena arena = arenaManager.get(selectedArena);
+            Block b = event.getBlock();
+            if (arena != null && plugin.getConfig().getBoolean("anti-escape.enabled", true)
+                    && !arena.isInsideBuildBounds(b.getX(), b.getY(), b.getZ())) {
+                event.setCancelled(true);
+                warnBoundary(player, "<red>You cannot build outside the arena boundary or height limit!</red>");
+            }
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onArenaBucketEmptyGuard(PlayerBucketEmptyEvent event) {
+        Player player = event.getPlayer();
+        if (player.hasPermission("clasherevents.admin")) return;
+        if (inWaitingLobby(player)) {
             event.setCancelled(true);
+            return;
+        }
+        if (eventRunning && alive.contains(player.getUniqueId())) {
+            if (!isDestructibleMode(eventMode)) {
+                event.setCancelled(true);
+                return;
+            }
+            Arena arena = arenaManager.get(selectedArena);
+            Block b = event.getBlock();
+            if (arena != null && plugin.getConfig().getBoolean("anti-escape.enabled", true)
+                    && !arena.isInsideBuildBounds(b.getX(), b.getY(), b.getZ())) {
+                event.setCancelled(true);
+                warnBoundary(player, "<red>You cannot place liquids outside the arena boundary!</red>");
+            }
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onAntiEscapeTeleport(PlayerTeleportEvent event) {
+        if (!plugin.getConfig().getBoolean("anti-escape.enabled", true)) return;
+        if (!GUARDED_TP_CAUSES.contains(event.getCause())) return;
+        Player player = event.getPlayer();
+        UUID id = player.getUniqueId();
+        if (!participants.contains(id)) return;
+        Location to = event.getTo();
+        if (to == null) return;
+
+        // 1. Waiting players cannot pearl/chorus/portal out of the waiting skybox or lobby!
+        if (eventOpen && !alive.contains(id)) {
+            event.setCancelled(true);
+            warnBoundary(player, "<red>You cannot teleport out of the waiting lobby!</red>");
+            return;
+        }
+
+        Arena arena = arenaManager.get(selectedArena);
+        if (arena == null) return;
+        String arenaWorld = arenaManager.sharedWorldName();
+
+        // 2. Active fighters cannot ender-pearl/chorus over arena walls, up into skybox, or into void!
+        if (eventRunning && alive.contains(id)) {
+            boolean sameWorld = to.getWorld() != null && to.getWorld().getName().equalsIgnoreCase(arenaWorld);
+            if (!sameWorld || !arena.isInsideCombatBounds(to.getX(), to.getY(), to.getZ())) {
+                event.setCancelled(true);
+                warnBoundary(player, "<red>You cannot teleport outside the arena!</red>");
+            }
+            return;
+        }
+
+        // 3. Eliminated spectators cannot spectator-TP out of the active arena region!
+        if (eventRunning && isSpectator(id)) {
+            boolean sameWorld = to.getWorld() != null && to.getWorld().getName().equalsIgnoreCase(arenaWorld);
+            if (!sameWorld || !arena.isInsideSpectatorBounds(to.getX(), to.getY(), to.getZ())) {
+                event.setCancelled(true);
+                warnBoundary(player, "<yellow>Stay inside the active arena while spectating!</yellow>");
+            }
         }
     }
 
@@ -1691,17 +1840,39 @@ public final class EventManager implements Listener {
 
     @EventHandler
     public void onFighterMove(PlayerMoveEvent event) {
-        if (event.getTo() == null) return;
+        Location to = event.getTo();
+        if (to == null) return;
         Player player = event.getPlayer();
         UUID id = player.getUniqueId();
+        boolean antiEscape = plugin.getConfig().getBoolean("anti-escape.enabled", true);
 
-        // Catch void falls around the floating Spawn Lobby / Parkour!
+        // 1. Waiting player hard leash (keeps waiting players safely inside their arena skybox or Sky Citadel Lobby!)
+        if (eventOpen && participants.contains(id) && !alive.contains(id) && antiEscape) {
+            Location waitLoc = activeWaitingLocation();
+            if (waitLoc != null && waitLoc.getWorld() != null) {
+                boolean perArena = isUsingPerArenaWaiting();
+                double maxHoriz = perArena ? 24.0 : 58.0;
+                double minY = perArena ? waitLoc.getY() - 5.0 : waitLoc.getY() - 12.0;
+                double maxY = perArena ? waitLoc.getY() + 16.0 : waitLoc.getY() + 45.0;
+                boolean wrongWorld = !player.getWorld().equals(waitLoc.getWorld());
+                double dx = to.getX() - waitLoc.getX();
+                double dz = to.getZ() - waitLoc.getZ();
+                if (wrongWorld || (dx * dx + dz * dz) > maxHoriz * maxHoriz || to.getY() < minY || to.getY() > maxY) {
+                    player.setFallDistance(0f);
+                    player.teleport(waitLoc);
+                    warnBoundary(player, "<gray>Returned you to the Event Waiting Lobby!</gray>");
+                    return;
+                }
+            }
+        }
+
+        // 2. Catch void falls around the floating Spawn Lobby / Parkour (for non-fighting players)!
         if (!alive.contains(id) && plugin.getConfig().getBoolean("lobby-protection.catch-void-fall", true)) {
             Location lobby = configuredLocation("lobby");
             if (lobby != null && lobby.getWorld() != null && player.getWorld().equals(lobby.getWorld())) {
-                double dx = event.getTo().getX() - lobby.getX();
-                double dz = event.getTo().getZ() - lobby.getZ();
-                if ((dx * dx + dz * dz) <= 65.0 * 65.0 && event.getTo().getY() < lobby.getY() - 12.0) {
+                double dx = to.getX() - lobby.getX();
+                double dz = to.getZ() - lobby.getZ();
+                if ((dx * dx + dz * dz) <= 65.0 * 65.0 && to.getY() < lobby.getY() - 12.0) {
                     player.setFallDistance(0f);
                     player.teleport(lobby);
                     player.sendMessage(FormatUtil.mm(PREFIX + "<gray>Caught your fall — back at the Event Spawn Lobby!</gray>"));
@@ -1710,10 +1881,61 @@ public final class EventManager implements Listener {
             }
         }
 
+        // 3. Spectator leash — prevents eliminated spectators from flying away to other arenas or into the void!
+        if (eventRunning && isSpectator(id) && antiEscape) {
+            Arena arena = arenaManager.get(selectedArena);
+            if (arena != null) {
+                boolean sameWorld = player.getWorld().getName().equalsIgnoreCase(arenaManager.sharedWorldName());
+                if (!sameWorld || !arena.isInsideSpectatorBounds(to.getX(), to.getY(), to.getZ())) {
+                    Location aud = arenaManager.firstSpawn(arena, "audience");
+                    if (aud == null) aud = arenaManager.firstSpawn(arena, "wave1");
+                    if (aud != null) {
+                        player.teleport(aud);
+                        warnBoundary(player, "<yellow>Stay near the active arena while spectating!</yellow>");
+                        return;
+                    }
+                }
+            }
+        }
+
         if (!eventRunning || !alive.contains(id)) return;
-        if (event.getFrom().getBlockX() == event.getTo().getBlockX()
-                && event.getFrom().getBlockY() == event.getTo().getBlockY()
-                && event.getFrom().getBlockZ() == event.getTo().getBlockZ()) {
+
+        // 4. Active fighter HARD arena containment — zero escape over walls, above height limit, or into void!
+        if (antiEscape && !celebrating) {
+            Arena arena = arenaManager.get(selectedArena);
+            if (arena != null) {
+                boolean sameWorld = player.getWorld().getName().equalsIgnoreCase(arenaManager.sharedWorldName());
+                if (!sameWorld || to.getY() < arena.pasteY() - 1.0) {
+                    List<Location> pts = arenaManager.spawns(arena, phase.equals("final") ? "final" : "wave1");
+                    if (!pts.isEmpty()) {
+                        player.setFallDistance(0f);
+                        player.teleport(pts.get(random.nextInt(pts.size())));
+                        warnBoundary(player, "<red>Arena boundary enforced — returned inside the arena!</red>");
+                        return;
+                    }
+                } else if (!arena.isInsideCombatBounds(to.getX(), to.getY(), to.getZ())) {
+                    double dx = to.getX() - arena.centerX();
+                    double dz = to.getZ() - arena.centerZ();
+                    double dist = Math.hypot(dx, dz);
+                    double maxR = Math.max(8.0, arena.playableRadius() - 0.75);
+                    double clampedX = to.getX();
+                    double clampedZ = to.getZ();
+                    if (dist > maxR && dist > 0.001) {
+                        clampedX = arena.centerX() + (dx / dist) * maxR;
+                        clampedZ = arena.centerZ() + (dz / dist) * maxR;
+                    }
+                    double clampedY = Math.max(arena.pasteY() + 1.0, Math.min(to.getY(), arena.combatMaxY() - 0.5));
+                    Location pullBack = new Location(to.getWorld(), clampedX, clampedY, clampedZ, to.getYaw(), to.getPitch());
+                    event.setTo(pullBack);
+                    warnBoundary(player, "<red>You have reached the arena boundary!</red>");
+                    return;
+                }
+            }
+        }
+
+        if (event.getFrom().getBlockX() == to.getBlockX()
+                && event.getFrom().getBlockY() == to.getBlockY()
+                && event.getFrom().getBlockZ() == to.getBlockZ()) {
             return;
         }
         lastMovementAt.put(id, System.currentTimeMillis());

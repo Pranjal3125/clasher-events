@@ -13,6 +13,8 @@ arenas:
       max-x: 66
       max-y: 134
       max-z: 66
+      combat-max-y: 116
+      playable-radius: 52
     spawns:
       wave1:
       - x: 30.5
@@ -78,6 +80,11 @@ arenas:
         y: 92
         z: -31.5
         yaw: 0.0
+      waiting:
+      - x: 0.5
+        y: 123
+        z: 0.5
+        yaw: 0.0
   axe-shield:
     display-name: Axe & Shield - Ironkeep Castle
     schematic: axe-shield.schem
@@ -90,8 +97,10 @@ arenas:
       min-y: 79
       min-z: -56
       max-x: 356
-      max-y: 132
+      max-y: 134
       max-z: 56
+      combat-max-y: 116
+      playable-radius: 38
     spawns:
       wave1:
       - x: 324.5
@@ -157,6 +166,11 @@ arenas:
         y: 92
         z: -28.5
         yaw: 0.0
+      waiting:
+      - x: 300.5
+        y: 123
+        z: 0.5
+        yaw: 0.0
   build-uhc:
     display-name: Build UHC - Verdant Valley
     schematic: build-uhc.schem
@@ -169,8 +183,10 @@ arenas:
       min-y: 79
       min-z: -58
       max-x: 658
-      max-y: 132
+      max-y: 134
       max-z: 58
+      combat-max-y: 116
+      playable-radius: 42
     spawns:
       wave1:
       - x: 622.5
@@ -236,6 +252,11 @@ arenas:
         y: 94
         z: -28.5
         yaw: 0.0
+      waiting:
+      - x: 600.5
+        y: 123
+        z: 0.5
+        yaw: 0.0
   sword:
     display-name: Sword - Grand Roman Colosseum
     schematic: sword.schem
@@ -250,6 +271,8 @@ arenas:
       max-x: 958
       max-y: 134
       max-z: 58
+      combat-max-y: 116
+      playable-radius: 42
     spawns:
       wave1:
       - x: 924.5
@@ -315,6 +338,11 @@ arenas:
         y: 91
         z: -27.5
         yaw: 0.0
+      waiting:
+      - x: 900.5
+        y: 123
+        z: 0.5
+        yaw: 0.0
   uhc:
     display-name: UHC - Alpine Wild Frontier
     schematic: uhc.schem
@@ -329,6 +357,8 @@ arenas:
       max-x: 1258
       max-y: 134
       max-z: 58
+      combat-max-y: 116
+      playable-radius: 42
     spawns:
       wave1:
       - x: 1224.5
@@ -394,6 +424,11 @@ arenas:
         y: 94
         z: -30.5
         yaw: 0.0
+      waiting:
+      - x: 1200.5
+        y: 123
+        z: 0.5
+        yaw: 0.0
   crystal:
     display-name: Crystal - End Rift Spires
     schematic: crystal.schem
@@ -406,8 +441,10 @@ arenas:
       min-y: 79
       min-z: -58
       max-x: 1658
-      max-y: 132
+      max-y: 134
       max-z: 58
+      combat-max-y: 116
+      playable-radius: 42
     spawns:
       wave1:
       - x: 1626.5
@@ -473,6 +510,11 @@ arenas:
         y: 92
         z: -30.5
         yaw: 0.0
+      waiting:
+      - x: 1600.5
+        y: 123
+        z: 0.5
+        yaw: 0.0
   smp:
     display-name: SMP - Fallen Cathedral
     schematic: smp.schem
@@ -485,8 +527,10 @@ arenas:
       min-y: 79
       min-z: -58
       max-x: 1958
-      max-y: 132
+      max-y: 134
       max-z: 58
+      combat-max-y: 116
+      playable-radius: 41
     spawns:
       wave1:
       - x: 1926.5
@@ -552,6 +596,11 @@ arenas:
         y: 93
         z: -30.5
         yaw: 0.0
+      waiting:
+      - x: 1900.5
+        y: 123
+        z: 0.5
+        yaw: 0.0
   diamond-pot:
     display-name: Diamond Pot - Frostglass Cathedral
     schematic: diamond-pot.schem
@@ -564,8 +613,10 @@ arenas:
       min-y: 79
       min-z: -56
       max-x: 2256
-      max-y: 132
+      max-y: 134
       max-z: 56
+      combat-max-y: 116
+      playable-radius: 39
     spawns:
       wave1:
       - x: 2224.5
@@ -630,4 +681,9 @@ arenas:
       - x: 2200.5
         y: 91
         z: -27.5
+        yaw: 0.0
+      waiting:
+      - x: 2200.5
+        y: 123
+        z: 0.5
         yaw: 0.0
