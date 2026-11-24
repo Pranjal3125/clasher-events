@@ -336,8 +336,8 @@ public final class EventCommands implements CommandExecutor, TabCompleter {
         String sub = args.length == 0 ? "help" : args[0].toLowerCase(Locale.ROOT);
         switch (sub) {
             case "help" -> {
-                sender.sendMessage(FormatUtil.mm("<gold><bold>Clasher Events v2.6 Admin Commands</bold></gold>"));
-                sender.sendMessage(FormatUtil.mm("<yellow>/ce setup [refresh]</yellow> <dark_gray>-</dark_gray> <gray>Paste Imperial Lobby, 4 NPCs, Tournament Hall, Podium, 8 Grand & 8 Duel Arenas!</gray>"));
+                sender.sendMessage(FormatUtil.mm("<gold><bold>Clasher Events v2.7 Admin Commands</bold></gold>"));
+                sender.sendMessage(FormatUtil.mm("<yellow>/ce setup [refresh|arenas|<arena>|lock|unlock|locked]</yellow> <dark_gray>-</dark_gray> <gray>Setup/refresh hubs & arenas while protecting locked custom builds!</gray>"));
                 sender.sendMessage(FormatUtil.mm("<yellow>/ce gui</yellow> <dark_gray>|</dark_gray> <yellow>/ce create <mode> [kit] [1v1|2v2|3v3|4v4]</yellow> <dark_gray>|</dark_gray> <yellow>/ce modifiers</yellow> <dark_gray>|</dark_gray> <yellow>/ce autocam</yellow>"));
                 sender.sendMessage(FormatUtil.mm("<yellow>/ce tournament [gui|teams|shuffle|pair|disband|lock|unlock|bo3|parallel|kitvote]</yellow>"));
                 sender.sendMessage(FormatUtil.mm("<yellow>/ce voteopen [sec]</yellow> <dark_gray>|</dark_gray> <yellow>/ce start</yellow> <dark_gray>|</dark_gray> <yellow>/ce skip [sec|now]</yellow> <dark_gray>|</dark_gray> <yellow>/ce stop|pause|resume|reload|holograms</yellow>"));
@@ -373,10 +373,7 @@ public final class EventCommands implements CommandExecutor, TabCompleter {
             case "ffareset" -> {
                 if (events.warmupFfa() != null) events.warmupFfa().resetCrystalPitNow(sender);
             }
-            case "setup" -> {
-                boolean refresh = args.length >= 2 && args[1].equalsIgnoreCase("refresh");
-                arenas.runFullSetup(sender, events::isArenaInUse, refresh);
-            }
+            case "setup" -> handleAdminSetup(sender, args);
             case "create" -> {
                 if (args.length < 2) {
                     sender.sendMessage(FormatUtil.mm("<red>Usage:</red> <yellow>/ce create <mode> [kit] [1v1|2v2|3v3|4v4]</yellow>"));
@@ -536,6 +533,53 @@ public final class EventCommands implements CommandExecutor, TabCompleter {
             case "arena" -> handleArenaSub(sender, args);
             case "kit" -> handleKitSub(sender, args);
             default -> sender.sendMessage(FormatUtil.mm("<red>Unknown command. Use <yellow>/ce help</yellow>.</red>"));
+        }
+    }
+
+    private void handleAdminSetup(CommandSender sender, String[] args) {
+        if (args.length < 2) {
+            arenas.runFullSetup(sender, events::isArenaInUse, false);
+            return;
+        }
+        String sub = args[1].toLowerCase(Locale.ROOT);
+        switch (sub) {
+            case "refresh" -> arenas.runFullSetup(sender, events::isArenaInUse, true);
+            case "arenas", "refresh-arenas", "arenas-only" -> arenas.runArenasOnlySetup(sender, events::isArenaInUse);
+            case "lock", "protect" -> {
+                if (args.length < 3) {
+                    sender.sendMessage(FormatUtil.mm("<red>Usage:</red> <yellow>/ce setup lock <tournament-lobby|lobby|winner-podium|<arena>></yellow>"));
+                    return;
+                }
+                String norm = ArenaManager.normalizeStructureId(args[2]);
+                if (arenas.lockStructure(norm)) {
+                    sender.sendMessage(FormatUtil.mm("<green><bold>🔒 LOCKED!</bold></green> <gold>" + FormatUtil.escape(norm)
+                            + "</gold> <gray>is now protected — <yellow>/ce setup</yellow> & <yellow>/ce setup refresh</yellow> will NEVER overwrite your custom build!</gray>"));
+                } else {
+                    sender.sendMessage(FormatUtil.mm("<yellow>🔒 <gold>" + FormatUtil.escape(norm) + "</gold> is already locked!</yellow>"));
+                }
+            }
+            case "unlock", "unprotect" -> {
+                if (args.length < 3) {
+                    sender.sendMessage(FormatUtil.mm("<red>Usage:</red> <yellow>/ce setup unlock <tournament-lobby|lobby|winner-podium|<arena>></yellow>"));
+                    return;
+                }
+                String norm = ArenaManager.normalizeStructureId(args[2]);
+                if (arenas.unlockStructure(norm)) {
+                    sender.sendMessage(FormatUtil.mm("<green><bold>🔓 UNLOCKED!</bold></green> <gold>" + FormatUtil.escape(norm)
+                            + "</gold> <gray>can now be refreshed by <yellow>/ce setup refresh</yellow>.</gray>"));
+                } else {
+                    sender.sendMessage(FormatUtil.mm("<gray><gold>" + FormatUtil.escape(norm) + "</gold> was not locked.</gray>"));
+                }
+            }
+            case "locked", "list" -> {
+                var locked = arenas.lockedStructures();
+                if (locked.isEmpty()) {
+                    sender.sendMessage(FormatUtil.mm("<gray>No structures are locked. Lock custom builds with <yellow>/ce setup lock tournament-lobby</yellow>!</gray>"));
+                } else {
+                    sender.sendMessage(FormatUtil.mm("<gold><bold>🔒 Locked Custom Builds:</bold></gold> <yellow>" + String.join(", ", locked) + "</yellow>"));
+                }
+            }
+            default -> arenas.runSingleArenaSetup(sender, sub, events::isArenaInUse);
         }
     }
 
@@ -737,7 +781,14 @@ public final class EventCommands implements CommandExecutor, TabCompleter {
             }
         } else if (name.equals("ce") && sender.hasPermission("clasherevents.admin")) {
             if (args.length == 1) options.addAll(CE_SUBS);
-            else if (args.length == 2 && args[0].equalsIgnoreCase("setup")) options.add("refresh");
+            else if (args.length == 2 && args[0].equalsIgnoreCase("setup")) {
+                options.addAll(List.of("refresh", "arenas", "lock", "unlock", "locked"));
+                options.addAll(arenas.arenaIds());
+            }
+            else if (args.length == 3 && args[0].equalsIgnoreCase("setup") && List.of("lock", "protect", "unlock", "unprotect").contains(args[1].toLowerCase(Locale.ROOT))) {
+                options.addAll(List.of("tournament-lobby", "lobby", "winner-podium"));
+                options.addAll(arenas.arenaIds());
+            }
             else if (args.length == 2 && args[0].equalsIgnoreCase("create")) options.addAll(EventMode.allIds());
             else if (args.length == 3 && args[0].equalsIgnoreCase("create")
                     && EventMode.fromInput(args[1]).map(EventMode::supportsKitSelection).orElse(false)) {

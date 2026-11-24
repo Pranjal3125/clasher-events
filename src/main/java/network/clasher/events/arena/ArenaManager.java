@@ -371,13 +371,66 @@ public final class ArenaManager {
         return true;
     }
 
+    public Set<String> lockedStructures() {
+        Set<String> out = new java.util.LinkedHashSet<>();
+        for (String raw : plugin.getConfig().getStringList("setup.locked-structures")) {
+            String norm = normalizeStructureId(raw);
+            if (!norm.isEmpty()) out.add(norm);
+        }
+        return out;
+    }
+
+    public boolean isStructureLocked(String id) {
+        String norm = normalizeStructureId(id);
+        return !norm.isEmpty() && lockedStructures().contains(norm);
+    }
+
+    public boolean lockStructure(String id) {
+        String norm = normalizeStructureId(id);
+        if (norm.isEmpty()) return false;
+        Set<String> locked = lockedStructures();
+        boolean added = locked.add(norm);
+        plugin.getConfig().set("setup.locked-structures", new ArrayList<>(locked));
+        plugin.saveConfig();
+        return added;
+    }
+
+    public boolean unlockStructure(String id) {
+        String norm = normalizeStructureId(id);
+        if (norm.isEmpty()) return false;
+        Set<String> locked = lockedStructures();
+        boolean removed = locked.remove(norm);
+        plugin.getConfig().set("setup.locked-structures", new ArrayList<>(locked));
+        plugin.saveConfig();
+        return removed;
+    }
+
+    public static String normalizeStructureId(String raw) {
+        if (raw == null) return "";
+        String k = raw.trim().toLowerCase(Locale.ROOT).replace(".schem", "");
+        return switch (k) {
+            case "spawn", "lobby" -> "lobby";
+            case "tournament", "tourney", "tlobby", "tourney-lobby", "tournament-lobby" -> "tournament-lobby";
+            case "winner", "podium", "winner-podium" -> "winner-podium";
+            default -> k;
+        };
+    }
+
     public void pasteAllArenas(CommandSender sender, java.util.function.Predicate<String> inUseCheck) {
         Deque<String> queue = new ArrayDeque<>();
+        List<String> skippedLocked = new ArrayList<>();
         for (String id : arenas.keySet()) {
-            if (!inUseCheck.test(id)) queue.addLast(id);
+            if (isStructureLocked(id)) {
+                skippedLocked.add(id);
+            } else if (!inUseCheck.test(id)) {
+                queue.addLast(id);
+            }
+        }
+        if (!skippedLocked.isEmpty() && sender != null) {
+            sender.sendMessage(FormatUtil.mm("<yellow>🔒 Skipped locked custom arenas:</yellow> <gold>" + String.join(", ", skippedLocked) + "</gold>"));
         }
         if (queue.isEmpty()) {
-            if (sender != null) sender.sendMessage(FormatUtil.mm("<yellow>No idle arenas available to paste.</yellow>"));
+            if (sender != null) sender.sendMessage(FormatUtil.mm("<yellow>No unlocked idle arenas available to paste.</yellow>"));
             return;
         }
         if (sender != null) {
@@ -484,42 +537,102 @@ public final class ArenaManager {
         if (refreshBundled && plugin instanceof ClasherEventsPlugin cep) {
             int refreshed = cep.refreshBundledArenasAndSchematics();
             if (sender != null) {
-                sender.sendMessage(FormatUtil.mm("<aqua>Refreshed <white>" + refreshed + "</white> bundled v2.5 schematics (Lobby, Tournament Hall, Podium, 8 Grand & 8 1v1 Duel Arenas) & arenas.yml from JAR.</aqua>"));
+                sender.sendMessage(FormatUtil.mm("<aqua>Refreshed <white>" + refreshed + "</white> unlocked bundled schematics & arenas.yml from JAR.</aqua>"));
             }
         }
         World world = getOrCreateSharedWorld(sender);
         if (world == null) return;
 
-        // Save turnkey Lobby, Spectator, Winner Podium, Crowd, & Tournament Hall coordinates cleanly to config.yml
+        boolean lockLobby = isStructureLocked("lobby");
+        boolean lockWinner = isStructureLocked("winner-podium");
+        boolean lockTourney = isStructureLocked("tournament-lobby");
+
+        // Save turnkey coordinates only for unlocked hubs so custom spawns stay untouched!
         String wn = world.getName();
-        saveLocConfig("locations.lobby", wn, LOBBY_ORIGIN_X + 0.5, LOBBY_ORIGIN_Y + 2.0, LOBBY_ORIGIN_Z + 0.5, 180.0f, 0.0f);
-        saveLocConfig("locations.spectator", wn, LOBBY_ORIGIN_X + 0.5, LOBBY_ORIGIN_Y + 2.0, LOBBY_ORIGIN_Z + 0.5, 180.0f, 0.0f);
-        saveLocConfig("locations.winner", wn, WINNER_ORIGIN_X + 0.5, WINNER_ORIGIN_Y + 5.0, WINNER_ORIGIN_Z - 5.5, 0.0f, 0.0f);
-        saveLocConfig("locations.winner-crowd", wn, WINNER_ORIGIN_X + 0.5, WINNER_ORIGIN_Y + 2.0, WINNER_ORIGIN_Z + 9.5, 180.0f, 0.0f);
-        saveLocConfig("locations.tournament-lobby", wn, TOURNAMENT_LOBBY_ORIGIN_X + 0.5, TOURNAMENT_LOBBY_ORIGIN_Y + 2.0, TOURNAMENT_LOBBY_ORIGIN_Z + 0.5, 180.0f, 0.0f);
+        if (!lockLobby) {
+            saveLocConfig("locations.lobby", wn, LOBBY_ORIGIN_X + 0.5, LOBBY_ORIGIN_Y + 2.0, LOBBY_ORIGIN_Z + 0.5, 180.0f, 0.0f);
+            saveLocConfig("locations.spectator", wn, LOBBY_ORIGIN_X + 0.5, LOBBY_ORIGIN_Y + 2.0, LOBBY_ORIGIN_Z + 0.5, 180.0f, 0.0f);
+        }
+        if (!lockWinner) {
+            saveLocConfig("locations.winner", wn, WINNER_ORIGIN_X + 0.5, WINNER_ORIGIN_Y + 5.0, WINNER_ORIGIN_Z - 5.5, 0.0f, 0.0f);
+            saveLocConfig("locations.winner-crowd", wn, WINNER_ORIGIN_X + 0.5, WINNER_ORIGIN_Y + 2.0, WINNER_ORIGIN_Z + 9.5, 180.0f, 0.0f);
+        }
+        if (!lockTourney) {
+            saveLocConfig("locations.tournament-lobby", wn, TOURNAMENT_LOBBY_ORIGIN_X + 0.5, TOURNAMENT_LOBBY_ORIGIN_Y + 2.0, TOURNAMENT_LOBBY_ORIGIN_Z + 0.5, 180.0f, 0.0f);
+        }
         plugin.saveConfig();
 
         if (sender != null) {
-            sender.sendMessage(FormatUtil.mm("<gold><bold>CLASHER EVENTS v2.5 SETUP</bold></gold> <gray>— Pasting Sky Citadel Lobby, Winner Podium, Grand Tournament Hall, 8 Grand Arenas, and 8 Dedicated 1v1 Duel Arenas (zero-lag batched)...</gray>"));
+            sender.sendMessage(FormatUtil.mm("<gold><bold>CLASHER EVENTS SETUP</bold></gold> <gray>— Pasting unlocked hubs & PvP arenas (zero-lag batched)...</gray>"));
+            if (lockLobby) sender.sendMessage(FormatUtil.mm("<yellow>🔒 Skipped locked custom build:</yellow> <gold>lobby</gold>"));
+            if (lockWinner) sender.sendMessage(FormatUtil.mm("<yellow>🔒 Skipped locked custom build:</yellow> <gold>winner-podium</gold>"));
+            if (lockTourney) sender.sendMessage(FormatUtil.mm("<yellow>🔒 Skipped locked custom build:</yellow> <gold>tournament-lobby</gold>"));
             if (!refreshBundled) {
-                sender.sendMessage(FormatUtil.mm("<gray>(Upgrading? Use <yellow>/ce setup refresh</yellow> to update bundled schematics & dedicated duel arenas!)</gray>"));
+                sender.sendMessage(FormatUtil.mm("<gray>(Tip: Use <yellow>/ce setup lock tournament-lobby</yellow> to protect custom hubs, or <yellow>/ce setup arenas</yellow> to refresh arenas only!)</gray>"));
             }
         }
-        pasteStructureAsync(sender, "lobby.schem", "Grand Event Spawn Lobby", LOBBY_ORIGIN_X, LOBBY_ORIGIN_Y, LOBBY_ORIGIN_Z, () ->
-                pasteStructureAsync(sender, "winner-podium.schem", "Champions Winner Podium", WINNER_ORIGIN_X, WINNER_ORIGIN_Y, WINNER_ORIGIN_Z, () ->
-                        pasteStructureAsync(sender, "tournament-lobby.schem", "Grand Esports Tournament Hall",
-                                TOURNAMENT_LOBBY_ORIGIN_X, TOURNAMENT_LOBBY_ORIGIN_Y, TOURNAMENT_LOBBY_ORIGIN_Z, () -> {
-                                    if (plugin instanceof ClasherEventsPlugin cep) {
-                                        cep.refreshHolograms();
-                                    }
-                                    pasteAllArenas(sender, inUseCheck);
-                                    if (sender instanceof Player admin && admin.isOnline()) {
-                                        admin.teleport(new Location(world, LOBBY_ORIGIN_X + 0.5, LOBBY_ORIGIN_Y + 2.0, LOBBY_ORIGIN_Z + 0.5, 180.0f, 0.0f));
-                                        admin.sendMessage(FormatUtil.mm("<green><bold>Welcome to Clasher Events v2.5!</bold></green> <gray>Inspect with <yellow>/ce tp tournament-lobby</yellow>, <yellow>/ce tp duel-nethpot</yellow>, <yellow>/ce tp winner</yellow>, or <yellow>/ce tp <arena></yellow>!</gray>"));
-                                    }
-                                })
-                )
-        );
+
+        Runnable finishArenas = () -> {
+            if (plugin instanceof ClasherEventsPlugin cep) {
+                cep.refreshHolograms();
+            }
+            pasteAllArenas(sender, inUseCheck);
+            if (!lockLobby && sender instanceof Player admin && admin.isOnline()) {
+                admin.teleport(new Location(world, LOBBY_ORIGIN_X + 0.5, LOBBY_ORIGIN_Y + 2.0, LOBBY_ORIGIN_Z + 0.5, 180.0f, 0.0f));
+                admin.sendMessage(FormatUtil.mm("<green><bold>Clasher Events Setup Complete!</bold></green> <gray>Inspect with <yellow>/ce tp tournament-lobby</yellow>, <yellow>/ce tp crystal-ffa</yellow>, or <yellow>/ce tp <arena></yellow>!</gray>"));
+            }
+        };
+
+        Runnable stepTourney = lockTourney
+                ? finishArenas
+                : () -> pasteStructureAsync(sender, "tournament-lobby.schem", "Grand Esports Tournament Hall",
+                        TOURNAMENT_LOBBY_ORIGIN_X, TOURNAMENT_LOBBY_ORIGIN_Y, TOURNAMENT_LOBBY_ORIGIN_Z, finishArenas);
+
+        Runnable stepWinner = lockWinner
+                ? stepTourney
+                : () -> pasteStructureAsync(sender, "winner-podium.schem", "Champions Winner Podium",
+                        WINNER_ORIGIN_X, WINNER_ORIGIN_Y, WINNER_ORIGIN_Z, stepTourney);
+
+        if (lockLobby) {
+            stepWinner.run();
+        } else {
+            pasteStructureAsync(sender, "lobby.schem", "Grand Event Spawn Lobby",
+                    LOBBY_ORIGIN_X, LOBBY_ORIGIN_Y, LOBBY_ORIGIN_Z, stepWinner);
+        }
+    }
+
+    /**
+     * Refreshes and pastes ONLY PvP arenas — 100% skips Lobby, Winner Podium, and Tournament Hall!
+     */
+    public void runArenasOnlySetup(CommandSender sender, java.util.function.Predicate<String> inUseCheck) {
+        if (plugin instanceof ClasherEventsPlugin cep) {
+            int refreshed = cep.refreshBundledArenasOnly();
+            if (sender != null) {
+                sender.sendMessage(FormatUtil.mm("<aqua>Refreshed <white>" + refreshed + "</white> arena schematics & arenas.yml (Lobby / Tournament Hall / Winner Podium untouched!).</aqua>"));
+            }
+        }
+        World world = getOrCreateSharedWorld(sender);
+        if (world == null) return;
+        pasteAllArenas(sender, inUseCheck);
+    }
+
+    /**
+     * Refreshes and pastes ONLY a single specified arena (e.g. /ce setup crystal-ffa) without touching anything else!
+     */
+    public void runSingleArenaSetup(CommandSender sender, String arenaId, java.util.function.Predicate<String> inUseCheck) {
+        String id = arenaId == null ? "" : arenaId.trim().toLowerCase(Locale.ROOT);
+        if (plugin instanceof ClasherEventsPlugin cep) {
+            cep.refreshSingleBundledArena(id);
+        }
+        if (!exists(id)) {
+            if (sender != null) sender.sendMessage(FormatUtil.mm("<red>Unknown arena: <white>" + FormatUtil.escape(id) + "</white>. Try <yellow>/ce setup arenas</yellow> or <yellow>/ce arena list</yellow>.</red>"));
+            return;
+        }
+        if (isStructureLocked(id)) {
+            if (sender != null) sender.sendMessage(FormatUtil.mm("<yellow>🔒 Arena <gold>" + FormatUtil.escape(id) + "</gold> is locked! Run <white>/ce setup unlock " + FormatUtil.escape(id) + "</white> first if you want to overwrite it.</yellow>"));
+            return;
+        }
+        pasteArenaAsync(sender, id, inUseCheck.test(id), null);
     }
 
     private void saveLocConfig(String path, String world, double x, double y, double z, float yaw, float pitch) {

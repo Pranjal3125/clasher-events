@@ -157,12 +157,17 @@ public final class ClasherEventsPlugin extends JavaPlugin {
     }
 
     /**
-     * Re-extracts bundled schematics and arenas.yml from the plugin JAR (used by /ce setup refresh).
+     * Re-extracts unlocked bundled schematics and arenas.yml from the plugin JAR (used by /ce setup refresh).
      */
     public int refreshBundledArenasAndSchematics() {
         int count = 0;
         for (String resource : BUNDLED_ASSETS) {
-            if (resource.equals("arenas.yml") || resource.startsWith("schematics/")) {
+            if (resource.equals("arenas.yml")) {
+                saveResource(resource, true);
+                count++;
+            } else if (resource.startsWith("schematics/")) {
+                String id = resource.substring("schematics/".length()).replace(".schem", "");
+                if (arenaManager != null && arenaManager.isStructureLocked(id)) continue;
                 saveResource(resource, true);
                 count++;
             } else if (!new File(getDataFolder(), resource).exists()) {
@@ -172,6 +177,39 @@ public final class ClasherEventsPlugin extends JavaPlugin {
         }
         if (arenaManager != null) arenaManager.load();
         return count;
+    }
+
+    /**
+     * Re-extracts ONLY PvP arena schematics + arenas.yml — never touches Lobby, Tournament Hall, or Winner Podium!
+     */
+    public int refreshBundledArenasOnly() {
+        int count = 0;
+        for (String resource : BUNDLED_ASSETS) {
+            if (resource.equals("arenas.yml")) {
+                saveResource(resource, true);
+                count++;
+            } else if (resource.startsWith("schematics/")) {
+                String id = resource.substring("schematics/".length()).replace(".schem", "");
+                if (id.equals("lobby") || id.equals("tournament-lobby") || id.equals("winner-podium")) continue;
+                if (arenaManager != null && arenaManager.isStructureLocked(id)) continue;
+                saveResource(resource, true);
+                count++;
+            }
+        }
+        if (arenaManager != null) arenaManager.load();
+        return count;
+    }
+
+    /**
+     * Re-extracts arenas.yml and a single arena's schematic from the JAR (e.g. /ce setup crystal-ffa).
+     */
+    public void refreshSingleBundledArena(String arenaId) {
+        saveResource("arenas.yml", true);
+        String schemPath = "schematics/" + arenaId + ".schem";
+        if (BUNDLED_ASSETS.contains(schemPath)) {
+            saveResource(schemPath, true);
+        }
+        if (arenaManager != null) arenaManager.load();
     }
 
     /**

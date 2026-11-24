@@ -1,5 +1,5 @@
 # ==============================================================================
-# Clasher Events v2.7.2 Configuration
+# Clasher Events v2.7.3 Configuration
 # ==============================================================================
 # Zero-dependency plug-and-play PvP tournament & events engine.
 # WorldEdit, WorldGuard, Hologram plugins, and PlaceholderAPI are 100% optional!
@@ -8,6 +8,11 @@
 
 branding:
   server-ip: play.clashernetwork.fun
+
+# Lock custom-decorated builds so /ce setup & /ce setup refresh NEVER overwrite them!
+# Toggle in-game via: /ce setup lock <tournament-lobby|lobby|winner-podium|arena>
+setup:
+  locked-structures: []
 
 shared-world: clasher_events
 use-void-world: true
