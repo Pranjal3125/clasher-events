@@ -139,6 +139,8 @@ public final class ArenaManager {
         return plugin.getConfig().getString("shared-world", "clasher_events");
     }
 
+    private boolean worldRulesConfigured;
+
     public World getOrCreateSharedWorld(CommandSender sender) {
         String name = sharedWorldName();
         World world = Bukkit.getWorld(name);
@@ -148,9 +150,10 @@ public final class ArenaManager {
                 creator.generator(new VoidChunkGenerator());
             }
             world = creator.createWorld();
-            if (world != null) {
-                configureArenaWorldRules(world);
-            }
+        }
+        if (world != null && !worldRulesConfigured) {
+            worldRulesConfigured = true;
+            configureArenaWorldRules(world);
         }
         if (world == null && sender != null) {
             sender.sendMessage(FormatUtil.mm("<red>Could not load or create shared world '" + FormatUtil.escape(name) + "'.</red>"));
@@ -166,6 +169,8 @@ public final class ArenaManager {
             world.setGameRule(GameRules.ADVANCE_WEATHER, false);
             world.setGameRule(GameRules.ADVANCE_TIME, false);
             world.setGameRule(GameRules.SHOW_ADVANCEMENT_MESSAGES, false);
+            world.setGameRule(GameRules.RANDOM_TICK_SPEED, 0);
+            world.setGameRule(GameRules.FIRE_SPREAD_RADIUS_AROUND_PLAYER, 0);
             world.setTime(6000L);
             world.setStorm(false);
         } catch (Throwable ignored) {

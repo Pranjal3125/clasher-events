@@ -1,6 +1,6 @@
 <div align="center">
 
-# Clasher Events `v2.7.1`
+# Clasher Events `v2.7.2`
 
 ### Zero-Dependency Pro Competitive PvP Tournament & Events Engine for Paper 26.2+
 
@@ -10,7 +10,7 @@ A modular, tier-1 Minecraft PvP events engine built for **Clasher Network** — 
 ![Paper](https://img.shields.io/badge/Paper-26.2%2B-38bdf8)
 ![Dependencies](https://img.shields.io/badge/Required%20Deps-Zero-10b981)
 ![Tests](https://img.shields.io/badge/JUnit%205-22%20Passing-brightgreen)
-![Release](https://img.shields.io/badge/Version-2.7.1-a855f7)
+![Release](https://img.shields.io/badge/Version-2.7.2-a855f7)
 
 [Source](https://github.com/Pranjal3125/clasher-events) · [Releases](https://github.com/Pranjal3125/clasher-events/releases) · [Issues](https://github.com/Pranjal3125/clasher-events/issues)
 

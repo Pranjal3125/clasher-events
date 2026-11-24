@@ -3426,6 +3426,12 @@ public final class EventManager implements Listener {
                     && !arena.isInsideBuildBounds(b.getX(), b.getY(), b.getZ())) {
                 event.setCancelled(true);
                 warnBoundary(player, "<red>You cannot break blocks outside the arena perimeter!</red>");
+                return;
+            }
+            if (eventMode == EventMode.CRYSTAL || eventMode == EventMode.CRYSTAL_FFA
+                    || "crystal".equals(selectedKit)) {
+                event.setDropItems(false);
+                event.setExpToDrop(0);
             }
         }
     }
@@ -3564,6 +3570,46 @@ public final class EventManager implements Listener {
         for (ParallelMatch pm : activeParallelMatches) if (pm.tracker.isTracking()) pm.tracker.recordBeforeChange(event.getBlock());
     }
 
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onEventEntityExplodeGuard(EntityExplodeEvent event) {
+        if (!eventRunning || event.getLocation().getWorld() == null) return;
+        if (!event.getLocation().getWorld().getName().equalsIgnoreCase(arenaManager.sharedWorldName())) return;
+        Arena target = findActiveEventArenaContaining(event.getLocation());
+        if (target == null) return;
+        if (!isDestructibleCurrentMatch()) {
+            event.blockList().clear();
+            return;
+        }
+        event.blockList().removeIf(b -> !target.isInsideBuildBounds(b.getX(), b.getY(), b.getZ()));
+        event.setYield(0.0f);
+    }
+
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onEventBlockExplodeGuard(BlockExplodeEvent event) {
+        if (!eventRunning) return;
+        Block src = event.getBlock();
+        if (!src.getWorld().getName().equalsIgnoreCase(arenaManager.sharedWorldName())) return;
+        Arena target = findActiveEventArenaContaining(src.getLocation());
+        if (target == null) return;
+        if (!isDestructibleCurrentMatch()) {
+            event.blockList().clear();
+            return;
+        }
+        event.blockList().removeIf(b -> !target.isInsideBuildBounds(b.getX(), b.getY(), b.getZ()));
+        event.setYield(0.0f);
+    }
+
+    private Arena findActiveEventArenaContaining(Location loc) {
+        int bx = loc.getBlockX(), by = loc.getBlockY(), bz = loc.getBlockZ();
+        Arena main = arenaManager.get(selectedArena);
+        if (main != null && main.contains(bx, by, bz)) return main;
+        for (ParallelMatch pm : activeParallelMatches) {
+            Arena pa = arenaManager.get(pm.arenaId);
+            if (pa != null && pa.contains(bx, by, bz)) return pa;
+        }
+        return null;
+    }
+
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onTrackEntityExplode(EntityExplodeEvent event) {
         if (blockTracker.isTracking()) for (Block b : event.blockList()) blockTracker.recordBeforeChange(b);
@@ -3623,7 +3669,7 @@ public final class EventManager implements Listener {
         });
     }
 
-    @EventHandler
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onTeamFriendlyFire(EntityDamageByEntityEvent event) {
         if (!eventRunning) return;
         Player attacker = null;
@@ -3683,6 +3729,7 @@ public final class EventManager implements Listener {
 
     @EventHandler
     public void onFighterMove(PlayerMoveEvent event) {
+        if (!event.hasChangedPosition()) return;
         Location to = event.getTo();
         if (to == null) return;
         Player player = event.getPlayer();
@@ -4186,6 +4233,10 @@ public final class EventManager implements Listener {
         UUID id = event.getPlayer().getUniqueId();
         parkourStartedAt.remove(id);
         autoCamHosts.remove(id);
+        lastBoundaryWarnAt.remove(id);
+        afkWarned.remove(id);
+        lastMovementAt.remove(id);
+        lastCombatAt.remove(id);
         clearPlayerBorder(event.getPlayer());
         hud.clearForPlayer(event.getPlayer());
         if (eventRunning && !celebrating && alive.contains(id)) {

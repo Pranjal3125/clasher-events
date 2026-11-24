@@ -44,6 +44,9 @@ public final class EventHudManager {
     private final BossBar bossBar;
     private final Map<UUID, Scoreboard> previousBoards = new HashMap<>();
     private final Map<UUID, Scoreboard> activeBoards = new HashMap<>();
+    private final Map<UUID, String[]> lastSidebarLines = new HashMap<>();
+    private final Map<UUID, Integer> lastSidebarCount = new HashMap<>();
+    private final Map<UUID, String> lastTabState = new HashMap<>();
 
     public EventHudManager(JavaPlugin plugin) {
         this.plugin = plugin;
@@ -118,13 +121,16 @@ public final class EventHudManager {
                     ? "<yellow>Starting in <gold>" + FormatUtil.formatDuration(countdownSec) + "</gold> • <green>" + totalParticipants + " Joined</green></yellow>"
                     : "<green>" + aliveCount + " Alive</green> <dark_gray>|</dark_gray> <aqua>" + phase.toUpperCase(Locale.ROOT)
                     + "</aqua> <dark_gray>|</dark_gray> <yellow>" + FormatUtil.formatDuration(elapsedSec) + "</yellow>";
-            player.sendPlayerListHeaderAndFooter(
-                    FormatUtil.mm("\n<gold><bold>★ CLASHER EVENTS ★</bold></gold>\n<gray>Mode:</gray> <white>" + FormatUtil.escape(modeName)
-                            + "</white> <dark_gray>•</dark_gray> " + statusLine + "\n"),
-                    FormatUtil.mm("\n<gray>Rank:</gray> " + stats.rankBadgeMini() + " <dark_gray>|</dark_gray> <gray>Elo:</gray> <gold>"
-                            + stats.elo() + "</gold> <dark_gray>|</dark_gray> <gray>Wins:</gray> <yellow>" + stats.wins()
-                            + "</yellow>\n<aqua>" + FormatUtil.escape(serverIp) + "</aqua>\n")
-            );
+            String tabHeader = "\n<gold><bold>★ CLASHER EVENTS ★</bold></gold>\n<gray>Mode:</gray> <white>" + FormatUtil.escape(modeName)
+                    + "</white> <dark_gray>•</dark_gray> " + statusLine + "\n";
+            String tabFooter = "\n<gray>Rank:</gray> " + stats.rankBadgeMini() + " <dark_gray>|</dark_gray> <gray>Elo:</gray> <gold>"
+                    + stats.elo() + "</gold> <dark_gray>|</dark_gray> <gray>Wins:</gray> <yellow>" + stats.wins()
+                    + "</yellow>\n<aqua>" + FormatUtil.escape(serverIp) + "</aqua>\n";
+            String tabKey = tabHeader + "\0" + tabFooter;
+            if (!tabKey.equals(lastTabState.get(player.getUniqueId()))) {
+                lastTabState.put(player.getUniqueId(), tabKey);
+                player.sendPlayerListHeaderAndFooter(FormatUtil.mm(tabHeader), FormatUtil.mm(tabFooter));
+            }
         }
 
         if (!isScoreboardEnabled()) return;
@@ -193,14 +199,30 @@ public final class EventHudManager {
         lines.add("<gray>Wins:</gray> <yellow>" + stats.wins() + "</yellow> <dark_gray>|</dark_gray> <gray>Streak:</gray> <green>" + stats.winStreak() + "</green>");
         lines.add("<aqua>" + FormatUtil.escape(trim(serverIp, 24)) + "</aqua>");
 
+        applySidebarDiff(id, board, obj, lines);
+    }
+
+    private void applySidebarDiff(UUID id, Scoreboard board, Objective obj, List<String> lines) {
         int activeCount = Math.min(lines.size(), MAX_LINES);
+        String[] prev = lastSidebarLines.computeIfAbsent(id, k -> new String[MAX_LINES]);
+        int prevCount = lastSidebarCount.getOrDefault(id, -1);
+        boolean countChanged = prevCount != activeCount;
+        lastSidebarCount.put(id, activeCount);
+
         for (int i = 0; i < MAX_LINES; i++) {
-            Team t = board.getTeam("ce_l" + i);
             if (i < activeCount) {
-                if (t != null) t.prefix(FormatUtil.mm(lines.get(i)));
-                obj.getScore(LINE_KEYS[i]).setScore(activeCount - i);
-            } else {
+                String next = lines.get(i);
+                if (!next.equals(prev[i])) {
+                    Team t = board.getTeam("ce_l" + i);
+                    if (t != null) t.prefix(FormatUtil.mm(next));
+                    prev[i] = next;
+                }
+                if (countChanged) {
+                    obj.getScore(LINE_KEYS[i]).setScore(activeCount - i);
+                }
+            } else if (prev[i] != null || countChanged) {
                 board.resetScores(LINE_KEYS[i]);
+                prev[i] = null;
             }
         }
     }
@@ -300,16 +322,7 @@ public final class EventHudManager {
         lines.add("");
         lines.add("<aqua>" + FormatUtil.escape(trim(serverIp, 24)) + "</aqua>");
 
-        int activeCount = Math.min(lines.size(), MAX_LINES);
-        for (int i = 0; i < MAX_LINES; i++) {
-            Team t = board.getTeam("ce_l" + i);
-            if (i < activeCount) {
-                if (t != null) t.prefix(FormatUtil.mm(lines.get(i)));
-                obj.getScore(LINE_KEYS[i]).setScore(activeCount - i);
-            } else {
-                board.resetScores(LINE_KEYS[i]);
-            }
-        }
+        applySidebarDiff(id, board, obj, lines);
     }
 
     public void sendHitHealth(Player attacker, Player victim, double remainingHp, double maxHp) {
@@ -341,12 +354,16 @@ public final class EventHudManager {
 
     public void clearForPlayer(Player player) {
         if (player == null) return;
+        UUID uid = player.getUniqueId();
         player.hideBossBar(bossBar);
-        activeBoards.remove(player.getUniqueId());
+        activeBoards.remove(uid);
+        lastSidebarLines.remove(uid);
+        lastSidebarCount.remove(uid);
+        lastTabState.remove(uid);
         if (player.isOnline() && isTablistEnabled()) {
             player.sendPlayerListHeaderAndFooter(Component.empty(), Component.empty());
         }
-        Scoreboard prev = previousBoards.remove(player.getUniqueId());
+        Scoreboard prev = previousBoards.remove(uid);
         if (prev != null && player.isOnline()) {
             player.setScoreboard(prev);
         } else if (player.isOnline() && Bukkit.getScoreboardManager() != null) {
@@ -362,6 +379,9 @@ public final class EventHudManager {
             }
         }
         activeBoards.clear();
+        lastSidebarLines.clear();
+        lastSidebarCount.clear();
+        lastTabState.clear();
         for (Map.Entry<UUID, Scoreboard> entry : new HashMap<>(previousBoards).entrySet()) {
             Player p = Bukkit.getPlayer(entry.getKey());
             if (p != null && p.isOnline()) {

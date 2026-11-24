@@ -1183,6 +1183,7 @@ public final class CasualDuelManager implements Listener {
 
     @EventHandler
     public void onDuelMove(PlayerMoveEvent event) {
+        if (!event.hasChangedPosition()) return;
         Location to = event.getTo();
         if (to == null) return;
         Player p = event.getPlayer();
@@ -1216,6 +1217,11 @@ public final class CasualDuelManager implements Listener {
         Block b = event.getBlock();
         if (!duel.isDestructible() || arena == null || !arena.isInsideBuildBounds(b.getX(), b.getY(), b.getZ())) {
             event.setCancelled(true);
+            return;
+        }
+        if ("crystal".equals(duel.kitId)) {
+            event.setDropItems(false);
+            event.setExpToDrop(0);
         }
     }
 
@@ -1267,6 +1273,44 @@ public final class CasualDuelManager implements Listener {
     public void onTrackIgnite(BlockIgniteEvent e) {
         for (ActiveDuel duel : activeByArena.values()) {
             if (duel.tracker.isTracking()) duel.tracker.recordBeforeChange(e.getBlock());
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onDuelEntityExplodeGuard(EntityExplodeEvent e) {
+        if (activeByArena.isEmpty() || e.getLocation().getWorld() == null) return;
+        if (!e.getLocation().getWorld().getName().equalsIgnoreCase(arenas.sharedWorldName())) return;
+        int bx = e.getLocation().getBlockX(), by = e.getLocation().getBlockY(), bz = e.getLocation().getBlockZ();
+        for (ActiveDuel duel : activeByArena.values()) {
+            Arena arena = arenas.get(duel.arenaId);
+            if (arena != null && arena.contains(bx, by, bz)) {
+                if (!duel.isDestructible()) {
+                    e.blockList().clear();
+                } else {
+                    e.blockList().removeIf(b -> !arena.isInsideBuildBounds(b.getX(), b.getY(), b.getZ()));
+                    e.setYield(0.0f);
+                }
+                return;
+            }
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onDuelBlockExplodeGuard(BlockExplodeEvent e) {
+        if (activeByArena.isEmpty()) return;
+        Block src = e.getBlock();
+        if (!src.getWorld().getName().equalsIgnoreCase(arenas.sharedWorldName())) return;
+        for (ActiveDuel duel : activeByArena.values()) {
+            Arena arena = arenas.get(duel.arenaId);
+            if (arena != null && arena.contains(src.getX(), src.getY(), src.getZ())) {
+                if (!duel.isDestructible()) {
+                    e.blockList().clear();
+                } else {
+                    e.blockList().removeIf(b -> !arena.isInsideBuildBounds(b.getX(), b.getY(), b.getZ()));
+                    e.setYield(0.0f);
+                }
+                return;
+            }
         }
     }
 

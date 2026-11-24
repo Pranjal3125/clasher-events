@@ -25,6 +25,7 @@ import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.player.PlayerArmorStandManipulateEvent;
 import org.bukkit.event.player.PlayerInteractAtEntityEvent;
+import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.world.EntitiesLoadEvent;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
@@ -482,6 +483,11 @@ public final class LobbyNpcManager implements Listener {
         if (event.getEntity().getPersistentDataContainer().has(npcKey, PersistentDataType.STRING)) {
             event.setCancelled(true);
         }
+    }
+
+    @EventHandler
+    public void onPlayerQuit(PlayerQuitEvent event) {
+        clickCooldown.remove(event.getPlayer().getUniqueId());
     }
 
     public boolean recentlyClickedNpc(UUID playerId) {

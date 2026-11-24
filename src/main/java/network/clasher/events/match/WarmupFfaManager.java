@@ -12,10 +12,15 @@ import org.bukkit.Bukkit;
 import org.bukkit.GameMode;
 import org.bukkit.Location;
 import org.bukkit.Sound;
+import org.bukkit.World;
 import org.bukkit.attribute.Attribute;
 import org.bukkit.attribute.AttributeInstance;
 import org.bukkit.block.Block;
 import org.bukkit.command.CommandSender;
+import org.bukkit.entity.AbstractArrow;
+import org.bukkit.entity.Entity;
+import org.bukkit.entity.ExperienceOrb;
+import org.bukkit.entity.Item;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Projectile;
 import org.bukkit.event.EventHandler;
@@ -98,6 +103,8 @@ public final class WarmupFfaManager implements Listener {
     // Automatic Periodic Deep-Terrain Reset state for Crystal FFA!
     private final ArenaBlockTracker crystalTracker = new ArenaBlockTracker();
     private int crystalResetRemainingSec;
+    private int entitySweepCounter;
+    private boolean crystalResetting;
     private BukkitTask autoResetTask;
 
     public WarmupFfaManager(
@@ -259,44 +266,103 @@ public final class WarmupFfaManager implements Listener {
     }
 
     /**
-     * Periodic zero-suffocation Deep Crystal Terrain Auto-Reset: restores all craters/obsidian/holes back to
-     * fresh 15-block grass/dirt/stone/deepslate ground above Bedrock & safely lifts active fighters to the surface!
+     * Periodic zero-suffocation, 20-TPS tick-batched Deep Crystal Terrain Auto-Reset:
+     * restores all craters/obsidian/holes smoothly across ticks (never freezes the main server thread!)
+     * and safely lifts active fighters to fresh surface spawns!
      */
     public void resetCrystalPitNow(CommandSender initiator) {
+        if (crystalResetting) {
+            if (initiator != null) initiator.sendMessage(FormatUtil.mm(PREFIX + "<yellow>Crystal terrain reset is already in progress!</yellow>"));
+            return;
+        }
         String cArenaId = arenaId(PitType.CRYSTAL);
         Arena cArena = arenas.get(cArenaId);
         if (cArena == null) return;
 
+        crystalResetting = true;
         int restored = crystalTracker.trackedCount();
-        crystalTracker.rollbackImmediate();
-        arenas.clearArenaEntities(cArenaId);
-        if (playerCount(PitType.CRYSTAL) > 0) {
-            crystalTracker.startTracking(arenas.sharedWorldName(), cArena);
-        }
-        crystalResetRemainingSec = configuredResetSeconds();
+        int blocksPerTick = Math.max(500, plugin.getConfig().getInt("rollback-blocks-per-tick", 2500));
 
+        // Lift fighters safely onto surface wave1 spawns BEFORE blocks restore so nobody suffocates!
+        liftCrystalFightersToSurface(cArena);
+        arenas.clearArenaEntities(cArenaId);
+
+        crystalTracker.rollbackBatched(plugin, blocksPerTick, () -> {
+            crystalResetting = false;
+            arenas.clearArenaEntities(cArenaId);
+            if (!isOfficialEventBlocking() && playerCount(PitType.CRYSTAL) > 0) {
+                crystalTracker.startTracking(arenas.sharedWorldName(), cArena);
+            }
+            crystalResetRemainingSec = configuredResetSeconds();
+
+            for (Map.Entry<UUID, PitType> e : new ArrayList<>(fighterPit.entrySet())) {
+                if (e.getValue() != PitType.CRYSTAL) continue;
+                Player p = Bukkit.getPlayer(e.getKey());
+                if (p != null && p.isOnline() && !p.isDead()) {
+                    // Safety check: if a fighter dropped into a crater mid-batch, re-lift to clean surface
+                    if (p.getLocation().getBlock().getType().isSolid()
+                            || p.getEyeLocation().getBlock().getType().isSolid()) {
+                        List<Location> surfacePts = arenas.spawns(cArena, "wave1");
+                        if (!surfacePts.isEmpty()) {
+                            p.setFallDistance(0f);
+                            p.teleport(surfacePts.get(random.nextInt(surfacePts.size())));
+                        }
+                    }
+                    p.playSound(p.getLocation(), Sound.BLOCK_BEACON_ACTIVATE, 0.7f, 1.3f);
+                    p.sendMessage(FormatUtil.mm(PREFIX + "<green><bold>♻ CRYSTAL TERRAIN RESET!</bold></green> <gray>Fresh 15-block deep ground restored ("
+                            + restored + " blocks) — next reset in <aqua>" + FormatUtil.formatDuration(crystalResetRemainingSec) + "</aqua>!</gray>"));
+                }
+            }
+            if (initiator != null) {
+                initiator.sendMessage(FormatUtil.mm(PREFIX + "<green>Reset Deep Crystal FFA terrain (" + restored + " modified blocks restored smoothly at 20 TPS)!</green>"));
+            }
+        });
+    }
+
+    private void liftCrystalFightersToSurface(Arena cArena) {
+        List<Location> surfacePts = arenas.spawns(cArena, "wave1");
+        if (surfacePts.isEmpty()) return;
         for (Map.Entry<UUID, PitType> e : new ArrayList<>(fighterPit.entrySet())) {
             if (e.getValue() != PitType.CRYSTAL) continue;
             Player p = Bukkit.getPlayer(e.getKey());
             if (p != null && p.isOnline() && !p.isDead()) {
-                List<Location> surfacePts = arenas.spawns(cArena, "wave1");
-                if (!surfacePts.isEmpty()) {
-                    p.setFallDistance(0f);
-                    p.teleport(surfacePts.get(random.nextInt(surfacePts.size())));
-                }
-                p.playSound(p.getLocation(), Sound.BLOCK_BEACON_ACTIVATE, 0.7f, 1.3f);
-                p.sendMessage(FormatUtil.mm(PREFIX + "<green><bold>♻ CRYSTAL TERRAIN RESET!</bold></green> <gray>Fresh 15-block deep ground restored ("
-                        + restored + " blocks) — next reset in <aqua>" + FormatUtil.formatDuration(crystalResetRemainingSec) + "</aqua>!</gray>"));
+                p.setFallDistance(0f);
+                p.teleport(surfacePts.get(random.nextInt(surfacePts.size())));
             }
         }
-        if (initiator != null) {
-            initiator.sendMessage(FormatUtil.mm(PREFIX + "<green>Reset Deep Crystal FFA terrain (" + restored + " modified blocks restored)!</green>"));
+    }
+
+    private void sweepJunkEntitiesInActivePits() {
+        if (fighterPit.isEmpty()) return;
+        World world = Bukkit.getWorld(arenas.sharedWorldName());
+        if (world == null) return;
+        for (PitType type : PitType.values()) {
+            if (playerCount(type) == 0) continue;
+            Arena arena = arenas.get(arenaId(type));
+            if (arena == null) continue;
+            Location center = new Location(world, arena.centerX(), (arena.minY() + arena.maxY()) / 2.0, arena.centerZ());
+            double rx = Math.max(1.0, (arena.maxX() - arena.minX()) / 2.0);
+            double ry = Math.max(1.0, (arena.maxY() - arena.minY()) / 2.0);
+            double rz = Math.max(1.0, (arena.maxZ() - arena.minZ()) / 2.0);
+            for (Entity entity : world.getNearbyEntities(center, rx, ry, rz)) {
+                if (entity instanceof Item || entity instanceof ExperienceOrb) {
+                    entity.remove();
+                } else if (entity instanceof AbstractArrow arrow && arrow.isInBlock()) {
+                    arrow.remove();
+                }
+            }
         }
     }
 
     private void startAutoResetLoop() {
         autoResetTask = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
             if (isOfficialEventBlocking()) return;
+            // Lightweight 20-second junk entity sweeper (dropped items, XP orbs, stuck arrows) for 20 TPS FFA pits!
+            if (++entitySweepCounter >= 20) {
+                entitySweepCounter = 0;
+                sweepJunkEntitiesInActivePits();
+            }
+            if (crystalResetting) return;
             boolean hasCrystalActivity = playerCount(PitType.CRYSTAL) > 0 || crystalTracker.trackedCount() > 0;
             if (!hasCrystalActivity) {
                 crystalResetRemainingSec = configuredResetSeconds();
@@ -338,7 +404,8 @@ public final class WarmupFfaManager implements Listener {
         String cArenaId = arenaId(PitType.CRYSTAL);
         arenas.setArenaBuildAllowed(cArenaId, false);
         if (crystalTracker.isTracking() || crystalTracker.trackedCount() > 0) {
-            crystalTracker.rollbackImmediate();
+            int blocksPerTick = Math.max(500, plugin.getConfig().getInt("rollback-blocks-per-tick", 2500));
+            crystalTracker.rollbackBatched(plugin, blocksPerTick, () -> arenas.clearArenaEntities(cArenaId));
         }
         arenas.clearArenaEntities(arenaId(PitType.SWORD));
         arenas.clearArenaEntities(cArenaId);
@@ -460,6 +527,7 @@ public final class WarmupFfaManager implements Listener {
 
     @EventHandler
     public void onFfaMove(PlayerMoveEvent event) {
+        if (!event.hasChangedPosition()) return;
         Location to = event.getTo();
         if (to == null) return;
         Player p = event.getPlayer();
@@ -500,7 +568,26 @@ public final class WarmupFfaManager implements Listener {
     public void onFfaBreak(BlockBreakEvent event) {
         PitType pit = fighterPit.get(event.getPlayer().getUniqueId());
         if (pit == null) return;
-        if (!pit.destructible()) {
+        if (!pit.destructible() || crystalResetting) {
+            event.setCancelled(true);
+            return;
+        }
+        Arena arena = arenas.get(arenaId(pit));
+        Block b = event.getBlock();
+        if (arena == null || !arena.isInsideBuildBounds(b.getX(), b.getY(), b.getZ())) {
+            event.setCancelled(true);
+            return;
+        }
+        // Prevent dirt/stone/deepslate junk item piles from flooding the Crystal FFA pit!
+        event.setDropItems(false);
+        event.setExpToDrop(0);
+    }
+
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onFfaPlace(BlockPlaceEvent event) {
+        PitType pit = fighterPit.get(event.getPlayer().getUniqueId());
+        if (pit == null) return;
+        if (!pit.destructible() || crystalResetting) {
             event.setCancelled(true);
             return;
         }
@@ -512,18 +599,35 @@ public final class WarmupFfaManager implements Listener {
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
-    public void onFfaPlace(BlockPlaceEvent event) {
-        PitType pit = fighterPit.get(event.getPlayer().getUniqueId());
-        if (pit == null) return;
-        if (!pit.destructible()) {
-            event.setCancelled(true);
+    public void onFfaEntityExplodeGuard(EntityExplodeEvent e) {
+        if (!crystalTracker.isTracking() && !crystalResetting) return;
+        Arena arena = arenas.get(arenaId(PitType.CRYSTAL));
+        if (arena == null || e.getLocation().getWorld() == null) return;
+        if (!e.getLocation().getWorld().getName().equalsIgnoreCase(arenas.sharedWorldName())) return;
+        if (!arena.contains(e.getLocation().getBlockX(), e.getLocation().getBlockY(), e.getLocation().getBlockZ())) return;
+        if (crystalResetting) {
+            e.blockList().clear();
             return;
         }
-        Arena arena = arenas.get(arenaId(pit));
-        Block b = event.getBlock();
-        if (arena == null || !arena.isInsideBuildBounds(b.getX(), b.getY(), b.getZ())) {
-            event.setCancelled(true);
+        e.blockList().removeIf(b -> !arena.isInsideBuildBounds(b.getX(), b.getY(), b.getZ()));
+        // Zero dropped block items from Crystal/Anchor blasts -> massive TPS & FPS boost!
+        e.setYield(0.0f);
+    }
+
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onFfaBlockExplodeGuard(BlockExplodeEvent e) {
+        if (!crystalTracker.isTracking() && !crystalResetting) return;
+        Arena arena = arenas.get(arenaId(PitType.CRYSTAL));
+        if (arena == null) return;
+        Block src = e.getBlock();
+        if (!src.getWorld().getName().equalsIgnoreCase(arenas.sharedWorldName())) return;
+        if (!arena.contains(src.getX(), src.getY(), src.getZ())) return;
+        if (crystalResetting) {
+            e.blockList().clear();
+            return;
         }
+        e.blockList().removeIf(b -> !arena.isInsideBuildBounds(b.getX(), b.getY(), b.getZ()));
+        e.setYield(0.0f);
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
