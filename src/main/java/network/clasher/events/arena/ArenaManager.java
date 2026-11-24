@@ -2,7 +2,6 @@ package network.clasher.events.arena;
 
 import com.sk89q.worldguard.WorldGuard;
 import com.sk89q.worldguard.protection.flags.Flags;
-import com.sk89q.worldguard.protection.flags.RegionGroup;
 import com.sk89q.worldguard.protection.flags.StateFlag;
 import com.sk89q.worldguard.protection.managers.RegionManager;
 import com.sk89q.worldguard.protection.regions.ProtectedCuboidRegion;
@@ -56,6 +55,7 @@ public final class ArenaManager {
 
     private final JavaPlugin plugin;
     private final Map<String, Arena> arenas = new LinkedHashMap<>();
+    private final Set<String> buildAllowedArenas = new java.util.HashSet<>();
     private final File pastedMarkerFile;
     private YamlConfiguration pastedMarkers;
 
@@ -594,6 +594,11 @@ public final class ArenaManager {
     }
 
     public void setArenaBuildAllowed(String arenaId, boolean allowed) {
+        if (arenaId == null) return;
+        String key = arenaId.toLowerCase(Locale.ROOT);
+        if (allowed) buildAllowedArenas.add(key);
+        else buildAllowedArenas.remove(key);
+
         if (!hasWorldGuard()) return;
         Arena arena = get(arenaId);
         World world = Bukkit.getWorld(sharedWorldName());
@@ -603,18 +608,35 @@ public final class ArenaManager {
                     .get(BukkitAdapter.adapt(world));
             if (manager == null) return;
             ProtectedRegion region = manager.getRegion(arena.worldGuardRegionId());
+            if (region == null) {
+                ensureWorldGuardRegion(world, arena);
+                region = manager.getRegion(arena.worldGuardRegionId());
+            }
             if (region != null) {
-                if (allowed) {
-                    region.setFlag(Flags.BUILD, StateFlag.State.ALLOW);
-                    region.setFlag(Flags.BUILD.getRegionGroupFlag(), RegionGroup.MEMBERS);
-                } else {
-                    region.setFlag(Flags.BUILD, StateFlag.State.DENY);
-                    region.setFlag(Flags.BUILD.getRegionGroupFlag(), null);
-                    region.getMembers().clear();
-                }
+                applyWorldGuardBuildFlags(region, allowed);
             }
         } catch (Throwable ex) {
             plugin.getLogger().warning("Could not update WorldGuard build flag: " + ex.getMessage());
+        }
+    }
+
+    private void applyWorldGuardBuildFlags(ProtectedRegion region, boolean allowed) {
+        StateFlag.State state = allowed ? StateFlag.State.ALLOW : StateFlag.State.DENY;
+        // Clear any legacy MEMBERS group restriction: Clasher Events' own listeners strictly gate
+        // non-fighters & out-of-bounds edits, so WorldGuard must allow active fighters & crystals cleanly!
+        region.setFlag(Flags.BUILD, state);
+        region.setFlag(Flags.BUILD.getRegionGroupFlag(), null);
+        region.setFlag(Flags.BLOCK_PLACE, state);
+        region.setFlag(Flags.BLOCK_BREAK, state);
+        region.setFlag(Flags.TNT, state);
+        region.setFlag(Flags.OTHER_EXPLOSION, state);
+        // Always allow combat interactions (shields, potions, pearls, anchors, crystals, gapples) inside arenas
+        region.setFlag(Flags.INTERACT, StateFlag.State.ALLOW);
+        region.setFlag(Flags.USE, StateFlag.State.ALLOW);
+        region.setFlag(Flags.ITEM_DROP, StateFlag.State.ALLOW);
+        region.setFlag(Flags.ITEM_PICKUP, StateFlag.State.ALLOW);
+        if (!allowed) {
+            region.getMembers().clear();
         }
     }
 
@@ -630,13 +652,12 @@ public final class ArenaManager {
             ProtectedRegion region = manager.getRegion(arena.worldGuardRegionId());
             if (region != null) region.getMembers().addPlayer(playerId);
         } catch (Throwable ex) {
-            plugin.getLogger().warning("Could not add Build UHC member to WorldGuard region: " + ex.getMessage());
+            plugin.getLogger().warning("Could not add arena member to WorldGuard region: " + ex.getMessage());
         }
     }
 
     private boolean hasWorldGuard() {
-        return Bukkit.getPluginManager().getPlugin("WorldGuard") != null
-                && Bukkit.getPluginManager().getPlugin("WorldEdit") != null;
+        return Bukkit.getPluginManager().isPluginEnabled("WorldGuard");
     }
 
     private void ensureWorldGuardRegion(World world, Arena arena) {
@@ -652,11 +673,11 @@ public final class ArenaManager {
                     BlockVector3.at(arena.minX(), arena.minY(), arena.minZ()),
                     BlockVector3.at(arena.maxX(), arena.maxY(), arena.maxZ())
             );
-            region.setPriority(20);
+            region.setPriority(50);
             region.setFlag(Flags.PVP, StateFlag.State.ALLOW);
-            region.setFlag(Flags.BUILD, StateFlag.State.DENY);
             region.setFlag(Flags.CHEST_ACCESS, StateFlag.State.DENY);
-            region.setFlag(Flags.TNT, StateFlag.State.DENY);
+            boolean allowBuild = buildAllowedArenas.contains(arena.id().toLowerCase(Locale.ROOT));
+            applyWorldGuardBuildFlags(region, allowBuild);
             manager.addRegion(region);
         } catch (Throwable ex) {
             plugin.getLogger().warning("Could not configure WorldGuard region for " + arena.id() + ": " + ex.getMessage());

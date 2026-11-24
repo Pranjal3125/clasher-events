@@ -691,12 +691,16 @@ public final class EventManager implements Listener {
         }
         phase = startingPhase;
         blockTracker.startTracking(arenaManager.sharedWorldName(), arena);
+        arenaManager.setArenaBuildAllowed(selectedArena, isDestructibleCurrentMatch());
 
         int index = 0;
         for (UUID id : new ArrayList<>(alive)) {
             Player fighter = Bukkit.getPlayer(id);
             if (fighter == null) continue;
             snapshotIfNeeded(fighter);
+            if (isDestructibleCurrentMatch()) {
+                arenaManager.addArenaBuilder(selectedArena, id);
+            }
             fighter.setGameMode(GameMode.SURVIVAL);
             resetVitals(fighter);
             fighter.teleport(points.get(index++ % points.size()));
@@ -1142,6 +1146,7 @@ public final class EventManager implements Listener {
         Arena arena = arenaManager.get(selectedArena);
         if (arena != null) {
             blockTracker.startTracking(arenaManager.sharedWorldName(), arena);
+            arenaManager.setArenaBuildAllowed(selectedArena, isDestructibleCurrentMatch());
         }
         eventOpen = false;
         eventRunning = true;
@@ -1923,7 +1928,12 @@ public final class EventManager implements Listener {
     }
 
     private boolean inWaitingLobby(Player player) {
-        if (eventOpen && participants.contains(player.getUniqueId()) && !alive.contains(player.getUniqueId())) {
+        UUID id = player.getUniqueId();
+        // Active fighters & casual duelists are NEVER in the waiting lobby (prevents proximity guards from blocking combat/building!)
+        if ((eventRunning && alive.contains(id)) || (casualDuels != null && casualDuels.isInCasualDuel(id))) {
+            return false;
+        }
+        if (eventOpen && participants.contains(id) && !alive.contains(id)) {
             return true;
         }
         Location lobby = configuredLocation("lobby");
