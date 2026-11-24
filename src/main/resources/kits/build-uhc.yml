@@ -14,10 +14,11 @@ items:
   - {slot: 5, material: OAK_PLANKS, amount: 64}
   - {slot: 6, material: COBBLESTONE, amount: 64}
   - {slot: 7, material: DIAMOND_PICKAXE, amount: 1, enchants: {efficiency: 3, unbreaking: 3}}
-  - {slot: 8, material: COOKED_BEEF, amount: 32}
+  - {slot: 8, material: COOKED_BEEF, amount: 64}
   - {slot: 9, material: ARROW, amount: 32}
   - {slot: 10, material: DIAMOND_AXE, amount: 1, enchants: {efficiency: 3, unbreaking: 3}}
   - {slot: 11, material: COBWEB, amount: 8}
   - {slot: 12, material: WATER_BUCKET, amount: 1}
   - {slot: 13, material: LAVA_BUCKET, amount: 1}
   - {slot: 14, material: COBBLESTONE, amount: 64}
+  - {slot: 15, material: OAK_PLANKS, amount: 64}

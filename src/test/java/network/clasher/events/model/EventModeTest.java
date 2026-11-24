@@ -27,4 +27,22 @@ final class EventModeTest {
         assertEquals(5, EventMode.calculateWave2Threshold(15));
         assertEquals(10, EventMode.calculateWave2Threshold(30));
     }
+
+    @Test
+    void scalesDynamicBorderWithAlivePlayersAndSupportsMultiKitFormats() {
+        assertEquals(26.0, EventMode.calculateDynamicBorderSize(2, 100.0));
+        assertEquals(38.0, EventMode.calculateDynamicBorderSize(4, 100.0));
+        assertEquals(50.0, EventMode.calculateDynamicBorderSize(8, 100.0));
+        assertEquals(64.0, EventMode.calculateDynamicBorderSize(12, 100.0));
+        assertEquals(78.0, EventMode.calculateDynamicBorderSize(20, 100.0));
+        assertEquals(100.0, EventMode.calculateDynamicBorderSize(30, 100.0));
+        // Clamps cleanly to smaller arenas (e.g. 76-block diameter Ironkeep)
+        assertEquals(76.0, EventMode.calculateDynamicBorderSize(20, 76.0));
+
+        assertEquals(8, EventMode.kitModes().size());
+        assertTrue(EventMode.DUEL.supportsKitSelection());
+        assertTrue(EventMode.TEAM_WARS.supportsKitSelection());
+        assertTrue(EventMode.TOURNAMENT.supportsKitSelection());
+        assertFalse(EventMode.NETHPOT.supportsKitSelection());
+    }
 }

@@ -86,6 +86,7 @@ public final class EventHudManager {
             int countdownSec,
             boolean isOpen,
             long elapsedSec,
+            int borderSize,
             Map<UUID, Integer> allTeams
     ) {
         if (player == null || !player.isOnline()) return;
@@ -153,8 +154,10 @@ public final class EventHudManager {
             lines.add("<gray>Joined:</gray> <yellow>" + totalParticipants + "</yellow>");
         } else {
             lines.add("<gray>Phase:</gray> <aqua>" + phase.toUpperCase(Locale.ROOT) + "</aqua> <dark_gray>(" + FormatUtil.formatDuration(elapsedSec) + ")</dark_gray>");
-            lines.add("<gray>Alive:</gray> <green>" + aliveCount + "</green><dark_gray>/</dark_gray><gray>" + totalParticipants + "</gray>");
-            lines.add("<gray>Kills:</gray> <red>" + matchKills + "</red>");
+            lines.add("<gray>Alive:</gray> <green>" + aliveCount + "</green><dark_gray>/</dark_gray><gray>" + totalParticipants + "</gray> <dark_gray>|</dark_gray> <gray>Kills:</gray> <red>" + matchKills + "</red>");
+            if (borderSize > 0) {
+                lines.add("<gray>Border:</gray> <red>" + borderSize + "x" + borderSize + "</red>");
+            }
             if (team != null) {
                 lines.add("<gray>Squad:</gray> " + (team == 1 ? "<red><bold>RED TEAM</bold></red>" : "<blue><bold>BLUE TEAM</bold></blue>"));
             }

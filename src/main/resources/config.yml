@@ -1,5 +1,5 @@
 # ==============================================================================
-# Clasher Events v2.3.0 Configuration
+# Clasher Events v2.4.0 Configuration
 # ==============================================================================
 # Zero-dependency plug-and-play PvP tournament & events engine.
 # WorldEdit, WorldGuard, Hologram plugins, and PlaceholderAPI are 100% optional!
@@ -82,8 +82,11 @@ afk:
   enabled: true
   eliminate-after-seconds: 300
 
-# Per-player world borders (centered automatically on arena bounds!).
+# Per-player world borders (centered automatically on arena bounds, with REAL damage & dynamic player-scaled shrink!).
 world-border:
+  dynamic-shrink: true
+  dynamic-shrink-seconds: 25
+  damage-per-second: 2.0
   wave1:
     size: 84
     shrink-seconds: 60
@@ -91,8 +94,14 @@ world-border:
     size: 52
     shrink-seconds: 60
   final:
-    size: 28
+    size: 26
     shrink-seconds: 30
+
+# Player-initiated casual 1v1 duels (/event duel <player>) with automatic Admin Event Priority Override!
+# Whenever an admin opens an official event, active casual duels stop cleanly and free the arenas immediately.
+casual-duels:
+  enabled: true
+  request-expire-seconds: 60
 
 # Optional automatic event hosting (set enabled: true to auto-run events without staff online).
 auto-scheduler:

@@ -80,16 +80,17 @@ public final class EventGui implements Listener {
         EventMode[] modes = EventMode.values();
         for (int i = 0; i < modes.length && i < modeSlots.length; i++) {
             EventMode mode = modes[i];
+            boolean picksKit = mode.supportsKitSelection();
             inv.setItem(modeSlots[i], button(
                     mode.icon(),
                     "<yellow><bold>" + mode.displayName() + "</bold></yellow>",
                     List.of(
                             "<gray>Mode ID:</gray> <white>" + mode.id() + "</white>",
-                            "<gray>Arena:</gray> <white>" + (mode.defaultArenaId() == null ? "Random" : mode.defaultArenaId()) + "</white>",
+                            "<gray>Arena/Kit:</gray> <white>" + (picksKit ? "<aqua>Choose Any Kit!</aqua>" : (mode.defaultArenaId() == null ? "Random" : mode.defaultArenaId())) + "</white>",
                             "",
-                            "<green>Click to open registration</green>"
+                            picksKit ? "<green>Click to choose Kit & Arena</green>" : "<green>Click to open registration</green>"
                     ),
-                    "create",
+                    picksKit ? "pick-admin-kit" : "create",
                     mode.id()
             ));
         }
@@ -152,6 +153,66 @@ public final class EventGui implements Listener {
                 ""
         ));
         admin.openInventory(inv);
+    }
+
+    // -------------------------------------------------------------------------
+    // Kit & Arena Selector GUI (Admin Duel/TeamWars/Tournament + Casual Player Duel)
+    // -------------------------------------------------------------------------
+
+    public void openAdminKitPicker(Player admin, EventMode parentMode) {
+        EventMenuHolder holder = new EventMenuHolder(EventMenuHolder.ViewType.KIT_PICKER);
+        Inventory inv = Bukkit.createInventory(holder, 36,
+                FormatUtil.mm("<dark_gray>Pick Kit:</dark_gray> <gold><bold>" + parentMode.displayName() + "</bold></gold>"));
+        holder.setInventory(inv);
+        fillBorder(inv, 36);
+
+        int[] slots = {10, 11, 12, 13, 14, 15, 16, 22};
+        List<EventMode> kitModes = EventMode.kitModes();
+        for (int i = 0; i < kitModes.size() && i < slots.length; i++) {
+            EventMode km = kitModes.get(i);
+            inv.setItem(slots[i], button(
+                    km.icon(),
+                    "<yellow><bold>" + km.displayName() + "</bold></yellow>",
+                    List.of(
+                            "<gray>Format:</gray> <aqua>" + parentMode.displayName() + "</aqua>",
+                            "<gray>Arena & Kit:</gray> <white>" + km.id() + "</white>",
+                            "",
+                            "<green>Click to launch!</green>"
+                    ),
+                    "create-with-kit",
+                    parentMode.id() + ":" + km.id()
+            ));
+        }
+        inv.setItem(31, button(Material.ARROW, "<yellow>Back</yellow>", List.of("<gray>Return to Control Panel</gray>"), "open-admin", ""));
+        admin.openInventory(inv);
+    }
+
+    public void openCasualDuelKitPicker(Player challenger, Player target) {
+        EventMenuHolder holder = new EventMenuHolder(EventMenuHolder.ViewType.KIT_PICKER);
+        Inventory inv = Bukkit.createInventory(holder, 36,
+                FormatUtil.mm("<dark_gray>1v1 Duel</dark_gray> <yellow>" + FormatUtil.escape(target.getName()) + "</yellow> <gray>- Pick Kit</gray>"));
+        holder.setInventory(inv);
+        fillBorder(inv, 36);
+
+        int[] slots = {10, 11, 12, 13, 14, 15, 16, 22};
+        List<EventMode> kitModes = EventMode.kitModes();
+        for (int i = 0; i < kitModes.size() && i < slots.length; i++) {
+            EventMode km = kitModes.get(i);
+            boolean busy = events.casualDuels() != null && events.casualDuels().isArenaBusy(km.id());
+            inv.setItem(slots[i], button(
+                    km.icon(),
+                    "<yellow><bold>" + km.displayName() + "</bold></yellow>",
+                    List.of(
+                            "<gray>Opponent:</gray> <white>" + FormatUtil.escape(target.getName()) + "</white>",
+                            "<gray>Arena Status:</gray> " + (busy ? "<red>Busy</red>" : "<green>Ready</green>"),
+                            "",
+                            busy ? "<red>Try another kit</red>" : "<green>Click to send duel invite!</green>"
+                    ),
+                    "casual-duel-send",
+                    target.getName() + ":" + km.id()
+            ));
+        }
+        challenger.openInventory(inv);
     }
 
     // -------------------------------------------------------------------------
@@ -488,6 +549,26 @@ public final class EventGui implements Listener {
                 if (!player.hasPermission("clasherevents.admin")) return;
                 player.closeInventory();
                 events.createEvent(value);
+            }
+            case "pick-admin-kit" -> {
+                if (!player.hasPermission("clasherevents.admin")) return;
+                EventMode.fromInput(value).ifPresent(m -> openAdminKitPicker(player, m));
+            }
+            case "create-with-kit" -> {
+                if (!player.hasPermission("clasherevents.admin")) return;
+                String[] parts = value.split(":", 2);
+                player.closeInventory();
+                if (parts.length == 2) events.createEvent(parts[0], parts[1]);
+                else events.createEvent(value);
+            }
+            case "casual-duel-send" -> {
+                String[] parts = value.split(":", 2);
+                player.closeInventory();
+                if (parts.length == 2 && events.casualDuels() != null) {
+                    Player target = Bukkit.getPlayerExact(parts[0]);
+                    if (target == null) player.sendMessage(FormatUtil.mm("<red>That player is no longer online.</red>"));
+                    else events.casualDuels().sendRequest(player, target, parts[1]);
+                }
             }
             case "start-mode-vote" -> {
                 if (!player.hasPermission("clasherevents.admin")) return;

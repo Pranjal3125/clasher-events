@@ -1,11 +1,29 @@
 name: UHC
-armor: {helmet: DIAMOND_HELMET, chestplate: DIAMOND_CHESTPLATE, leggings: DIAMOND_LEGGINGS, boots: DIAMOND_BOOTS}
-enchantments: {protection: 2, unbreaking: 2}
+armor:
+  helmet: DIAMOND_HELMET
+  chestplate: DIAMOND_CHESTPLATE
+  leggings: DIAMOND_LEGGINGS
+  boots: DIAMOND_BOOTS
+armor-enchantments:
+  helmet: {protection: 3, unbreaking: 3}
+  chestplate: {protection: 3, unbreaking: 3}
+  leggings: {protection: 2, unbreaking: 3}
+  boots: {protection: 2, unbreaking: 3}
+offhand: SHIELD
+offhand-enchants: {unbreaking: 3}
 items:
-  - {slot: 0, material: DIAMOND_SWORD, amount: 1, enchants: {sharpness: 3}}
-  - {slot: 1, material: BOW, amount: 1, enchants: {power: 2}}
-  - {slot: 2, material: ARROW, amount: 32}
-  - {slot: 3, material: GOLDEN_APPLE, amount: 8}
-  - {slot: 4, material: WATER_BUCKET, amount: 1}
-  - {slot: 5, material: LAVA_BUCKET, amount: 1}
-  - {slot: 6, material: COOKED_BEEF, amount: 32}
+  - {slot: 0, material: DIAMOND_SWORD, amount: 1, enchants: {sharpness: 4, unbreaking: 3}}
+  - {slot: 1, material: DIAMOND_AXE, amount: 1, enchants: {sharpness: 2, efficiency: 3, unbreaking: 3}}
+  - {slot: 2, material: BOW, amount: 1, enchants: {power: 3, unbreaking: 3}}
+  - {slot: 3, material: CROSSBOW, amount: 1, enchants: {piercing: 1, unbreaking: 3}}
+  - {slot: 4, material: GOLDEN_APPLE, amount: 12}
+  - {slot: 5, material: WATER_BUCKET, amount: 1}
+  - {slot: 6, material: LAVA_BUCKET, amount: 1}
+  - {slot: 7, material: COBBLESTONE, amount: 64}
+  - {slot: 8, material: COBWEB, amount: 8}
+  - {slot: 9, material: ARROW, amount: 32}
+  - {slot: 10, material: DIAMOND_PICKAXE, amount: 1, enchants: {efficiency: 3, unbreaking: 3}}
+  - {slot: 11, material: WATER_BUCKET, amount: 1}
+  - {slot: 12, material: LAVA_BUCKET, amount: 1}
+  - {slot: 13, material: OAK_PLANKS, amount: 64}
+  - {slot: 14, material: COOKED_BEEF, amount: 64}

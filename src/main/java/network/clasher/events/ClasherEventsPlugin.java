@@ -8,6 +8,7 @@ import network.clasher.events.hook.ClasherEventsExpansion;
 import network.clasher.events.hud.EventHudManager;
 import network.clasher.events.hud.HologramManager;
 import network.clasher.events.kit.KitManager;
+import network.clasher.events.match.CasualDuelManager;
 import network.clasher.events.match.EventManager;
 import network.clasher.events.notify.DiscordWebhookNotifier;
 import network.clasher.events.schedule.EventScheduler;
@@ -51,6 +52,7 @@ public final class ClasherEventsPlugin extends JavaPlugin {
     private ArenaManager arenaManager;
     private KitManager kitManager;
     private EventManager eventManager;
+    private CasualDuelManager casualDuels;
     private EventScheduler scheduler;
     private HologramManager holograms;
 
@@ -77,6 +79,8 @@ public final class ClasherEventsPlugin extends JavaPlugin {
 
         this.eventManager = new EventManager(this, arenaManager, kitManager, dataStore, blockTracker, hud, discord);
         eventManager.setHolograms(holograms);
+        this.casualDuels = new CasualDuelManager(this, arenaManager, kitManager, dataStore, eventManager, hud);
+        eventManager.setCasualDuels(casualDuels);
         EventGui eventGui = new EventGui(this, arenaManager, eventManager, kitManager);
         eventManager.setGui(eventGui);
         EventCommands commands = new EventCommands(this, arenaManager, kitManager, eventManager, eventGui);
@@ -86,6 +90,7 @@ public final class ClasherEventsPlugin extends JavaPlugin {
         registerCommand("latejoin", commands);
 
         Bukkit.getPluginManager().registerEvents(eventManager, this);
+        Bukkit.getPluginManager().registerEvents(casualDuels, this);
         Bukkit.getPluginManager().registerEvents(eventGui, this);
 
         this.scheduler = new EventScheduler(this, eventManager);
@@ -165,6 +170,9 @@ public final class ClasherEventsPlugin extends JavaPlugin {
     public void onDisable() {
         if (scheduler != null) {
             scheduler.stop();
+        }
+        if (casualDuels != null) {
+            casualDuels.shutdown();
         }
         if (eventManager != null) {
             eventManager.shutdown();

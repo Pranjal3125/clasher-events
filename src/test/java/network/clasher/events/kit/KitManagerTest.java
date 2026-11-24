@@ -3,12 +3,14 @@ package network.clasher.events.kit;
 import org.bukkit.Material;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.YamlConfiguration;
+import org.bukkit.potion.PotionType;
 import org.junit.jupiter.api.Test;
 
 import java.io.File;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -16,7 +18,7 @@ import static org.junit.jupiter.api.Assertions.*;
 final class KitManagerTest {
 
     @Test
-    void validatesAllEightBundledKitsOffhandEnchantsAndMaterials() {
+    void validatesAllEightAuthenticPvpKitsPotionsOffhandsAndZeroPreAppliedEffects() {
         File kitsDir = new File("src/main/resources/kits");
         assertTrue(kitsDir.isDirectory(), "kits resource directory must exist");
 
@@ -27,6 +29,9 @@ final class KitManagerTest {
         for (String kitId : km.kitIds()) {
             YamlConfiguration kit = km.get(kitId);
             assertNotNull(kit);
+            // Authentic MCTiers / Stray.gg / PvP Legacy rule: NO free pre-applied potion effects on spawn!
+            assertTrue(kit.getMapList("effects").isEmpty(), kitId + " must NOT pre-apply potion effects on spawn");
+
             ConfigurationSection armor = kit.getConfigurationSection("armor");
             assertNotNull(armor, kitId + " must define armor");
             for (String piece : List.of("helmet", "chestplate", "leggings", "boots")) {
@@ -37,21 +42,34 @@ final class KitManagerTest {
             if (offhand != null && !offhand.isBlank()) {
                 assertNotNull(Material.matchMaterial(offhand), kitId + " invalid offhand material: " + offhand);
             }
+            String fillPot = kit.getString("fill-potion", "");
+            if (!fillPot.isBlank()) {
+                assertDoesNotThrow(() -> PotionType.valueOf(fillPot.toUpperCase(Locale.ROOT)),
+                        kitId + " invalid fill-potion: " + fillPot);
+            }
             List<Map<?, ?>> items = kit.getMapList("items");
             assertFalse(items.isEmpty(), kitId + " must define kit items");
             for (Map<?, ?> row : items) {
                 String matName = String.valueOf(row.get("material"));
                 assertNotNull(Material.matchMaterial(matName), kitId + " invalid item material: " + matName);
+                if (row.get("potion") instanceof String pName) {
+                    assertDoesNotThrow(() -> PotionType.valueOf(pName.toUpperCase(Locale.ROOT)),
+                            kitId + " invalid potion type: " + pName);
+                }
             }
         }
 
-        // Verify critical v2.3 kit fixes!
+        // Verify authentic popular PvP server kit meta across all 8 modes!
+        assertEquals("GOLDEN_APPLE", km.get("nethpot").getString("offhand"));
+        assertEquals(64, km.get("nethpot").getInt("offhand-amount"));
+        assertEquals("STRONG_HEALING", km.get("nethpot").getString("fill-potion"));
+        assertEquals("GOLDEN_CARROT", km.get("diamond-pot").getString("offhand"));
+        assertEquals("STRONG_HEALING", km.get("diamond-pot").getString("fill-potion"));
         assertEquals("SHIELD", km.get("axe-shield").getString("offhand"));
-        assertEquals("SHIELD", km.get("smp").getString("offhand"));
+        assertEquals("SHIELD", km.get("uhc").getString("offhand"));
         assertEquals("TOTEM_OF_UNDYING", km.get("crystal").getString("offhand"));
         assertEquals(4, km.get("crystal").getInt("armor-enchantments.leggings.blast_protection"));
-        assertEquals("STRONG_HEALING", km.get("nethpot").getString("fill-potion"));
-        assertEquals("STRONG_HEALING", km.get("diamond-pot").getString("fill-potion"));
+        assertEquals("TOTEM_OF_UNDYING", km.get("smp").getString("offhand"));
         assertTrue(km.get("build-uhc").getMapList("items").stream()
                 .anyMatch(r -> "DIAMOND_PICKAXE".equals(r.get("material"))), "Build UHC must include Diamond Pickaxe");
     }
@@ -64,7 +82,6 @@ final class KitManagerTest {
         defaults.put(2, "GAPPLE");
         defaults.put(KitManager.OFFHAND_SLOT, "SHIELD");
 
-        // Player puts sword on slot 8, gapple on offhand, shield on slot 0, pearl on slot 2
         Map<Integer, Integer> layout = Map.of(
                 0, 8,
                 2, KitManager.OFFHAND_SLOT,
@@ -80,7 +97,6 @@ final class KitManagerTest {
         assertEquals("PEARL", result.get(2));
         assertEquals(new HashSet<>(defaults.values()), new HashSet<>(result.values()), "Zero items lost or duplicated");
 
-        // Malformed colliding layout (both slot 0 and slot 1 mapped to slot 5) must NOT lose either item!
         Map<Integer, String> safe = KitManager.applyCustomLayout(defaults, Map.of(0, 5, 1, 5));
         assertEquals(4, safe.size());
         assertEquals(new HashSet<>(defaults.values()), new HashSet<>(safe.values()));

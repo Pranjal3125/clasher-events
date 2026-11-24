@@ -1,20 +1,44 @@
 <div align="center">
 
-# Clasher Events `v2.3.0`
+# Clasher Events `v2.4.0`
 
 ### Zero-Dependency Pro Competitive PvP Tournament & Events Engine for Paper 26.2+
 
-A modular, tier-1 Minecraft PvP events engine built for **Clasher Network** — featuring **8 architectural-grade PvP arenas**, **per-arena 100%-sealed themed Waiting Skyboxes** (+ `/ce setwaiting`), **5-layer Anti-Escape Containment**, **interactive Personal Kit Layout Editor** (+ admin `/ce kit save`), **flicker-free Adventure HUD with Below-Name HP, Ranked Elo Tiers & Branded Tablist**, **native Paper 3D Floating `TextDisplay` Holograms** (no external hologram plugin needed!), **1st/2nd/3rd Place Royal Winner Podium Ceremony**, **3-second Grace Freeze**, **Kill Heal & Streak Bounties**, **Sky Citadel Lobby + Parkour Stopwatch**, **pure-Java Sponge `.schem` auto-pasting** (no WorldEdit required!), **tick-batched arena rollback**, **Discord Webhooks**, **Auto-Scheduler**, and **optional PlaceholderAPI**.
+A modular, tier-1 Minecraft PvP events engine built for **Clasher Network** — featuring **authentic MCTiers / Stray.gg / PvP Legacy synced kits** (zero free pre-applied potion effects!), **REAL WorldBorder damage + dynamic alive-player border shrinking**, **multi-kit selection for 1v1 Duels, Team Wars & Tournaments** (CLI + GUI), **player-initiated `/event duel <player>` with automatic Admin Event Priority Override**, **8 architectural-grade PvP arenas with sealed themed Waiting Skyboxes**, **5-layer Anti-Escape Containment**, **Personal Kit Layout Editor** (+ admin `/ce kit save`), **flicker-free Adventure HUD with Below-Name HP, Ranked Elo Tiers & Branded Tablist**, **native Paper 3D `TextDisplay` Holograms**, **1st/2nd/3rd Royal Winner Podium Ceremony**, **pure-Java Sponge `.schem` auto-pasting**, and **tick-batched rollback**.
 
 ![Java](https://img.shields.io/badge/Java-25-ED8B00?logo=openjdk&logoColor=white)
 ![Paper](https://img.shields.io/badge/Paper-26.2%2B-38bdf8)
 ![Dependencies](https://img.shields.io/badge/Required%20Deps-Zero-10b981)
-![Tests](https://img.shields.io/badge/JUnit%205-14%20Passing-brightgreen)
-![Release](https://img.shields.io/badge/Version-2.3.0-a855f7)
+![Tests](https://img.shields.io/badge/JUnit%205-15%20Passing-brightgreen)
+![Release](https://img.shields.io/badge/Version-2.4.0-a855f7)
 
 [Source](https://github.com/Pranjal3125/clasher-events) · [Releases](https://github.com/Pranjal3125/clasher-events/releases) · [Issues](https://github.com/Pranjal3125/clasher-events/issues)
 
 </div>
+
+---
+
+## What's New in v2.4.0 — Real PvP Meta, Border Damage & Multi-Kit Duels
+
+### 🔥 Real WorldBorder Damage & Player-Scaled Dynamic Shrinking
+- **Server-Side Border Damage Fixed**: Paper's per-player virtual WorldBorders are visual-only by default — Clasher Events now tracks the exact real-time interpolated border size and deals genuine escalating damage (`world-border.damage-per-second: 2.0`, i.e., `1 ❤/s + distance scaling`) + red warning ActionBar to any fighter outside the shrinking red wall!
+- **Dynamic Alive-Player Border Shrinking (`world-border.dynamic-shrink: true`)**: Automatically tightens the border smoothly as players are eliminated (`23+ → Full`, `15–22 → 78×78`, `9–14 → 64×64`, `5–8 → 50×50`, `3–4 → 38×38`, `2 → 26×26`), displayed live right on the BossBar & Sidebar (`Border: 50x50`)!
+
+### ⚔️ Authentic Popular PvP Server Kits (MCTiers / Stray.gg / PvP Legacy Sync)
+- **ZERO pre-applied potion effects on spawn** across all 8 kits — every buff (Speed II, Strength II, Fire Resistance) comes from splashing/drinking real potions in the kit!
+- **`NethPot`**: Prot 4 / Unb 3 / Mending Netherite (+ Resp 3, Aqua Aff, Feather Falling 4, Depth Strider 3), Sharp 5 Fire Aspect 2 Sweeping 3 Sword, **64 Golden Apples in offhand**, 2×64 XP Bottles, 2×16 Pearls, Splash Swiftness II / Strength II / Fire Res rebuffs + full Splash Healing II inventory.
+- **`Diamond Pot`**: Prot 4 Diamond, Sharp 5 Fire Aspect 2 Sword, **64 Golden Carrots in offhand**, Pearls, drinkable Swiftness II / Strength II / Fire Res + full Splash Healing II inventory.
+- **`Sword`**: Pure Prot 3 Diamond + Sharp 4 Sweeping 3 Sword + 6 Golden Apples + 64 Golden Carrots (no pearls, no fire aspect, no potions).
+- **`Axe & Shield`**: Prot 1 Diamond, **Unb 3 Shield in offhand**, Diamond Axe + Sword + Bow + Crossbow + **6 Arrows** + 4 Golden Apples + Steak.
+- **`Crystal`**: Prot 4 Netherite + **Blast Prot 4 Leggings**, **Offhand Totem + 7 backup Totems**, KB 1 Sharp 5 Sword, Eff 5 Pickaxe, Obsidian, Crystals, Anchors, Glowstone, XP Bottles, Pearls, Power 5 Punch 2 Bow.
+- **`UHC`**: Prot 3/2 Diamond, **Offhand Shield**, Sharp 4 Sword, Axe, Power 3 Bow, Piercing Crossbow, 12 Golden Apples, Water/Lava, Cobwebs, Blocks (natural regen OFF).
+- **`SMP`**: Prot 4 Netherite, **Offhand Totem + 2 backups**, Sharp 5 Sword & Axe, Shield, Pearls, Gapples, Cobwebs, Water, XP Bottles + Splash Strength II / Swiftness II / Fire Res.
+
+### 🎯 Kit Selection for Duels, Team Wars & Tournaments + Casual Player Duels
+- **Admin Multi-Kit Creation**: Run **`/ce create duel <kit>`**, **`/ce create team-wars <kit>`**, or **`/ce create tournament <kit>`** — OR click **1v1 Duel / Team Wars / Tournament** in **`/ce gui`** to open the interactive **Kit & Arena Selector GUI**!
+- **Casual Player 1v1 Duels (`/event duel <player> [kit]`) with Admin Event Priority Override**:
+  - Normal players can challenge each other via `/event duel <player>` (opens Kit Picker GUI → clickable `[✔ Accept]` / `[✖ Decline]` invite) across free arenas simultaneously.
+  - **Zero Arena Conflict Guarantee**: The exact instant an admin starts an official event (`/ce create` / `/ce voteopen` / Auto-Scheduler), all active casual duels automatically end cleanly, restore duelists to Lobby, roll back blocks immediately, and free every arena for the Server Event!
 
 ---
 

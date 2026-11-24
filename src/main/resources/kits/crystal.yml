@@ -5,27 +5,31 @@ armor:
   leggings: NETHERITE_LEGGINGS
   boots: NETHERITE_BOOTS
 armor-enchantments:
-  helmet: {protection: 4, unbreaking: 3, mending: 1}
+  helmet: {protection: 4, unbreaking: 3, mending: 1, respiration: 3, aqua_affinity: 1}
   chestplate: {protection: 4, unbreaking: 3, mending: 1}
   leggings: {blast_protection: 4, unbreaking: 3, mending: 1}
-  boots: {protection: 4, unbreaking: 3, mending: 1, feather_falling: 4}
+  boots: {protection: 4, unbreaking: 3, mending: 1, feather_falling: 4, depth_strider: 3}
 offhand: TOTEM_OF_UNDYING
 items:
-  - {slot: 0, material: NETHERITE_SWORD, amount: 1, enchants: {sharpness: 5, knockback: 1, unbreaking: 3, mending: 1}}
-  - {slot: 1, material: OBSIDIAN, amount: 64}
-  - {slot: 2, material: END_CRYSTAL, amount: 64}
-  - {slot: 3, material: RESPAWN_ANCHOR, amount: 16}
-  - {slot: 4, material: GLOWSTONE, amount: 64}
-  - {slot: 5, material: ENDER_PEARL, amount: 16}
-  - {slot: 6, material: GOLDEN_APPLE, amount: 32}
+  - {slot: 0, material: NETHERITE_SWORD, amount: 1, enchants: {sharpness: 5, knockback: 1, fire_aspect: 2, sweeping_edge: 3, unbreaking: 3, mending: 1}}
+  - {slot: 1, material: ENDER_PEARL, amount: 16}
+  - {slot: 2, material: GOLDEN_APPLE, amount: 64}
+  - {slot: 3, material: OBSIDIAN, amount: 64}
+  - {slot: 4, material: END_CRYSTAL, amount: 64}
+  - {slot: 5, material: RESPAWN_ANCHOR, amount: 64}
+  - {slot: 6, material: GLOWSTONE, amount: 64}
   - {slot: 7, material: NETHERITE_PICKAXE, amount: 1, enchants: {efficiency: 5, unbreaking: 3, mending: 1}}
   - {slot: 8, material: TOTEM_OF_UNDYING, amount: 1}
   - {slot: 9, material: TOTEM_OF_UNDYING, amount: 1}
   - {slot: 10, material: TOTEM_OF_UNDYING, amount: 1}
   - {slot: 11, material: TOTEM_OF_UNDYING, amount: 1}
   - {slot: 12, material: TOTEM_OF_UNDYING, amount: 1}
-  - {slot: 13, material: EXPERIENCE_BOTTLE, amount: 64}
-  - {slot: 14, material: EXPERIENCE_BOTTLE, amount: 64}
-  - {slot: 15, material: END_CRYSTAL, amount: 64}
-  - {slot: 16, material: OBSIDIAN, amount: 64}
+  - {slot: 13, material: TOTEM_OF_UNDYING, amount: 1}
+  - {slot: 14, material: TOTEM_OF_UNDYING, amount: 1}
+  - {slot: 15, material: EXPERIENCE_BOTTLE, amount: 64}
+  - {slot: 16, material: EXPERIENCE_BOTTLE, amount: 64}
   - {slot: 17, material: ENDER_PEARL, amount: 16}
+  - {slot: 18, material: END_CRYSTAL, amount: 64}
+  - {slot: 19, material: OBSIDIAN, amount: 64}
+  - {slot: 20, material: BOW, amount: 1, enchants: {power: 5, punch: 2, flame: 1, unbreaking: 3}}
+  - {slot: 21, material: ARROW, amount: 32}

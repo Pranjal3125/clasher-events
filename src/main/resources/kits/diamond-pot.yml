@@ -4,18 +4,25 @@ armor:
   chestplate: DIAMOND_CHESTPLATE
   leggings: DIAMOND_LEGGINGS
   boots: DIAMOND_BOOTS
-enchantments: {protection: 4, unbreaking: 3}
+armor-enchantments:
+  helmet: {protection: 4, unbreaking: 3}
+  chestplate: {protection: 4, unbreaking: 3}
+  leggings: {protection: 4, unbreaking: 3}
+  boots: {protection: 4, unbreaking: 3, feather_falling: 4}
+offhand: GOLDEN_CARROT
+offhand-amount: 64
 fill-material: SPLASH_POTION
 fill-potion: STRONG_HEALING
 items:
-  - {slot: 0, material: DIAMOND_SWORD, amount: 1, enchants: {sharpness: 5, unbreaking: 3}}
+  - {slot: 0, material: DIAMOND_SWORD, amount: 1, enchants: {sharpness: 5, fire_aspect: 2, unbreaking: 3}}
   - {slot: 1, material: ENDER_PEARL, amount: 16}
-  - {slot: 2, material: GOLDEN_APPLE, amount: 16}
-  - {slot: 3, material: COOKED_BEEF, amount: 32}
+  - {slot: 6, material: POTION, amount: 1, potion: STRONG_SWIFTNESS}
+  - {slot: 7, material: POTION, amount: 1, potion: STRONG_STRENGTH}
+  - {slot: 8, material: POTION, amount: 1, potion: LONG_FIRE_RESISTANCE}
   - {slot: 9, material: POTION, amount: 1, potion: STRONG_SWIFTNESS}
-  - {slot: 10, material: POTION, amount: 1, potion: STRONG_STRENGTH}
+  - {slot: 10, material: POTION, amount: 1, potion: STRONG_SWIFTNESS}
   - {slot: 11, material: POTION, amount: 1, potion: STRONG_SWIFTNESS}
   - {slot: 12, material: POTION, amount: 1, potion: STRONG_STRENGTH}
-effects:
-  - {type: SPEED, amplifier: 1, duration: 72000}
-  - {type: STRENGTH, amplifier: 1, duration: 72000}
+  - {slot: 13, material: POTION, amount: 1, potion: STRONG_STRENGTH}
+  - {slot: 14, material: POTION, amount: 1, potion: STRONG_STRENGTH}
+  - {slot: 15, material: POTION, amount: 1, potion: LONG_FIRE_RESISTANCE}

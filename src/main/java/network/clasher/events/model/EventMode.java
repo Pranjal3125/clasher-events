@@ -64,11 +64,33 @@ public enum EventMode {
         return java.util.Arrays.stream(values()).map(EventMode::id).toList();
     }
 
+    public static List<EventMode> kitModes() {
+        return List.of(NETHPOT, CRYSTAL, SWORD, AXE_SHIELD, BUILD_UHC, UHC, SMP, DIAMOND_POT);
+    }
+
+    public boolean supportsKitSelection() {
+        return this == DUEL || this == TEAM_WARS || this == TOURNAMENT;
+    }
+
     /**
      * Calculates the Wave 2 survivor threshold, or -1 if Wave 2 should be skipped.
      */
     public static int calculateWave2Threshold(int initialFighters) {
         if (initialFighters < 8) return -1;
         return Math.max(3, initialFighters / 3);
+    }
+
+    /**
+     * Computes dynamic WorldBorder diameter scaled cleanly to the number of alive fighters.
+     */
+    public static double calculateDynamicBorderSize(int aliveCount, double maxArenaDiameter) {
+        double raw;
+        if (aliveCount <= 2) raw = 26.0;
+        else if (aliveCount <= 4) raw = 38.0;
+        else if (aliveCount <= 8) raw = 50.0;
+        else if (aliveCount <= 14) raw = 64.0;
+        else if (aliveCount <= 22) raw = 78.0;
+        else raw = maxArenaDiameter;
+        return Math.max(16.0, Math.min(maxArenaDiameter, raw));
     }
 }

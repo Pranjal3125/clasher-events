@@ -122,6 +122,7 @@ public final class EventManager implements Listener {
     private final Random random = new Random();
     private EventGui gui;
     private HologramManager holograms;
+    private CasualDuelManager casualDuels;
 
     private final Set<UUID> participants = new LinkedHashSet<>();
     private final Set<UUID> alive = new LinkedHashSet<>();
@@ -174,9 +175,10 @@ public final class EventManager implements Listener {
     private UUID eventWinner;
     private long matchStartedAt;
 
-    // Active WorldBorder tracking so late-joiners/reconnectors never reset the whole arena's shrink timer
+    // Active WorldBorder tracking so late-joiners/reconnectors never reset shrink progress & border deals REAL damage!
     private double activeBorderStartSize = 140.0;
     private double activeBorderTargetSize = 84.0;
+    private long activeBorderStartMs = 0L;
     private long activeBorderEndMs = 0L;
 
     // Pre-event Mode Vote state
@@ -216,6 +218,14 @@ public final class EventManager implements Listener {
 
     public void setHolograms(HologramManager holograms) {
         this.holograms = holograms;
+    }
+
+    public void setCasualDuels(CasualDuelManager casualDuels) {
+        this.casualDuels = casualDuels;
+    }
+
+    public CasualDuelManager casualDuels() {
+        return casualDuels;
     }
 
     public void refreshHologramsSafe() {
@@ -304,6 +314,7 @@ public final class EventManager implements Listener {
             broadcast("<red>Cannot start mode voting while an event is already active.</red>");
             return;
         }
+        if (casualDuels != null) casualDuels.forceEndAllForOfficialEvent();
         cancelModeVote();
         modeVotes.clear();
         modeVoteOpen = true;
@@ -374,11 +385,21 @@ public final class EventManager implements Listener {
     // -------------------------------------------------------------------------
 
     public void createEvent(String rawMode) {
+        createEvent(rawMode, null);
+    }
+
+    /**
+     * Opens registration for an official Server Event, with optional kit/arena override
+     * for 1v1 Duel, Team Wars, and Tournament modes (e.g. `/ce create duel sword`, `/ce create team-wars crystal`).
+     * Automatically terminates any active casual player duels so admins NEVER face busy arenas!
+     */
+    public void createEvent(String rawMode, String kitOverride) {
         Optional<EventMode> parsed = EventMode.fromInput(rawMode);
         if (parsed.isEmpty()) {
             broadcast("<red>Unknown event mode: " + FormatUtil.escape(rawMode) + "</red>");
             return;
         }
+        if (casualDuels != null) casualDuels.forceEndAllForOfficialEvent();
         cancelModeVote();
         stopEvent("Replaced by a new event");
         eventMode = parsed.get();
@@ -389,6 +410,11 @@ public final class EventManager implements Listener {
                 return;
             }
             selectedArena = keys.get(random.nextInt(keys.size()));
+        } else if (kitOverride != null && !kitOverride.isBlank()) {
+            String resolved = EventMode.fromInput(kitOverride)
+                    .map(EventMode::defaultArenaId)
+                    .orElse(kitOverride.trim().toLowerCase(Locale.ROOT));
+            selectedArena = (resolved != null && arenaManager.exists(resolved)) ? resolved : eventMode.defaultArenaId();
         } else {
             selectedArena = eventMode.defaultArenaId();
         }
@@ -403,7 +429,7 @@ public final class EventManager implements Listener {
         arenaManager.ensureArenaReady(selectedArena, null, null);
         arenaManager.ensureLobbyReady(null);
         arenaManager.ensureWinnerPodiumReady(null);
-        arenaManager.setArenaBuildAllowed(selectedArena, isDestructibleMode(eventMode));
+        arenaManager.setArenaBuildAllowed(selectedArena, isDestructibleCurrentMatch());
 
         eventCompleted = false;
         firstBloodClaimed = false;
@@ -789,7 +815,7 @@ public final class EventManager implements Listener {
         }
         parkourStartedAt.remove(player.getUniqueId());
         snapshotIfNeeded(player);
-        if (isDestructibleMode(eventMode)) {
+        if (isDestructibleCurrentMatch()) {
             arenaManager.addArenaBuilder(selectedArena, player.getUniqueId());
         }
         player.getInventory().clear();
@@ -886,7 +912,7 @@ public final class EventManager implements Listener {
         alive.add(id);
         spectators.remove(id);
         lastMovementAt.put(id, System.currentTimeMillis());
-        if (isDestructibleMode(eventMode)) arenaManager.addArenaBuilder(selectedArena, id);
+        if (isDestructibleCurrentMatch()) arenaManager.addArenaBuilder(selectedArena, id);
         if (eventMode == EventMode.TEAM_WARS) {
             long redCount = teams.values().stream().filter(t -> t == 1).count();
             long blueCount = teams.values().stream().filter(t -> t == 2).count();
@@ -1018,15 +1044,22 @@ public final class EventManager implements Listener {
             else stopEvent("Event ended with no winner");
             return;
         }
-        if (phase.equals("final")) return;
+        if (phase.equals("final")) {
+            shrinkBorderForAliveCount(aliveCount);
+            return;
+        }
         if (aliveCount == 2) {
             transitionToPhase("final");
             return;
         }
         if (phase.equals("wave1")) {
             int threshold = EventMode.calculateWave2Threshold(initialFighters);
-            if (threshold != -1 && aliveCount <= threshold) transitionToPhase("wave2");
+            if (threshold != -1 && aliveCount <= threshold) {
+                transitionToPhase("wave2");
+                return;
+            }
         }
+        shrinkBorderForAliveCount(aliveCount);
     }
 
     private void assignTeams() {
@@ -1061,6 +1094,7 @@ public final class EventManager implements Listener {
         Integer team = remainingTeam();
         if (team == null) {
             if (alive.isEmpty()) stopEvent("Team Wars ended in a draw");
+            else shrinkBorderForAliveCount(alive.size());
             return;
         }
         if (eventCompleted) return;
@@ -1513,11 +1547,32 @@ public final class EventManager implements Listener {
                     }
                 }
 
+                // Enforce REAL WorldBorder damage every second (Paper per-player virtual borders are visual-only!)
+                if (arena != null && !gracePeriodActive) {
+                    double curSize = currentBorderSize();
+                    double halfSize = curSize / 2.0;
+                    double baseBorderDmg = Math.max(0.5, plugin.getConfig().getDouble("world-border.damage-per-second", 2.0));
+                    for (UUID fighterId : new ArrayList<>(alive)) {
+                        Player fighter = Bukkit.getPlayer(fighterId);
+                        if (fighter == null || !fighter.isOnline() || fighter.isDead()) continue;
+                        if (!fighter.getWorld().getName().equalsIgnoreCase(arenaManager.sharedWorldName())) continue;
+                        Location loc = fighter.getLocation();
+                        double distOutside = Math.max(Math.abs(loc.getX() - arena.centerX()), Math.abs(loc.getZ() - arena.centerZ())) - halfSize;
+                        if (distOutside > 0.0) {
+                            double dmg = baseBorderDmg + Math.min(4.0, distOutside * 0.25);
+                            fighter.damage(dmg);
+                            fighter.sendActionBar(FormatUtil.mm("<red><bold>⚠ OUTSIDE BORDER! (-"
+                                    + String.format(Locale.ROOT, "%.1f", dmg / 2.0) + " ❤/s) Move to center!</bold></red>"));
+                        }
+                    }
+                }
+
                 float aliveRatio = initialFighters > 0 ? (float) alive.size() / initialFighters : 1.0f;
                 BossBar.Color barColor = aliveRatio > 0.5f ? BossBar.Color.GREEN : (aliveRatio > 0.25f ? BossBar.Color.YELLOW : BossBar.Color.RED);
                 hud.updateBossBar(
                         "<gold><bold>" + FormatUtil.escape(eventMode.displayName()) + "</bold></gold> <dark_gray>|</dark_gray> <green>"
-                                + alive.size() + " Alive</green> <dark_gray>|</dark_gray> <aqua>" + phase.toUpperCase(Locale.ROOT) + "</aqua>",
+                                + alive.size() + " Alive</green> <dark_gray>|</dark_gray> <aqua>" + phase.toUpperCase(Locale.ROOT)
+                                + "</aqua> <dark_gray>|</dark_gray> <red>Border " + (int) Math.round(currentBorderSize()) + "x" + (int) Math.round(currentBorderSize()) + "</red>",
                         aliveRatio, barColor, participants
                 );
 
@@ -1526,12 +1581,21 @@ public final class EventManager implements Listener {
                         + " <dark_gray>|</dark_gray> <green>" + phase.toUpperCase(Locale.ROOT) + "</green>");
                 for (UUID id : participants) {
                     Player viewer = Bukkit.getPlayer(id);
-                    if (viewer != null) viewer.sendActionBar(actionBar);
+                    if (viewer != null) {
+                        // Don't overwrite border-damage alert for fighters outside border
+                        if (arena != null && alive.contains(id)) {
+                            double half = currentBorderSize() / 2.0;
+                            Location l = viewer.getLocation();
+                            if (Math.max(Math.abs(l.getX() - arena.centerX()), Math.abs(l.getZ() - arena.centerZ())) > half) continue;
+                        }
+                        viewer.sendActionBar(actionBar);
+                    }
                 }
             }
 
             // Refresh flicker-free per-player event sidebar, below-name HP, & branded tablist
             long elapsedSec = eventRunning ? Math.max(0L, (System.currentTimeMillis() - matchStartedAt) / 1000L) : 0L;
+            int liveBorderInt = eventRunning ? (int) Math.round(currentBorderSize()) : 0;
             Map<UUID, Integer> teamSnapshot = eventMode == EventMode.TEAM_WARS ? teams : Map.of();
             for (UUID id : participants) {
                 Player viewer = Bukkit.getPlayer(id);
@@ -1549,6 +1613,7 @@ public final class EventManager implements Listener {
                         countdownRemaining,
                         eventOpen,
                         elapsedSec,
+                        liveBorderInt,
                         teamSnapshot
                 );
             }
@@ -1556,22 +1621,37 @@ public final class EventManager implements Listener {
     }
 
     // -------------------------------------------------------------------------
-    // WorldBorder (True Bounds Center + Preserved Shrink Progress)
+    // WorldBorder (True Bounds Center + Dynamic Player-Scaled Shrink + Real Damage!)
     // -------------------------------------------------------------------------
+
+    public double currentBorderSize() {
+        long now = System.currentTimeMillis();
+        if (activeBorderEndMs <= activeBorderStartMs || now >= activeBorderEndMs) {
+            return activeBorderTargetSize;
+        }
+        double frac = (double) (now - activeBorderStartMs) / (double) (activeBorderEndMs - activeBorderStartMs);
+        frac = Math.max(0.0, Math.min(1.0, frac));
+        return activeBorderStartSize + (activeBorderTargetSize - activeBorderStartSize) * frac;
+    }
 
     private void applyPhaseBorder(String phaseName) {
         Arena arena = arenaManager.get(selectedArena);
         if (arena == null) return;
         double maxArenaDiameter = Math.max(20.0, arena.playableRadius() * 2.0);
-        double defaultSize = phaseName.equals("wave1") ? 84.0 : phaseName.equals("wave2") ? 52.0 : 28.0;
+        double defaultSize = phaseName.equals("wave1") ? 84.0 : phaseName.equals("wave2") ? 52.0 : 26.0;
         double configuredTarget = plugin.getConfig().getDouble("world-border." + phaseName + ".size", defaultSize);
         double targetSize = Math.min(maxArenaDiameter, configuredTarget);
+        if (plugin.getConfig().getBoolean("world-border.dynamic-shrink", true)) {
+            targetSize = Math.min(targetSize, EventMode.calculateDynamicBorderSize(Math.max(2, alive.size()), maxArenaDiameter));
+        }
         long shrinkSeconds = Math.max(0L, plugin.getConfig().getLong("world-border." + phaseName + ".shrink-seconds", 60L));
         double startSize = Math.max(targetSize, maxArenaDiameter);
 
+        long now = System.currentTimeMillis();
         this.activeBorderStartSize = startSize;
         this.activeBorderTargetSize = targetSize;
-        this.activeBorderEndMs = System.currentTimeMillis() + shrinkSeconds * 1000L;
+        this.activeBorderStartMs = now;
+        this.activeBorderEndMs = now + shrinkSeconds * 1000L;
 
         for (UUID id : alive) {
             Player fighter = Bukkit.getPlayer(id);
@@ -1579,16 +1659,43 @@ public final class EventManager implements Listener {
         }
     }
 
+    private void shrinkBorderForAliveCount(int aliveCount) {
+        if (!plugin.getConfig().getBoolean("world-border.dynamic-shrink", true)) return;
+        Arena arena = arenaManager.get(selectedArena);
+        if (arena == null || aliveCount < 2) return;
+        double maxArenaDiameter = Math.max(20.0, arena.playableRadius() * 2.0);
+        double desired = EventMode.calculateDynamicBorderSize(aliveCount, maxArenaDiameter);
+        if (desired >= activeBorderTargetSize - 1.5) return; // Already at or tighter than this tier
+
+        double current = currentBorderSize();
+        long shrinkSec = Math.max(5L, plugin.getConfig().getLong("world-border.dynamic-shrink-seconds", 25L));
+        long now = System.currentTimeMillis();
+        this.activeBorderStartSize = current;
+        this.activeBorderTargetSize = desired;
+        this.activeBorderStartMs = now;
+        this.activeBorderEndMs = now + shrinkSec * 1000L;
+
+        for (UUID id : alive) {
+            Player fighter = Bukkit.getPlayer(id);
+            if (fighter != null) applyBorderToPlayer(fighter, arena, current, desired, shrinkSec);
+        }
+        broadcast("<red>⚠ Border shrinking to <gold><bold>" + (int) Math.round(desired) + "x" + (int) Math.round(desired)
+                + "</bold></gold> for <yellow>" + aliveCount + "</yellow> remaining fighters!</red>");
+    }
+
     private void applyCurrentBorderToPlayer(Player fighter) {
         Arena arena = arenaManager.get(selectedArena);
         if (arena == null || fighter == null) return;
+        double cur = currentBorderSize();
         long remainSec = Math.max(0L, (activeBorderEndMs - System.currentTimeMillis()) / 1000L);
-        applyBorderToPlayer(fighter, arena, remainSec > 0 ? activeBorderStartSize : activeBorderTargetSize, activeBorderTargetSize, remainSec);
+        applyBorderToPlayer(fighter, arena, cur, activeBorderTargetSize, remainSec);
     }
 
     private void applyBorderToPlayer(Player fighter, Arena arena, double startSize, double targetSize, long shrinkSeconds) {
         WorldBorder border = Bukkit.createWorldBorder();
         border.setCenter(arena.centerX(), arena.centerZ());
+        border.setDamageBuffer(0.0);
+        border.setDamageAmount(1.0);
         border.setSize(Math.max(10.0, startSize));
         if (shrinkSeconds > 0 && targetSize < startSize) {
             border.changeSize(Math.max(10.0, targetSize), shrinkSeconds * 20L);
@@ -1613,6 +1720,12 @@ public final class EventManager implements Listener {
 
     private Location resolveReturnLocation() {
         return isDedicatedServerMode() ? lobbyLocation() : null;
+    }
+
+    private boolean isDestructibleCurrentMatch() {
+        if (isDestructibleMode(eventMode)) return true;
+        return selectedArena != null && (selectedArena.equals("build-uhc") || selectedArena.equals("crystal")
+                || selectedArena.equals("uhc") || selectedArena.equals("smp"));
     }
 
     private static boolean isDestructibleMode(EventMode mode) {
@@ -1880,7 +1993,7 @@ public final class EventManager implements Listener {
             return;
         }
         if (eventRunning && alive.contains(player.getUniqueId())) {
-            if (!isDestructibleMode(eventMode)) {
+            if (!isDestructibleCurrentMatch()) {
                 event.setCancelled(true);
                 return;
             }
@@ -1903,7 +2016,7 @@ public final class EventManager implements Listener {
             return;
         }
         if (eventRunning && alive.contains(player.getUniqueId())) {
-            if (!isDestructibleMode(eventMode)) {
+            if (!isDestructibleCurrentMatch()) {
                 event.setCancelled(true);
                 return;
             }
@@ -1926,7 +2039,7 @@ public final class EventManager implements Listener {
             return;
         }
         if (eventRunning && alive.contains(player.getUniqueId())) {
-            if (!isDestructibleMode(eventMode)) {
+            if (!isDestructibleCurrentMatch()) {
                 event.setCancelled(true);
                 return;
             }
@@ -2328,7 +2441,7 @@ public final class EventManager implements Listener {
 
     @EventHandler
     public void onUhcNaturalRegen(EntityRegainHealthEvent event) {
-        if (eventRunning && eventMode == EventMode.UHC
+        if (eventRunning && (eventMode == EventMode.UHC || "uhc".equals(selectedKit))
                 && event.getEntity() instanceof Player player
                 && alive.contains(player.getUniqueId())
                 && event.getRegainReason() == EntityRegainHealthEvent.RegainReason.SATIATED) {
