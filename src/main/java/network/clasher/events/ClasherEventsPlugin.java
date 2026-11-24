@@ -112,6 +112,7 @@ public final class ClasherEventsPlugin extends JavaPlugin {
         Bukkit.getPluginManager().registerEvents(eventManager, this);
         Bukkit.getPluginManager().registerEvents(casualDuels, this);
         Bukkit.getPluginManager().registerEvents(warmupFfa, this);
+        Bukkit.getPluginManager().registerEvents(holograms, this);
         Bukkit.getPluginManager().registerEvents(lobbyNpcs, this);
         Bukkit.getPluginManager().registerEvents(eventGui, this);
 
@@ -140,6 +141,7 @@ public final class ClasherEventsPlugin extends JavaPlugin {
         reloadConfig();
         if (arenaManager != null) arenaManager.load();
         if (kitManager != null) kitManager.load();
+        if (holograms != null) holograms.markNeedsPurge();
         refreshHolograms();
     }
 

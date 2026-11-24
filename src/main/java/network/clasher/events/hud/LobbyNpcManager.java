@@ -25,6 +25,7 @@ import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.player.PlayerArmorStandManipulateEvent;
 import org.bukkit.event.player.PlayerInteractAtEntityEvent;
+import org.bukkit.event.world.EntitiesLoadEvent;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
@@ -35,19 +36,29 @@ import org.bukkit.util.EulerAngle;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /**
  * Native Paper 26.2 Clickable Lobby NPC Statues — ZERO external NPC plugins (Citizens/FancyNpcs) required!
- * Spawns 4 armored, glowing, indestructible hero statues right in front of the Imperial Sky Citadel spawn:
+ * Spawns 4 non-persistent, zero-tick-overhead (setCanTick=false) armored hero statues in front of Lobby spawn:
  *  1. JOIN EVENT        (-404.5, 102, -6.5) -> joins open event / opens active Mode Vote GUI
  *  2. 1v1 DUEL QUEUE    (-401.5, 102, -7.5) -> opens 1v1 Auto-Queue GUI (shows live queued & fighting counts!)
- *  3. WARMUP FFA PIT    (-397.5, 102, -7.5) -> drops straight into Always-Open Warmup FFA!
+ *  3. WARMUP FFA PITS   (-397.5, 102, -7.5) -> opens Sword vs Deep Crystal Terrain FFA Selector GUI!
  *  4. STATS & KIT EDITOR (-394.5, 102, -6.5) -> Click: Leaderboards GUI | Shift-Click: Kit Layout Editor!
+ *
+ * Anti-Lag / Anti-Duplication Guarantees (v2.7.1):
+ *  - Entities are NEVER persisted to chunk NBT (setPersistent(false)) so chunk unloads / restarts can NEVER stack duplicates.
+ *  - Chunks are ALWAYS loaded BEFORE purging legacy persistent entities on startup/respawn.
+ *  - The 5s label refresh NEVER force-loads unloaded chunks and skips redundant metadata updates via text caching.
+ *  - EntitiesLoadEvent immediately destroys any stale persistent NPCs left over from earlier versions.
  */
 public final class LobbyNpcManager implements Listener {
     private static final Color LABEL_BG = Color.fromARGB(175, 14, 18, 30);
+    private static final List<String> ALL_NPC_IDS = List.of("join_event", "duel_queue", "warmup_ffa", "leaderboards");
 
     private final JavaPlugin plugin;
     private final ArenaManager arenas;
@@ -58,7 +69,11 @@ public final class LobbyNpcManager implements Listener {
     private final NamespacedKey npcKey;
     private final NamespacedKey npcLabelKey;
     private final Map<UUID, Long> clickCooldown = new HashMap<>();
+    private final Map<String, UUID> activeStands = new HashMap<>();
+    private final Map<String, UUID> activeLabels = new HashMap<>();
+    private final Map<String, String> lastLabelText = new HashMap<>();
     private BukkitTask refreshTask;
+    private boolean pendingSpawnCheck;
 
     public LobbyNpcManager(
             JavaPlugin plugin,
@@ -84,7 +99,7 @@ public final class LobbyNpcManager implements Listener {
 
     public void start() {
         stop();
-        // Refresh live labels every 5 seconds so player counts & open-event status stay fresh!
+        // Refresh live labels every 5 seconds — ONLY while Lobby chunks are already loaded!
         refreshTask = Bukkit.getScheduler().runTaskTimer(plugin, this::refreshLiveLabelsOnly, 100L, 100L);
     }
 
@@ -96,12 +111,19 @@ public final class LobbyNpcManager implements Listener {
     }
 
     /**
-     * Deduplicates and spawns all 4 clickable hero NPCs + their floating 3D status labels in Main Lobby.
+     * Loads Lobby NPC chunks FIRST so any stacked legacy persistent entities are 100% purged,
+     * then spawns exactly 4 clean non-persistent hero NPCs + 4 status labels.
      */
     public void respawnAll() {
         World world = Bukkit.getWorld(arenas.sharedWorldName());
         if (world == null) return;
-        removeAllInWorld(world);
+
+        // CRITICAL: Load all Lobby NPC chunks BEFORE purging so saved persistent entities from older versions are removed!
+        loadNpcChunks(world);
+        int purged = purgeAllInWorld(world);
+        if (purged > 8) {
+            plugin.getLogger().info("Cleaned up " + purged + " legacy/duplicate Lobby NPC entities.");
+        }
         if (!isEnabled()) return;
 
         int lx = ArenaManager.LOBBY_ORIGIN_X;
@@ -138,22 +160,43 @@ public final class LobbyNpcManager implements Listener {
         if (!isEnabled()) return;
         World world = Bukkit.getWorld(arenas.sharedWorldName());
         if (world == null) return;
-        int found = 0;
-        for (TextDisplay td : world.getEntitiesByClass(TextDisplay.class)) {
-            String id = td.getPersistentDataContainer().get(npcLabelKey, PersistentDataType.STRING);
-            if (id == null) continue;
-            found++;
-            switch (id) {
-                case "join_event" -> td.text(FormatUtil.mm(buildJoinEventLabel()));
-                case "duel_queue" -> td.text(FormatUtil.mm(buildDuelQueueLabel()));
-                case "warmup_ffa" -> td.text(FormatUtil.mm(buildWarmupFfaLabel()));
-                case "leaderboards" -> td.text(FormatUtil.mm(buildLeaderboardsLabel()));
-                default -> {}
+
+        // NEVER force-load unloaded chunks when nobody is in Lobby!
+        if (!areAllNpcChunksLoaded(world)) {
+            return;
+        }
+
+        // Verify all 4 tracked stands + labels are alive; if chunks previously unloaded non-persistent NPCs, cleanly respawn!
+        if (!allTrackedEntitiesAlive(world)) {
+            respawnAll();
+            return;
+        }
+
+        // Remove any rogue duplicate entities in loaded chunks that aren't our 4 tracked UUIDs
+        pruneUntrackedDuplicatesInLoadedChunks(world);
+
+        // Update label text ONLY when content actually changed (zero wasted entity metadata packets!)
+        for (String id : ALL_NPC_IDS) {
+            UUID labelId = activeLabels.get(id);
+            if (labelId == null) continue;
+            Entity entity = Bukkit.getEntity(labelId);
+            if (!(entity instanceof TextDisplay td) || !td.isValid()) continue;
+            String nextText = buildLabelFor(id);
+            if (!nextText.equals(lastLabelText.get(id))) {
+                td.text(FormatUtil.mm(nextText));
+                lastLabelText.put(id, nextText);
             }
         }
-        if (found < 4 && !world.getBlockAt(ArenaManager.LOBBY_ORIGIN_X, ArenaManager.LOBBY_ORIGIN_Y + 1, ArenaManager.LOBBY_ORIGIN_Z).getType().isAir()) {
-            respawnAll();
-        }
+    }
+
+    private String buildLabelFor(String id) {
+        return switch (id) {
+            case "join_event" -> buildJoinEventLabel();
+            case "duel_queue" -> buildDuelQueueLabel();
+            case "warmup_ffa" -> buildWarmupFfaLabel();
+            case "leaderboards" -> buildLeaderboardsLabel();
+            default -> "";
+        };
     }
 
     private String buildJoinEventLabel() {
@@ -206,14 +249,17 @@ public final class LobbyNpcManager implements Listener {
             String labelMini
     ) {
         loc.getChunk().load();
-        world.spawn(loc, ArmorStand.class, stand -> {
+        ArmorStand spawnedStand = world.spawn(loc, ArmorStand.class, stand -> {
             stand.getPersistentDataContainer().set(npcKey, PersistentDataType.STRING, id);
             stand.setGravity(false);
+            stand.setCanTick(false);
+            stand.setCanMove(false);
+            stand.setCollidable(false);
             stand.setBasePlate(false);
             stand.setArms(true);
             stand.setInvulnerable(true);
             stand.setSilent(true);
-            stand.setPersistent(true);
+            stand.setPersistent(false);
             stand.setCanPickupItems(false);
             stand.setRightArmPose(new EulerAngle(Math.toRadians(-35), Math.toRadians(-10), 0));
             stand.setLeftArmPose(new EulerAngle(Math.toRadians(-20), Math.toRadians(15), 0));
@@ -224,9 +270,10 @@ public final class LobbyNpcManager implements Listener {
             stand.getEquipment().setItem(EquipmentSlot.HAND, glint(mainHand));
             stand.getEquipment().setItem(EquipmentSlot.OFF_HAND, new ItemStack(offHand));
         });
+        activeStands.put(id, spawnedStand.getUniqueId());
 
         Location labelLoc = loc.clone().add(0.0, 2.45, 0.0);
-        world.spawn(labelLoc, TextDisplay.class, td -> {
+        TextDisplay spawnedLabel = world.spawn(labelLoc, TextDisplay.class, td -> {
             td.getPersistentDataContainer().set(npcLabelKey, PersistentDataType.STRING, id);
             td.text(FormatUtil.mm(labelMini));
             td.setBillboard(Display.Billboard.CENTER);
@@ -235,8 +282,10 @@ public final class LobbyNpcManager implements Listener {
             td.setSeeThrough(false);
             td.setLineWidth(210);
             td.setAlignment(TextDisplay.TextAlignment.CENTER);
-            td.setPersistent(true);
+            td.setPersistent(false);
         });
+        activeLabels.put(id, spawnedLabel.getUniqueId());
+        lastLabelText.put(id, labelMini);
     }
 
     private static ItemStack glint(Material mat) {
@@ -251,19 +300,150 @@ public final class LobbyNpcManager implements Listener {
 
     public void removeAll() {
         World world = Bukkit.getWorld(arenas.sharedWorldName());
-        if (world != null) removeAllInWorld(world);
+        if (world != null) {
+            loadNpcChunks(world);
+            purgeAllInWorld(world);
+        }
     }
 
-    private void removeAllInWorld(World world) {
+    private int purgeAllInWorld(World world) {
+        int removed = 0;
+        // Explicitly read chunk.getEntities() so Paper synchronously loads each entity slice before purging!
+        for (int[] c : npcChunkCoords()) {
+            for (Entity e : world.getChunkAt(c[0], c[1]).getEntities()) {
+                if (e instanceof ArmorStand && e.getPersistentDataContainer().has(npcKey, PersistentDataType.STRING)) {
+                    e.remove();
+                    removed++;
+                } else if (e instanceof TextDisplay && e.getPersistentDataContainer().has(npcLabelKey, PersistentDataType.STRING)) {
+                    e.remove();
+                    removed++;
+                }
+            }
+        }
         for (Entity e : new ArrayList<>(world.getEntitiesByClass(ArmorStand.class))) {
-            if (e.getPersistentDataContainer().has(npcKey, PersistentDataType.STRING)) {
+            if (e.isValid() && e.getPersistentDataContainer().has(npcKey, PersistentDataType.STRING)) {
+                e.remove();
+                removed++;
+            }
+        }
+        for (Entity e : new ArrayList<>(world.getEntitiesByClass(TextDisplay.class))) {
+            if (e.isValid() && e.getPersistentDataContainer().has(npcLabelKey, PersistentDataType.STRING)) {
+                e.remove();
+                removed++;
+            }
+        }
+        activeStands.clear();
+        activeLabels.clear();
+        lastLabelText.clear();
+        return removed;
+    }
+
+    private void pruneUntrackedDuplicatesInLoadedChunks(World world) {
+        Set<UUID> validStands = new HashSet<>(activeStands.values());
+        Set<UUID> validLabels = new HashSet<>(activeLabels.values());
+        for (Entity e : new ArrayList<>(world.getEntitiesByClass(ArmorStand.class))) {
+            if (e.getPersistentDataContainer().has(npcKey, PersistentDataType.STRING) && !validStands.contains(e.getUniqueId())) {
                 e.remove();
             }
         }
         for (Entity e : new ArrayList<>(world.getEntitiesByClass(TextDisplay.class))) {
-            if (e.getPersistentDataContainer().has(npcLabelKey, PersistentDataType.STRING)) {
+            if (e.getPersistentDataContainer().has(npcLabelKey, PersistentDataType.STRING) && !validLabels.contains(e.getUniqueId())) {
                 e.remove();
             }
+        }
+    }
+
+    private boolean allTrackedEntitiesAlive(World world) {
+        if (activeStands.size() < ALL_NPC_IDS.size() || activeLabels.size() < ALL_NPC_IDS.size()) {
+            return false;
+        }
+        for (String id : ALL_NPC_IDS) {
+            UUID sid = activeStands.get(id);
+            UUID lid = activeLabels.get(id);
+            if (sid == null || lid == null) return false;
+            Entity stand = Bukkit.getEntity(sid);
+            Entity label = Bukkit.getEntity(lid);
+            if (stand == null || !stand.isValid() || !stand.getWorld().equals(world)) return false;
+            if (label == null || !label.isValid() || !label.getWorld().equals(world)) return false;
+        }
+        return true;
+    }
+
+    private int[][] npcChunkCoords() {
+        int lx = ArenaManager.LOBBY_ORIGIN_X;
+        int lz = ArenaManager.LOBBY_ORIGIN_Z;
+        int minCx = (lx - 8) >> 4;
+        int maxCx = (lx + 8) >> 4;
+        int minCz = (lz - 12) >> 4;
+        int maxCz = (lz + 2) >> 4;
+        List<int[]> coords = new ArrayList<>();
+        for (int cx = minCx; cx <= maxCx; cx++) {
+            for (int cz = minCz; cz <= maxCz; cz++) {
+                coords.add(new int[]{cx, cz});
+            }
+        }
+        return coords.toArray(new int[0][]);
+    }
+
+    private void loadNpcChunks(World world) {
+        for (int[] c : npcChunkCoords()) {
+            world.getChunkAt(c[0], c[1]).load();
+        }
+    }
+
+    private boolean areAllNpcChunksLoaded(World world) {
+        for (int[] c : npcChunkCoords()) {
+            if (!world.isChunkLoaded(c[0], c[1])) return false;
+        }
+        return true;
+    }
+
+    private boolean isNearLobbyNpcChunk(int chunkX, int chunkZ) {
+        int lx = ArenaManager.LOBBY_ORIGIN_X;
+        int lz = ArenaManager.LOBBY_ORIGIN_Z;
+        return chunkX >= ((lx - 8) >> 4) && chunkX <= ((lx + 8) >> 4)
+                && chunkZ >= ((lz - 12) >> 4) && chunkZ <= ((lz + 2) >> 4);
+    }
+
+    // -------------------------------------------------------------------------
+    // Chunk Entity Load Cleanup (wipes any legacy v2.6/v2.7.0 persistent clones)
+    // -------------------------------------------------------------------------
+
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onEntitiesLoad(EntitiesLoadEvent event) {
+        World world = event.getWorld();
+        if (!world.getName().equalsIgnoreCase(arenas.sharedWorldName())) return;
+
+        Set<UUID> validStands = new HashSet<>(activeStands.values());
+        Set<UUID> validLabels = new HashSet<>(activeLabels.values());
+        int purged = 0;
+        for (Entity entity : event.getEntities()) {
+            if (entity instanceof ArmorStand
+                    && entity.getPersistentDataContainer().has(npcKey, PersistentDataType.STRING)
+                    && !validStands.contains(entity.getUniqueId())) {
+                entity.remove();
+                purged++;
+            } else if (entity instanceof TextDisplay
+                    && entity.getPersistentDataContainer().has(npcLabelKey, PersistentDataType.STRING)
+                    && !validLabels.contains(entity.getUniqueId())) {
+                entity.remove();
+                purged++;
+            }
+        }
+        if (purged > 0) {
+            plugin.getLogger().info("Purged " + purged + " stale persistent Lobby NPC entities on chunk load.");
+        }
+
+        // When a player walks/teleports into Lobby after chunks unloaded, cleanly restore the 4 non-persistent NPCs once!
+        if (isEnabled() && isNearLobbyNpcChunk(event.getChunk().getX(), event.getChunk().getZ())
+                && !allTrackedEntitiesAlive(world) && !pendingSpawnCheck) {
+            pendingSpawnCheck = true;
+            Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                pendingSpawnCheck = false;
+                if (isEnabled() && areAllNpcChunksLoaded(world) && !allTrackedEntitiesAlive(world)) {
+                    respawnAll();
+                }
+            }, 2L);
         }
     }
 
