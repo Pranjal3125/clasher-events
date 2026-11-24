@@ -117,9 +117,25 @@ final class SpongeSchematicPasterTest {
                 }
             }
 
-            // Verify 100%-sealed 19x9x19 waiting skybox shell (floor y=42, walls y=43..48, roof y=49)
+            // Verify 100%-sealed floor across the entire playable radius (ZERO void holes inside any arena!)
             int cx = -parsed.offsetX();
             int cz = -parsed.offsetZ();
+            int checkR = (int) Math.floor(arena.playableRadius());
+            for (int dz = -checkR; dz <= checkR; dz++) {
+                for (int dx = -checkR; dx <= checkR; dx++) {
+                    if (dx * dx + dz * dz > checkR * checkR) continue;
+                    boolean hasFloor = false;
+                    for (int y = 0; y <= 6; y++) {
+                        if (!"minecraft:air".equals(parsed.blockAt(cx + dx, y - parsed.offsetY(), cz + dz))) {
+                            hasFloor = true;
+                            break;
+                        }
+                    }
+                    assertTrue(hasFloor, arenaId + " has a void hole inside playable arena at dx=" + dx + ", dz=" + dz);
+                }
+            }
+
+            // Verify 100%-sealed 19x9x19 waiting skybox shell (floor y=42, walls y=43..48, roof y=49)
             int yFloor = 42 - parsed.offsetY();
             int yRoof = 49 - parsed.offsetY();
             for (int dx = -9; dx <= 9; dx++) {

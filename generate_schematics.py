@@ -466,10 +466,11 @@ def build_nethpot() -> VoxelCanvas:
                     blk = "gilded_blackstone" if (w == 0 and abs(t) % 5 == 0) else ("red_nether_bricks" if w == 0 else "nether_bricks")
                     c.rel_put(dx, 1, dz, blk)
 
-    # Boiling lava moat + obsidian rim
-    c.disk(52, 0, "obsidian", 43)
+    # Boiling lava moat + 100%-sealed obsidian & blackstone perimeter rim right into the curtain wall!
+    c.disk(61, 0, "obsidian", 43)
     c.disk(49, 1, "lava", 44)
     c.disk(44, 1, "polished_blackstone_bricks", 43)
+    c.disk(55, 1, "polished_blackstone_bricks", 50.5)
     c.disk(51, 1, "magma_block", 49)
 
     # 4 Grand vaulted gothic bridges over the lava moat
@@ -561,8 +562,8 @@ def build_sword() -> VoxelCanvas:
     sand_pal = ["smooth_sandstone", "sandstone", "cut_sandstone", "stripped_birch_wood"]
     marble_pal = ["quartz_bricks", "smooth_quartz", "chiseled_quartz_block", "smooth_sandstone"]
 
-    # Warm Roman arena sand floor (flat, textured, high-visibility!)
-    c.disk(38, 0, "smooth_sandstone")
+    # Warm Roman arena sand floor + continuous sealed subfloor under bleachers & Colosseum facade!
+    c.disk(52, 0, "smooth_sandstone")
     c.disk(36, 1, sand_pal, seed=21)
     c.disk(12, 1, ["cut_sandstone", "smooth_sandstone"])
     c.disk(7, 1, "quartz_bricks")
@@ -583,8 +584,8 @@ def build_sword() -> VoxelCanvas:
         for y in range(1, 2 + tier):
             c.disk(r_out, y, "smooth_sandstone", r_in - 0.1)
 
-    # 3 Stacked Tiers of REAL Roman Recessed Arched Colosseum Facade (r=44..52, y=10..36)!
-    for y in range(10, 36):
+    # 3 Stacked Tiers of REAL Roman Recessed Arched Colosseum Facade (r=44..52, y=1..36)!
+    for y in range(1, 36):
         c.disk(52, y, marble_pal, 44.5, seed=25)
     # Carve 24 dramatic Roman arch windows on all 3 tiers (y=12..17, 20..25, 28..33)
     for deg in range(0, 360, 15):
@@ -1019,7 +1020,8 @@ def build_diamond_pot() -> VoxelCanvas:
     # 100% NON-SLIPPERY frosted marble/prismarine/diorite floor (zero ice on walkable deck!)
     floor_pal = ["quartz_bricks", "polished_diorite", "smooth_quartz", "prismarine_bricks"]
 
-    c.disk(39, 0, "prismarine_bricks")
+    c.disk(48, 0, "prismarine_bricks")
+    c.disk(41, 1, "prismarine_bricks", 36.5)
     c.disk(37, 1, floor_pal, seed=81)
     c.disk(20, 1, ["quartz_bricks", "smooth_quartz", "calcite"], seed=82)
     c.disk(9, 1, "prismarine_bricks")
