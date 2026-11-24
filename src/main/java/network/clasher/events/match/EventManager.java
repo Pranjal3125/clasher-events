@@ -817,22 +817,29 @@ public final class EventManager implements Listener {
         stopEvent("Replaced by a new event");
         eventMode = parsed.get();
 
-        // Resolve kit ID first
+        // Resolve arena & kit IDs (supports crystal-ffa deep terrain using the authentic crystal kit!)
+        String resolvedBaseArena;
         if (eventMode == EventMode.RANDOM_KIT) {
             List<String> keys = arenaManager.mainArenaIds();
             if (keys.isEmpty()) {
                 broadcast("<red>No arenas are configured for Random Kit mode.</red>");
                 return;
             }
-            selectedKit = keys.get(random.nextInt(keys.size()));
+            resolvedBaseArena = keys.get(random.nextInt(keys.size()));
+            selectedKit = "crystal-ffa".equals(resolvedBaseArena) ? "crystal" : resolvedBaseArena;
         } else if (kitOverride != null && !kitOverride.isBlank()) {
-            String resolved = EventMode.fromInput(kitOverride)
-                    .map(EventMode::defaultArenaId)
-                    .orElse(kitOverride.trim().toLowerCase(Locale.ROOT));
-            if (resolved != null && resolved.startsWith("duel-")) resolved = resolved.substring("duel-".length());
-            selectedKit = (resolved != null && kitManager.exists(resolved)) ? resolved : eventMode.defaultArenaId();
+            String lower = kitOverride.trim().toLowerCase(Locale.ROOT);
+            Optional<EventMode> kitMode = EventMode.fromInput(lower);
+            String arenaCand = kitMode.map(EventMode::defaultArenaId).orElse(lower);
+            String kitCand = kitMode.map(EventMode::defaultKitId).orElse(lower);
+            if (arenaCand != null && arenaCand.startsWith("duel-")) arenaCand = arenaCand.substring("duel-".length());
+            if (kitCand != null && kitCand.startsWith("duel-")) kitCand = kitCand.substring("duel-".length());
+            if ("crystal-ffa".equals(arenaCand)) kitCand = "crystal";
+            resolvedBaseArena = (arenaCand != null && arenaManager.exists(arenaCand)) ? arenaCand : eventMode.defaultArenaId();
+            selectedKit = (kitCand != null && kitManager.exists(kitCand)) ? kitCand : eventMode.defaultKitId();
         } else {
-            selectedKit = eventMode.defaultArenaId();
+            resolvedBaseArena = eventMode.defaultArenaId();
+            selectedKit = eventMode.defaultKitId();
         }
 
         // Configure tournament squad format & resolve dedicated 1v1 duel vs grand main arena!
@@ -842,11 +849,12 @@ public final class EventManager implements Listener {
             boolean bo3 = plugin.getConfig().getBoolean("tournament.bo3-finals", true);
             squads.reset(chosenSize, bo3);
             squads.setParallelRounds(plugin.getConfig().getBoolean("tournament.parallel-rounds", false));
-            selectedArena = (squads.teamSize() == 1) ? arenaManager.duelArenaId(selectedKit) : selectedKit;
+            selectedArena = (squads.teamSize() == 1 && !"crystal-ffa".equals(resolvedBaseArena))
+                    ? arenaManager.duelArenaId(selectedKit) : resolvedBaseArena;
         } else if (eventMode == EventMode.DUEL) {
-            selectedArena = arenaManager.duelArenaId(selectedKit);
+            selectedArena = "crystal-ffa".equals(resolvedBaseArena) ? "crystal-ffa" : arenaManager.duelArenaId(selectedKit);
         } else {
-            selectedArena = selectedKit;
+            selectedArena = resolvedBaseArena;
         }
 
         if (!arenaManager.exists(selectedArena) || !kitManager.exists(selectedKit)) {
@@ -2998,11 +3006,12 @@ public final class EventManager implements Listener {
             return true;
         }
         return selectedArena != null && (selectedArena.equals("build-uhc") || selectedArena.equals("crystal")
-                || selectedArena.equals("uhc") || selectedArena.equals("smp"));
+                || selectedArena.equals("crystal-ffa") || selectedArena.equals("uhc") || selectedArena.equals("smp"));
     }
 
     private static boolean isDestructibleMode(EventMode mode) {
-        return mode == EventMode.BUILD_UHC || mode == EventMode.CRYSTAL || mode == EventMode.UHC || mode == EventMode.SMP;
+        return mode == EventMode.BUILD_UHC || mode == EventMode.CRYSTAL || mode == EventMode.CRYSTAL_FFA
+                || mode == EventMode.UHC || mode == EventMode.SMP;
     }
 
     private void snapshotIfNeeded(Player player) {
@@ -4009,7 +4018,8 @@ public final class EventManager implements Listener {
                 // Anti-cleanup Kill Heal (+4 hearts + 4s Absorption I) in melee/UHC modes
                 if (plugin.getConfig().getBoolean("effects.kill-heal", true)
                         && alive.contains(killer.getUniqueId())
-                        && eventMode != EventMode.NETHPOT && eventMode != EventMode.DIAMOND_POT && eventMode != EventMode.CRYSTAL) {
+                        && eventMode != EventMode.NETHPOT && eventMode != EventMode.DIAMOND_POT
+                        && eventMode != EventMode.CRYSTAL && eventMode != EventMode.CRYSTAL_FFA) {
                     AttributeInstance maxAttr = killer.getAttribute(Attribute.MAX_HEALTH);
                     double maxHp = maxAttr != null ? maxAttr.getValue() : 20.0;
                     killer.setHealth(Math.min(maxHp, killer.getHealth() + 8.0));

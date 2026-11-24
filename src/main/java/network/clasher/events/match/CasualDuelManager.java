@@ -1082,8 +1082,8 @@ public final class CasualDuelManager implements Listener {
     private static String resolveKitId(String raw) {
         if (raw == null || raw.isBlank()) return null;
         Optional<EventMode> mode = EventMode.fromInput(raw);
-        if (mode.isPresent() && mode.get().defaultArenaId() != null) {
-            return mode.get().defaultArenaId();
+        if (mode.isPresent() && mode.get().defaultKitId() != null) {
+            return mode.get().defaultKitId();
         }
         return raw.trim().toLowerCase(Locale.ROOT);
     }

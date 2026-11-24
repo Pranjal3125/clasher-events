@@ -16,6 +16,7 @@ public final class EventMenuHolder implements InventoryHolder {
         KIT_EDITOR_SELECTOR,
         KIT_PICKER,
         DUEL_QUEUE,
+        FFA_SELECTOR,
         POST_DUEL_INV,
         EVENT_MODIFIERS,
         TOURNAMENT_SIZE_PICKER,

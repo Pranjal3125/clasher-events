@@ -180,10 +180,11 @@ public final class LobbyNpcManager implements Listener {
     }
 
     private String buildWarmupFfaLabel() {
-        int count = warmupFfa != null ? warmupFfa.playerCount() : 0;
-        return "<red><bold>🔥 WARMUP FFA PIT</bold></red>\n"
-                + "<yellow>" + count + " Fighting Now</yellow>\n"
-                + "<green>▶ Click for Instant PvP!</green>";
+        int total = warmupFfa != null ? warmupFfa.playerCount() : 0;
+        return "<red><bold>🔥 WARMUP FFA PITS</bold></red>\n"
+                + "<gray>Sword & Deep Crystal Terrain</gray>\n"
+                + "<yellow>" + total + " Fighting Now</yellow>\n"
+                + "<green>▶ Click to Choose Pit!</green>";
     }
 
     private String buildLeaderboardsLabel() {
@@ -323,9 +324,7 @@ public final class LobbyNpcManager implements Listener {
                 else player.sendMessage(FormatUtil.mm("<yellow>No Server Event is open right now — try <aqua>1v1 Duel Queue</aqua> or <red>Warmup FFA</red>!</yellow>"));
             }
             case "duel_queue" -> gui.openDuelQueueGui(player);
-            case "warmup_ffa" -> {
-                if (warmupFfa != null) warmupFfa.joinFfa(player);
-            }
+            case "warmup_ffa" -> gui.openFfaSelectorGui(player);
             case "leaderboards" -> {
                 if (player.isSneaking()) gui.openKitEditorSelectorGui(player);
                 else gui.openLeaderboardGui(player, "elo");

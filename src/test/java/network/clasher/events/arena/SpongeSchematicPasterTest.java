@@ -55,7 +55,7 @@ final class SpongeSchematicPasterTest {
         YamlConfiguration yml = YamlConfiguration.loadConfiguration(arenasFile);
         ConfigurationSection arenas = yml.getConfigurationSection("arenas");
         assertNotNull(arenas);
-        assertEquals(16, arenas.getKeys(false).size(), "All 16 arenas (8 grand + 8 dedicated 1v1 duel) must be configured");
+        assertEquals(17, arenas.getKeys(false).size(), "All 17 arenas (9 grand incl. crystal-ffa + 8 dedicated 1v1 duel) must be configured");
 
         for (String arenaId : arenas.getKeys(false)) {
             boolean isDuelArena = arenaId.startsWith("duel-");
@@ -84,10 +84,18 @@ final class SpongeSchematicPasterTest {
             int pasteZ = sec.getInt("paste.z");
             Arena arena = new Arena(arenaId, sec.getString("display-name", arenaId), schemName, pasteX, pasteY, pasteZ, sec);
 
-            // Gameplay guarantees for Crystal & Diamond Pot (both grand and dedicated duel arenas!)
-            if (arenaId.equals("crystal") || arenaId.equals("duel-crystal")) {
+            // Gameplay guarantees for Crystal, Deep Crystal Terrain, & Diamond Pot
+            if (arenaId.equals("crystal") || arenaId.equals("duel-crystal") || arenaId.equals("crystal-ffa")) {
                 assertEquals("minecraft:bedrock", parsed.blockAt(-parsed.offsetX(), -parsed.offsetY(), -parsed.offsetZ()),
                         arenaId + " must have blast-proof bedrock subfloor");
+            }
+            if (arenaId.equals("crystal-ffa")) {
+                // Verify 15 full blocks of solid diggable/blastable earth right above bedrock at center!
+                for (int relY = 1; relY <= 15; relY++) {
+                    String blk = parsed.blockAt(-parsed.offsetX(), relY - parsed.offsetY(), -parsed.offsetZ());
+                    assertNotEquals("minecraft:air", blk, "crystal-ffa must have solid deep terrain at relY=" + relY);
+                    assertNotEquals("minecraft:bedrock", blk, "crystal-ffa diggable layer relY=" + relY + " must not be bedrock");
+                }
             }
             if (arenaId.equals("diamond-pot") || arenaId.equals("duel-diamond-pot")) {
                 String centerFloor = parsed.blockAt(-parsed.offsetX() + 6, 1 - parsed.offsetY(), -parsed.offsetZ());
@@ -95,17 +103,18 @@ final class SpongeSchematicPasterTest {
             }
 
             // Anti-escape & build bounds guarantees
+            int expectedSkyboxFloorRelY = arenaId.equals("crystal-ffa") ? 52 : 42;
             if (isDuelArena) {
                 assertTrue(arena.playableRadius() >= 18.0 && arena.playableRadius() <= 26.0, arenaId + " duel playableRadius sanity");
                 assertTrue(arena.combatMaxY() >= pasteY + 20, arenaId + " duel combat ceiling sanity");
             } else {
                 assertTrue(arena.playableRadius() >= 36.0 && arena.playableRadius() <= 54.0, arenaId + " playableRadius sanity");
-                assertTrue(arena.combatMaxY() < pasteY + 42, arenaId + " combat ceiling must stay strictly below waiting skybox floor");
-                assertFalse(arena.isInsideCombatBounds(arena.centerX(), pasteY + 43.0, arena.centerZ()),
+                assertTrue(arena.combatMaxY() < pasteY + expectedSkyboxFloorRelY, arenaId + " combat ceiling must stay strictly below waiting skybox floor");
+                assertFalse(arena.isInsideCombatBounds(arena.centerX(), pasteY + expectedSkyboxFloorRelY + 1.0, arena.centerZ()),
                         arenaId + " waiting skybox height must be outside combat bounds (blocks pearl/tower into skybox)");
-                assertFalse(arena.isInsideBuildBounds(pasteX, pasteY + 42, pasteZ),
+                assertFalse(arena.isInsideBuildBounds(pasteX, pasteY + expectedSkyboxFloorRelY, pasteZ),
                         arenaId + " waiting skybox must be outside fighter build bounds");
-                assertTrue(arena.isInsideSpectatorBounds(arena.centerX(), pasteY + 43.0, arena.centerZ()),
+                assertTrue(arena.isInsideSpectatorBounds(arena.centerX(), pasteY + expectedSkyboxFloorRelY + 1.0, arena.centerZ()),
                         arenaId + " spectator bounds should allow viewing around arena & skybox");
             }
             assertFalse(arena.isInsideBuildBounds(pasteX, pasteY, pasteZ), arenaId + " subfloor must NOT be breakable");
@@ -153,8 +162,8 @@ final class SpongeSchematicPasterTest {
 
             // Verify 100%-sealed 19x9x19 waiting skybox shell on grand arenas
             if (!isDuelArena) {
-                int yFloor = 42 - parsed.offsetY();
-                int yRoof = 49 - parsed.offsetY();
+                int yFloor = expectedSkyboxFloorRelY - parsed.offsetY();
+                int yRoof = (expectedSkyboxFloorRelY + 7) - parsed.offsetY();
                 for (int dx = -9; dx <= 9; dx++) {
                     for (int dz = -9; dz <= 9; dz++) {
                         assertNotEquals("minecraft:air", parsed.blockAt(cx + dx, yFloor, cz + dz),

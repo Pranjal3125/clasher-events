@@ -6,6 +6,7 @@ import network.clasher.events.kit.KitManager;
 import network.clasher.events.match.DuelSnapshotStore;
 import network.clasher.events.match.EventManager;
 import network.clasher.events.match.TournamentSquadManager;
+import network.clasher.events.match.WarmupFfaManager;
 import network.clasher.events.model.EventMode;
 import network.clasher.events.model.EventModifier;
 import network.clasher.events.storage.DataStore;
@@ -70,129 +71,194 @@ public final class EventGui implements Listener {
     }
 
     // -------------------------------------------------------------------------
-    // Admin Mode & Control GUI (45 slots)
+    // Executive 54-Slot Admin Control Panel (Symmetrical Zone Layout!)
     // -------------------------------------------------------------------------
 
     public void openAdminGui(Player admin) {
         EventMenuHolder holder = new EventMenuHolder(EventMenuHolder.ViewType.ADMIN_MODES);
-        Inventory inv = Bukkit.createInventory(holder, 45, FormatUtil.mm("<dark_gray><bold>Clasher Events</bold></dark_gray> <gray>|</gray> <gold>Control Panel</gold>"));
+        Inventory inv = Bukkit.createInventory(holder, 54,
+                FormatUtil.mm("<dark_gray><bold>Clasher Events</bold></dark_gray> <gray>|</gray> <gold><bold>Admin Panel</bold></gold>"));
         holder.setInventory(inv);
-        fillBorder(inv, 45);
+        fillDarkBorder(inv, 54);
 
-        int[] modeSlots = {10, 11, 12, 13, 14, 15, 16, 19, 20, 21, 22, 23};
-        EventMode[] modes = EventMode.values();
-        for (int i = 0; i < modes.length && i < modeSlots.length; i++) {
-            EventMode mode = modes[i];
-            boolean picksKit = mode.supportsKitSelection();
-            String clickAction = mode == EventMode.TOURNAMENT ? "pick-tourney-size"
-                    : (picksKit ? "pick-admin-kit" : "create");
-            String clickHint = mode == EventMode.TOURNAMENT ? "<green>Click to pick 1v1/2v2/3v3/4v4 & Kit</green>"
-                    : (picksKit ? "<green>Click to choose Kit & Arena</green>" : "<green>Click to open registration</green>");
-            inv.setItem(modeSlots[i], button(
-                    mode.icon(),
-                    "<yellow><bold>" + mode.displayName() + "</bold></yellow>",
-                    List.of(
-                            "<gray>Mode ID:</gray> <white>" + mode.id() + "</white>",
-                            "<gray>Arena/Kit:</gray> <white>" + (picksKit ? "<aqua>Choose Any Kit!</aqua>" : (mode.defaultArenaId() == null ? "Random" : mode.defaultArenaId())) + "</white>",
-                            "",
-                            clickHint
-                    ),
-                    clickAction,
-                    mode.id()
-            ));
+        // Row 0 — Center Live Status Header (Slot 4)
+        ItemStack statusBtn = button(
+                Material.BOOK,
+                "<gold><bold>★ LIVE EVENT STATUS ★</bold></gold>",
+                List.of(
+                        "<gray>Mode:</gray> <yellow>" + FormatUtil.escape(events.eventMode().displayName()) + "</yellow>",
+                        "<gray>Arena:</gray> <white>" + FormatUtil.escape(events.selectedArena()) + "</white>",
+                        "<gray>Phase:</gray> <aqua>" + events.phase().toUpperCase(Locale.ROOT) + "</aqua>",
+                        "<gray>Players:</gray> <green>" + events.participants().size() + " joined</green> <dark_gray>|</dark_gray> <green>" + events.alive().size() + " alive</green>",
+                        "<gray>Modifiers:</gray> <light_purple>" + FormatUtil.escape(events.modifiersSummary()) + "</light_purple>"
+                ),
+                "status",
+                ""
+        );
+        if (events.isEventOpen() || events.isEventRunning()) setGlint(statusBtn);
+        inv.setItem(4, statusBtn);
+
+        // Row 1 — Core Solo FFA PvP Modes (Slots 10..16, perfectly centered!)
+        EventMode[] row1Modes = {
+                EventMode.NETHPOT, EventMode.CRYSTAL, EventMode.CRYSTAL_FFA,
+                EventMode.SWORD, EventMode.AXE_SHIELD, EventMode.BUILD_UHC, EventMode.DIAMOND_POT
+        };
+        for (int i = 0; i < row1Modes.length; i++) {
+            inv.setItem(10 + i, buildAdminModeButton(row1Modes[i]));
         }
 
-        inv.setItem(28, button(
-                Material.GOLDEN_HELMET,
-                "<gold><bold>Tournament Control</bold></gold>",
-                List.of(
-                        "<gray>Inspect squads, Auto-Shuffle, Lock,</gray>",
-                        "<gray>Toggle Bo3 Finals & Start Kit Vote!</gray>"
-                ),
-                "open-admin-tourney",
-                ""
-        ));
+        // Row 2 — More FFA Modes (19..21) | Gold Divider (22) | Multi-Kit Formats (23..25)
+        inv.setItem(19, buildAdminModeButton(EventMode.UHC));
+        inv.setItem(20, buildAdminModeButton(EventMode.SMP));
+        inv.setItem(21, buildAdminModeButton(EventMode.RANDOM_KIT));
+        inv.setItem(22, pane(Material.ORANGE_STAINED_GLASS_PANE));
+        inv.setItem(23, buildAdminModeButton(EventMode.DUEL));
+        inv.setItem(24, buildAdminModeButton(EventMode.TEAM_WARS));
+        ItemStack tourneyBtn = buildAdminModeButton(EventMode.TOURNAMENT);
+        setGlint(tourneyBtn);
+        inv.setItem(25, tourneyBtn);
+
+        // Row 3 — Symmetrical Live Match Controls (Slots 29..33)
         inv.setItem(29, button(
                 Material.BELL,
-                "<aqua><bold>Open Mode Vote</bold></aqua>",
+                "<aqua><bold>🗳 Open Mode Vote</bold></aqua>",
                 List.of("<gray>Let players vote on the next PvP mode</gray>", "<gray>using the interactive Voting GUI!</gray>"),
                 "start-mode-vote",
                 ""
         ));
         inv.setItem(30, button(
                 Material.CLOCK,
-                "<yellow><bold>Registration Countdown</bold></yellow>",
+                "<yellow><bold>⏱ Registration Countdown</bold></yellow>",
                 List.of("<gray>Configure 2 / 5 / 10 minute countdown.</gray>"),
                 "countdown",
                 ""
         ));
         inv.setItem(31, button(
-                events.isPaused() ? Material.LIME_CONCRETE : Material.YELLOW_CONCRETE,
-                events.isPaused() ? "<green><bold>Resume Event</bold></green>" : "<yellow><bold>Pause Event</bold></yellow>",
-                List.of("<gray>Toggle registration countdown pause.</gray>"),
-                "toggle-pause",
-                ""
-        ));
-        inv.setItem(32, button(
-                Material.BARRIER,
-                "<red><bold>Stop Event</bold></red>",
-                List.of("<gray>End active event, rollback arena, & restore players.</gray>"),
-                "stop",
-                ""
-        ));
-        inv.setItem(33, button(
-                Material.GRASS_BLOCK,
-                "<green><bold>Full Server Setup</bold></green>",
-                List.of(
-                        "<gray>Left-Click: Paste Imperial Lobby, Tournament Hall,</gray>",
-                        "<gray>Podium, 8 Grand Arenas & 8 Dedicated 1v1 Duel Arenas</gray>",
-                        "<yellow>Shift-Click: Refresh bundled v2.5 builds & paste all</yellow>"
-                ),
-                "full-setup",
-                ""
-        ));
-        inv.setItem(34, button(
                 Material.FEATHER,
-                "<aqua><bold>Skip Timer</bold></aqua>",
+                "<aqua><bold>⏩ Skip Timer</bold></aqua>",
                 List.of("<gray>Skip registration countdown to 5s</gray>", "<gray>(or finish active mode vote now).</gray>"),
                 "skip-timer",
                 ""
         ));
-        inv.setItem(39, button(
+        inv.setItem(32, button(
+                events.isPaused() ? Material.LIME_CONCRETE : Material.YELLOW_CONCRETE,
+                events.isPaused() ? "<green><bold>▶ Resume Event</bold></green>" : "<yellow><bold>⏸ Pause Event</bold></yellow>",
+                List.of("<gray>Toggle registration countdown & combat pause.</gray>"),
+                "toggle-pause",
+                ""
+        ));
+        inv.setItem(33, button(
+                Material.BARRIER,
+                "<red><bold>🛑 Stop Event</bold></red>",
+                List.of("<gray>End active event, rollback arena,</gray>", "<gray>and restore all players to Lobby.</gray>"),
+                "stop",
+                ""
+        ));
+
+        // Row 4 — Symmetrical Pro Admin Tools (Slots 38..42)
+        inv.setItem(38, button(
+                Material.GOLDEN_HELMET,
+                "<gold><bold>🏆 Tournament Control</bold></gold>",
+                List.of(
+                        "<gray>Inspect squads, Auto-Shuffle, Lock,</gray>",
+                        "<gray>Toggle Bo3 Finals, Parallel & Kit Vote!</gray>"
+                ),
+                "open-admin-tourney",
+                ""
+        ));
+        ItemStack modBtn = button(
                 Material.BREWING_STAND,
-                "<light_purple><bold>Event Modifiers</bold></light_purple>",
+                "<light_purple><bold>⚡ Event Modifiers</bold></light_purple>",
                 List.of(
                         "<gray>Active:</gray> <yellow>" + FormatUtil.escape(events.modifiersSummary()) + "</yellow>",
-                        "<gray>Toggle Double HP, Vampire, Low Gravity,</gray>",
+                        "<gray>Double HP, Vampire, Low Gravity,</gray>",
                         "<gray>Speed Chaos, No Pearls & One-Hit Bow!</gray>"
                 ),
                 "open-modifiers",
                 ""
-        ));
-        inv.setItem(40, button(
-                Material.BOOK,
-                "<aqua><bold>Event Status</bold></aqua>",
-                List.of(
-                        "<gray>Mode:</gray> <white>" + events.eventMode().displayName() + "</white>",
-                        "<gray>Phase:</gray> <yellow>" + events.phase() + "</yellow>",
-                        "<gray>Registered:</gray> <green>" + events.participants().size() + "</green>",
-                        "<gray>Alive:</gray> <green>" + events.alive().size() + "</green>"
-                ),
-                "status",
-                ""
-        ));
+        );
+        if (!events.activeModifiers().isEmpty()) setGlint(modBtn);
+        inv.setItem(39, modBtn);
+
         boolean camOn = events.isAutoCamEnabled(admin.getUniqueId());
-        inv.setItem(41, button(
+        ItemStack camBtn = button(
                 Material.ENDER_EYE,
                 camOn ? "<green><bold>🎥 Host Auto-Cam: ON</bold></green>" : "<yellow><bold>🎥 Host Auto-Cam: OFF</bold></yellow>",
                 List.of(
-                        "<gray>Automatically teleports your spectator camera</gray>",
-                        "<gray>to live PvP fights every 4 seconds!</gray>"
+                        "<gray>Automatically tracks live PvP fights</gray>",
+                        "<gray>with an elevated camera every 4 seconds!</gray>"
                 ),
                 "toggle-autocam",
                 ""
+        );
+        if (camOn) setGlint(camBtn);
+        inv.setItem(40, camBtn);
+
+        String nextReset = events.warmupFfa() != null
+                ? FormatUtil.formatDuration(events.warmupFfa().crystalResetRemainingSec()) : "05:00";
+        inv.setItem(41, button(
+                Material.RESPAWN_ANCHOR,
+                "<aqua><bold>♻ Reset Crystal FFA Pit</bold></aqua>",
+                List.of(
+                        "<gray>Instantly regenerate the 15-block Deep</gray>",
+                        "<gray>Crystal Terrain pit back to fresh grass!</gray>",
+                        "<gray>Next Auto-Reset:</gray> <yellow>" + nextReset + "</yellow>"
+                ),
+                "reset-crystal-ffa",
+                ""
         ));
+        inv.setItem(42, button(
+                Material.GRASS_BLOCK,
+                "<green><bold>🌍 Full Server Setup</bold></green>",
+                List.of(
+                        "<gray>Left-Click: Paste Imperial Lobby, NPCs,</gray>",
+                        "<gray>Tournament Hall, Podium & all 17 arenas</gray>",
+                        "<yellow>Shift-Click: Refresh bundled v2.7 builds & paste all</yellow>"
+                ),
+                "full-setup",
+                ""
+        ));
+
+        // Row 5 — Clean Close Button (Slot 49)
+        inv.setItem(49, button(Material.DARK_OAK_DOOR, "<red><bold>✖ Close Panel</bold></red>", List.of(), "close", ""));
         admin.openInventory(inv);
+    }
+
+    private ItemStack buildAdminModeButton(EventMode mode) {
+        boolean picksKit = mode.supportsKitSelection();
+        String clickAction = mode == EventMode.TOURNAMENT ? "pick-tourney-size"
+                : (picksKit ? "pick-admin-kit" : "create");
+        String clickHint = mode == EventMode.TOURNAMENT ? "<green>▶ Click: Pick 1v1/2v2/3v3/4v4 & Kit</green>"
+                : (picksKit ? "<green>▶ Click: Choose Any Kit & Arena</green>" : "<green>▶ Click: Open Registration</green>");
+        String extraInfo = mode == EventMode.CRYSTAL_FFA
+                ? "<light_purple>15-block deep diggable ground → Bedrock!</light_purple>"
+                : (mode == EventMode.CRYSTAL ? "<gray>Classic flat bedrock Crystal PvP</gray>" : "<gray>Mode ID:</gray> <white>" + mode.id() + "</white>");
+        return button(
+                mode.icon(),
+                "<yellow><bold>" + mode.displayName() + "</bold></yellow>",
+                List.of(
+                        extraInfo,
+                        "<gray>Kit:</gray> <aqua>" + (picksKit ? "Any Kit" : (mode.defaultKitId() == null ? "Random" : mode.defaultKitId())) + "</aqua>",
+                        "",
+                        clickHint
+                ),
+                clickAction,
+                mode.id()
+        );
+    }
+
+    private void fillDarkBorder(Inventory inv, int size) {
+        ItemStack dark = pane(Material.BLACK_STAINED_GLASS_PANE);
+        ItemStack gold = pane(Material.ORANGE_STAINED_GLASS_PANE);
+        int rows = size / 9;
+        for (int slot = 0; slot < size; slot++) {
+            int row = slot / 9;
+            int col = slot % 9;
+            boolean border = row == 0 || row == rows - 1 || col == 0 || col == 8;
+            if (!border) continue;
+            boolean corner = (row == 0 || row == rows - 1) && (col == 0 || col == 8);
+            inv.setItem(slot, corner ? gold : dark);
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -247,8 +313,9 @@ public final class EventGui implements Listener {
         holder.setInventory(inv);
         fillBorder(inv, 36);
 
-        int[] slots = {10, 11, 12, 13, 14, 15, 16, 22};
-        List<EventMode> kitModes = EventMode.kitModes();
+        int[] slots = {10, 11, 12, 13, 14, 15, 16, 21, 23};
+        List<EventMode> kitModes = new ArrayList<>(EventMode.kitModes());
+        kitModes.add(EventMode.CRYSTAL_FFA);
         for (int i = 0; i < kitModes.size() && i < slots.length; i++) {
             EventMode km = kitModes.get(i);
             inv.setItem(slots[i], button(
@@ -256,8 +323,8 @@ public final class EventGui implements Listener {
                     "<yellow><bold>" + km.displayName() + "</bold></yellow>",
                     List.of(
                             "<gray>Format:</gray> <gold>" + fmt + " Tournament</gold>",
-                            "<gray>Kit:</gray> <white>" + km.id() + "</white>",
-                            "<gray>Arena:</gray> <aqua>" + (clamped == 1 ? "Dedicated 1v1 Duel Arena" : "Grand Main Arena") + "</aqua>",
+                            "<gray>Kit:</gray> <white>" + km.defaultKitId() + "</white>",
+                            "<gray>Arena:</gray> <aqua>" + (km == EventMode.CRYSTAL_FFA ? "Deep Bedrock Crystal Pit" : (clamped == 1 ? "Dedicated 1v1 Duel Arena" : "Grand Main Arena")) + "</aqua>",
                             "",
                             "<green>Click to open registration!</green>"
                     ),
@@ -280,8 +347,9 @@ public final class EventGui implements Listener {
         holder.setInventory(inv);
         fillBorder(inv, 36);
 
-        int[] slots = {10, 11, 12, 13, 14, 15, 16, 22};
-        List<EventMode> kitModes = EventMode.kitModes();
+        int[] slots = {10, 11, 12, 13, 14, 15, 16, 21, 23};
+        List<EventMode> kitModes = new ArrayList<>(EventMode.kitModes());
+        kitModes.add(EventMode.CRYSTAL_FFA);
         for (int i = 0; i < kitModes.size() && i < slots.length; i++) {
             EventMode km = kitModes.get(i);
             inv.setItem(slots[i], button(
@@ -368,11 +436,49 @@ public final class EventGui implements Listener {
             inv.setItem(29, button(Material.RED_WOOL, "<red><bold>Leave 1v1 Queue</bold></red>",
                     List.of("<gray>Currently queued for <gold>" + FormatUtil.escape(myQueue) + "</gold></gray>"), "queue-leave", ""));
         }
-        inv.setItem(31, button(Material.BLAZE_POWDER, "<red><bold>🔥 Warmup FFA Pit</bold></red>",
-                List.of("<gray>Drop straight into nonstop PvP practice!</gray>",
-                        "<yellow>" + (events.warmupFfa() != null ? events.warmupFfa().playerCount() : 0) + " fighting now</yellow>"), "join-ffa", ""));
+        inv.setItem(31, button(Material.BLAZE_POWDER, "<red><bold>🔥 Warmup FFA Pits</bold></red>",
+                List.of("<gray>Choose Sword FFA or Deep Crystal Terrain FFA!</gray>",
+                        "<yellow>" + (events.warmupFfa() != null ? events.warmupFfa().playerCount() : 0) + " fighting now</yellow>"), "open-ffa-picker", ""));
         inv.setItem(33, button(Material.IRON_SWORD, "<green><bold>Edit Kit Layout</bold></green>",
                 List.of("<gray>Customize your hotbar & offhand for any kit!</gray>"), "open-kiteditor-picker", ""));
+        player.openInventory(inv);
+    }
+
+    public void openFfaSelectorGui(Player player) {
+        EventMenuHolder holder = new EventMenuHolder(EventMenuHolder.ViewType.FFA_SELECTOR);
+        Inventory inv = Bukkit.createInventory(holder, 27,
+                FormatUtil.mm("<dark_gray><bold>🔥 Warmup FFA</bold></dark_gray> <gray>|</gray> <gold>Select Pit</gold>"));
+        holder.setInventory(inv);
+        fillBorder(inv, 27);
+
+        WarmupFfaManager ffa = events.warmupFfa();
+        int swordCount = ffa != null ? ffa.playerCount(WarmupFfaManager.PitType.SWORD) : 0;
+        int crystalCount = ffa != null ? ffa.playerCount(WarmupFfaManager.PitType.CRYSTAL) : 0;
+        String resetIn = ffa != null ? FormatUtil.formatDuration(ffa.crystalResetRemainingSec()) : "05:00";
+
+        inv.setItem(11, button(Material.DIAMOND_SWORD, "<yellow><bold>⚔ Sword FFA Pit</bold></yellow>", List.of(
+                "<gray>Pure melee Sword warmup in the Grand Colosseum!</gray>",
+                "<gray>Fighting Now:</gray> <green>" + swordCount + "</green>",
+                "<gray>Kill Reward:</gray> <aqua>Full Heal + Instant Kit Refill</aqua>",
+                "",
+                "<green>Click to drop in!</green>"
+        ), "join-ffa-sword", ""));
+
+        ItemStack crystalItem = button(Material.RESPAWN_ANCHOR, "<light_purple><bold>💎 Deep Crystal Terrain FFA</bold></light_purple>", List.of(
+                "<gray>15-block DEEP diggable earth down to solid Bedrock!</gray>",
+                "<gray>Blow craters, dig holes & Crystal/Anchor PvP!</gray>",
+                "<gray>Fighting Now:</gray> <green>" + crystalCount + "</green>",
+                "<gray>Terrain Auto-Reset:</gray> <aqua>" + resetIn + "</aqua>",
+                "",
+                "<green>Click to drop into the Crystal Pit!</green>"
+        ), "join-ffa-crystal", "");
+        setGlint(crystalItem);
+        inv.setItem(15, crystalItem);
+
+        if (ffa != null && ffa.isInFfa(player.getUniqueId())) {
+            inv.setItem(22, button(Material.RED_BED, "<red><bold>Leave FFA Pit</bold></red>",
+                    List.of("<gray>Return cleanly to Main Lobby</gray>"), "leave-ffa", ""));
+        }
         player.openInventory(inv);
     }
 
@@ -1219,6 +1325,11 @@ public final class EventGui implements Listener {
                 events.toggleAutoCam(player);
                 openAdminGui(player);
             }
+            case "reset-crystal-ffa" -> {
+                if (!player.hasPermission("clasherevents.admin")) return;
+                if (events.warmupFfa() != null) events.warmupFfa().resetCrystalPitNow(player);
+                openAdminGui(player);
+            }
             case "queue-join" -> {
                 player.closeInventory();
                 if (events.casualDuels() != null) events.casualDuels().joinQueue(player, value);
@@ -1227,9 +1338,18 @@ public final class EventGui implements Listener {
                 if (events.casualDuels() != null) events.casualDuels().leaveQueue(player);
                 openDuelQueueGui(player);
             }
-            case "join-ffa" -> {
+            case "open-ffa-picker" -> openFfaSelectorGui(player);
+            case "join-ffa", "join-ffa-sword" -> {
                 player.closeInventory();
-                if (events.warmupFfa() != null) events.warmupFfa().joinFfa(player);
+                if (events.warmupFfa() != null) events.warmupFfa().joinFfa(player, WarmupFfaManager.PitType.SWORD);
+            }
+            case "join-ffa-crystal" -> {
+                player.closeInventory();
+                if (events.warmupFfa() != null) events.warmupFfa().joinFfa(player, WarmupFfaManager.PitType.CRYSTAL);
+            }
+            case "leave-ffa" -> {
+                player.closeInventory();
+                if (events.warmupFfa() != null) events.warmupFfa().leaveFfa(player, true);
             }
             case "open-kiteditor-picker" -> openKitEditorSelectorGui(player);
             case "open-kit-editor" -> openKitLayoutEditor(player, value);

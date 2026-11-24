@@ -1,20 +1,39 @@
 <div align="center">
 
-# Clasher Events `v2.6.0`
+# Clasher Events `v2.7.0`
 
 ### Zero-Dependency Pro Competitive PvP Tournament & Events Engine for Paper 26.2+
 
-A modular, tier-1 Minecraft PvP events engine built for **Clasher Network** — featuring **Multi-Slot 1v1 Auto-Queue & Casual 2v2/3v3 Party Duels**, **Post-Duel Inventory & Combat Analytics Viewer**, **Always-Open Warmup FFA Pit**, **4 Live Clickable Lobby NPCs** (zero external plugin!), **Pro Spectator Hotbar + Host Auto-Cam**, **Event Modifiers / Mutators GUI**, **Anti-Stall Sudden Death & Damage Tie-Breaker**, **Esports Team Tournaments (`1v1 / 2v2 / 3v3 / 4v4`)** with Parallel Early Rounds, Discord Live Bracket Webhooks, Best-of-3 Grand Finals & a dedicated **Grand Esports Tournament Hall**, **8 Dedicated 1v1 Duel Arenas**, **Flagship Imperial Sky Citadel Main Lobby (`116×58×116`)**, **Interactive Voting GUIs**, **Dynamic OP Admin Panel Wand**, **authentic MCTiers / Stray.gg / PvP Legacy synced kits**, **REAL WorldBorder damage + dynamic shrinking**, **native Paper 3D `TextDisplay` Holograms**, **pure-Java Sponge `.schem` auto-pasting**, and **tick-batched rollback**.
+A modular, tier-1 Minecraft PvP events engine built for **Clasher Network** — featuring **Dual 24/7 Warmup FFA Pits** (Sword FFA + **Deep-Ground Crystal Terrain FFA with 15-block diggable earth down to Bedrock & automatic zero-suffocation periodic terrain reset**), an **Executive 54-Slot Black & Gold Admin Control Panel (`/ce gui`)**, **Multi-Slot 1v1 Auto-Queue & Casual 2v2/3v3 Party Duels**, **Post-Duel Inventory & Combat Analytics Viewer**, **4 Live Clickable Lobby NPCs** (zero external plugin!), **Pro Spectator Hotbar + Host Auto-Cam**, **Event Modifiers / Mutators GUI**, **Anti-Stall Sudden Death & Damage Tie-Breaker**, **Esports Team Tournaments (`1v1 / 2v2 / 3v3 / 4v4`)** with Parallel Early Rounds, Discord Live Bracket Webhooks, Best-of-3 Grand Finals & a dedicated **Grand Esports Tournament Hall**, **8 Dedicated 1v1 Duel Arenas**, **Flagship Imperial Sky Citadel Main Lobby (`116×58×116`)**, **Interactive Voting GUIs**, **Dynamic OP Admin Panel Wand**, **authentic MCTiers / Stray.gg / PvP Legacy synced kits**, **REAL WorldBorder damage + dynamic shrinking**, **native Paper 3D `TextDisplay` Holograms**, **pure-Java Sponge `.schem` auto-pasting**, and **tick-batched rollback**.
 
 ![Java](https://img.shields.io/badge/Java-25-ED8B00?logo=openjdk&logoColor=white)
 ![Paper](https://img.shields.io/badge/Paper-26.2%2B-38bdf8)
 ![Dependencies](https://img.shields.io/badge/Required%20Deps-Zero-10b981)
 ![Tests](https://img.shields.io/badge/JUnit%205-22%20Passing-brightgreen)
-![Release](https://img.shields.io/badge/Version-2.6.0-a855f7)
+![Release](https://img.shields.io/badge/Version-2.7.0-a855f7)
 
 [Source](https://github.com/Pranjal3125/clasher-events) · [Releases](https://github.com/Pranjal3125/clasher-events/releases) · [Issues](https://github.com/Pranjal3125/clasher-events/issues)
 
 </div>
+
+---
+
+## What's New in v2.7.0 — Deep-Ground Crystal Terrain FFA (Bedrock Pit + Auto-Reset) & Redesigned 54-Slot Admin Panel
+
+### 💎 Deep-Ground Crystal Terrain Arena (`crystal-ffa`, `112×62×112`) + Dual 24/7 FFA Pits
+- **15 Full Blocks of Destructible Terrain Down to Bedrock**: Added `crystal-ffa.schem` alongside Classic Crystal Flat (`crystal`) — featuring layered `Grass → Dirt → Stone → Deepslate + Obsidian Veins` (`y=1..15`) sitting on top of a **100%-sealed unbreakable Bedrock floor (`y=0`)** so players can hole-fight, pearl-trap, anchor-blast, and dig all the way to Bedrock!
+- **Playable Everywhere**: Available as an official Event Mode (`Crystal Terrain` / `crystal-ffa` in `/ce gui`, `/ce create crystal-ffa`, Mode Vote, Team Wars, and `1v1–4v4` Tournaments) AND as a dedicated **24/7 Deep Crystal Terrain FFA Pit**! Shares players' custom `crystal` kit layout from `/event kiteditor crystal`.
+- **Dual FFA Selector GUI (`/event ffa` & Lobby NPC)**: Clicking the `🔥 WARMUP FFA PITS` Lobby NPC or running `/event ffa` opens a clean 2-pit selector (`⚔ Sword FFA Pit` vs `💎 Deep Crystal Terrain FFA`) with live fighter counts and next auto-reset countdown (or direct `/event ffa sword`, `/event ffa crystal`, `/event ffa leave`).
+- **Automatic Zero-Suffocation Terrain Reset**: Configurable `warmup-ffa.auto-reset-seconds: 300` (default every 5 minutes) warns fighters at 30s / 10s / 3-2-1s, clears craters, obsidian & anchors instantly, and safely teleports active fighters to fresh surface spawns with zero suffocation! Admins can also trigger instant resets via **`/ce ffareset`** or the Admin Panel button.
+
+### ⚡ Executive 54-Slot Black & Gold Admin Control Panel (`/ce gui`)
+- **Completely Redesigned 6-Row Symmetrical Layout**: Replaced the cramped 45-slot panel with a spacious, dark-glass framed 54-slot Executive Console:
+  - **Row 0**: Centered Live Event Status Card
+  - **Row 1**: 7 Core Solo FFA Modes (`NethPot`, `Crystal Flat`, `Crystal Terrain`, `Sword`, `Axe & Shield`, `Build UHC`, `Diamond Pot`)
+  - **Row 2**: `UHC` / `SMP` / `Random Kit` | Gold Divider | `1v1 Duel` / `Team Wars` / Glowing `Esports Tournament`
+  - **Row 3**: 5 Symmetrical Live Match Controls (`Mode Vote`, `Countdown`, `Skip Timer`, `Pause / Resume`, `Stop`)
+  - **Row 4**: 5 Symmetrical Pro Admin Tools (`Tournament Control`, `Event Modifiers`, `Host Auto-Cam`, `♻ Reset Crystal FFA Pit`, `Full Server Setup`)
+  - **Row 5**: Clean Gold Footer + Close Panel Button
 
 ---
 

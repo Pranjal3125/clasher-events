@@ -15,7 +15,8 @@ public enum EventMode {
     BUILD_UHC("build-uhc", "Build UHC", "build-uhc", Material.GOLDEN_APPLE),
     SWORD("sword", "Sword", "sword", Material.DIAMOND_SWORD),
     UHC("uhc", "UHC", "uhc", Material.ENCHANTED_GOLDEN_APPLE),
-    CRYSTAL("crystal", "Crystal PvP", "crystal", Material.END_CRYSTAL),
+    CRYSTAL("crystal", "Crystal Flat", "crystal", Material.END_CRYSTAL),
+    CRYSTAL_FFA("crystal-ffa", "Crystal Terrain", "crystal-ffa", Material.RESPAWN_ANCHOR),
     SMP("smp", "SMP", "smp", Material.SHIELD),
     DIAMOND_POT("diamond-pot", "Diamond Pot", "diamond-pot", Material.DIAMOND_CHESTPLATE),
     TEAM_WARS("team-wars", "Team Wars", "smp", Material.RED_BANNER),
@@ -38,6 +39,7 @@ public enum EventMode {
     public String id() { return id; }
     public String displayName() { return displayName; }
     public String defaultArenaId() { return defaultArenaId; }
+    public String defaultKitId() { return this == CRYSTAL_FFA ? "crystal" : defaultArenaId; }
     public Material icon() { return icon; }
 
     public static Optional<EventMode> fromInput(String raw) {
@@ -49,7 +51,8 @@ public enum EventMode {
             case "build-uhc" -> Optional.of(BUILD_UHC);
             case "sword" -> Optional.of(SWORD);
             case "uhc" -> Optional.of(UHC);
-            case "crystal" -> Optional.of(CRYSTAL);
+            case "crystal", "crystal-flat" -> Optional.of(CRYSTAL);
+            case "crystal-ffa", "crystal-terrain", "crystal-pit", "deep-crystal" -> Optional.of(CRYSTAL_FFA);
             case "smp" -> Optional.of(SMP);
             case "diamond-pot", "dia-pot" -> Optional.of(DIAMOND_POT);
             case "team-wars", "teams" -> Optional.of(TEAM_WARS);

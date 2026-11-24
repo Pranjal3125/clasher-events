@@ -1743,19 +1743,107 @@ def build_duel_arena(theme_id: str) -> VoxelCanvas:
 
 
 # ---------------------------------------------------------------------------
+# 13. Deep-Ground Crystal Terrain FFA — 15-Block Diggable Earth Down to Bedrock! (112x62x112)
+# ---------------------------------------------------------------------------
+
+def build_crystal_ffa() -> VoxelCanvas:
+    # Real DonutSMP / PvP Legacy Deep Crystal Terrain Pit:
+    #  - y=0       : 100%-sealed unbreakable solid BEDROCK bottom!
+    #  - y=1..5    : Deepslate, cobbled deepslate, tuff + scattered obsidian veins
+    #  - y=6..11   : Stone, andesite, cobblestone
+    #  - y=12..14  : Dirt & coarse dirt subsoil
+    #  - y=15      : Grass & moss surface (spawns at y=16 -> 15 full blocks deep down to Bedrock!)
+    #  - y=52..59  : 100%-sealed themed Waiting Skybox
+    c = VoxelCanvas(112, 62, 112)
+
+    # 1. Unbreakable Bedrock Foundation (r=52, y=0)
+    c.disk(52, 0, "bedrock")
+
+    # 2. 15 Full Blocks of Deep Destructible Terrain inside the playable crater (r=43, y=1..15)
+    deep_pal = ["deepslate", "cobbled_deepslate", "tuff", "deepslate", "obsidian"]
+    stone_pal = ["stone", "stone", "andesite", "cobblestone", "stone"]
+    dirt_pal = ["dirt", "dirt", "coarse_dirt", "dirt"]
+    surf_pal = ["grass_block", "grass_block", "grass_block", "moss_block"]
+
+    for y in range(1, 6):
+        c.disk(43, y, deep_pal, seed=300 + y)
+    for y in range(6, 12):
+        c.disk(43, y, stone_pal, seed=310 + y)
+    for y in range(12, 15):
+        c.disk(43, y, dirt_pal, seed=320 + y)
+    c.disk(43, 15, surf_pal, seed=330)
+
+    # Subtle Obsidian & Amethyst Center Ring flush at surface y=15
+    c.disk(5, 15, "obsidian", 3.5)
+    c.disk(3, 15, "crying_obsidian")
+    c.rel_put(0, 15, 0, "amethyst_block")
+
+    # Natural gentle surface terrain contours (y=16..17) in outer ring (r=29..41), keeping spawn rings crisp & flat!
+    for dx in range(-41, 42):
+        for dz in range(-41, 42):
+            r = math.hypot(dx, dz)
+            if 29.0 <= r <= 41.0:
+                n = fbm2(dx * 0.11, dz * 0.11, 335, 3)
+                if n > 0.56:
+                    c.rel_put(dx, 15, dz, "dirt")
+                    c.rel_put(dx, 16, dz, "grass_block")
+                    if n > 0.72:
+                        c.rel_put(dx, 16, dz, "dirt")
+                        c.rel_put(dx, 17, dz, "grass_block")
+
+    # 4 Tactical Surface Obsidian & Stone Crystal Cover Outcrops at mid-ring
+    for dx, dz in ((-17, -17), (17, -17), (-17, 17), (17, 17)):
+        c.fill_box(dx - 1, 16, dz - 1, dx + 1, 17, dz + 1, "obsidian")
+        c.rel_put(dx, 18, dz, "crying_obsidian")
+
+    # 3. Massive Indestructible Obsidian & Deepslate Crater Rim Walls (r=42.5..52, y=1..38)
+    wall_pal = ["deepslate_bricks", "obsidian", "cobbled_deepslate", "blackstone", "crying_obsidian"]
+    for y in range(1, 39):
+        c.disk(52, y, wall_pal, 42.5, seed=340 + y)
+        if y in (16, 26, 37):
+            c.disk(44, y, "obsidian", 42.2)
+
+    # Glowing Purple Stained-Glass Rift Windows around the upper canyon walls (y=20..34)
+    for deg in range(0, 360, 22):
+        rad = math.radians(deg)
+        for r_step in range(43, 51):
+            gx, gz = round(r_step * math.cos(rad)), round(r_step * math.sin(rad))
+            for y in range(20, 34):
+                c.rel_put(gx, y, gz, "purple_stained_glass" if (y % 2 == 0) else "magenta_stained_glass")
+
+    # 8 Towering End-Obsidian & Amethyst Spires crowning the canyon rim (height 47)
+    for deg in range(0, 360, 45):
+        rad = math.radians(deg)
+        tx, tz = round(46 * math.cos(rad)), round(46 * math.sin(rad))
+        c.pillar(tx, tz, 16, 40, ["obsidian", "deepslate_bricks", "crying_obsidian"], 2, seed=360 + deg)
+        for step in range(7):
+            rs = max(0, 2 - step // 3)
+            for ox in range(-rs, rs + 1):
+                for oz in range(-rs, rs + 1):
+                    c.rel_put(tx + ox, 40 + step, tz + oz, "amethyst_block" if step >= 4 else "purpur_block")
+        c.rel_put(tx, 47, tz, "sea_lantern")
+        c.rel_put(tx, 48, tz, "end_rod[facing=up]")
+
+    # Elevated Spectator Viewing Pavilion overlooking the deep crater (dz=-32, dy=28 -> spawn at dy=29)
+    c.add_spectator_pavilion(-32, 28, ["obsidian", "purpur_block"], "purpur_pillar", "end_stone_brick_wall", "purpur_slab[type=bottom]", "end_rod[facing=down]")
+    return c
+
+
+# ---------------------------------------------------------------------------
 # Arena Metadata, Spawn Generation & Mathematical Clearance Verification
 # ---------------------------------------------------------------------------
 
 ARENA_SPECS = [
-    # (id, display, px, py, pz, builder, r_w1, r_w2, r_fin, aud_dz, aud_dy, playable_r)
-    ("nethpot", "NethPot - Gothic Nether Citadel", 0, 80, 0, build_nethpot, 30, 18, 10, -32, 12, 52),
-    ("axe-shield", "Axe & Shield - Ironkeep Castle", 300, 80, 0, build_axe_shield, 24, 15, 8, -29, 12, 38),
-    ("build-uhc", "Build UHC - Verdant Valley", 600, 80, 0, build_build_uhc, 22, 14, 8, -29, 14, 42),
-    ("sword", "Sword - Grand Roman Colosseum", 900, 80, 0, build_sword, 24, 15, 8, -28, 11, 42),
-    ("uhc", "UHC - Alpine Wild Frontier", 1200, 80, 0, build_uhc, 24, 15, 8, -31, 14, 42),
-    ("crystal", "Crystal - End Rift Spires", 1600, 80, 0, build_crystal, 26, 16, 8, -31, 12, 42),
-    ("smp", "SMP - Fallen Cathedral", 1900, 80, 0, build_smp, 26, 16, 8, -31, 13, 41),
-    ("diamond-pot", "Diamond Pot - Frostglass Cathedral", 2200, 80, 0, build_diamond_pot, 24, 15, 8, -28, 11, 39),
+    # (id, display, px, py, pz, builder, r_w1, r_w2, r_fin, aud_dz, aud_dy, playable_r, spawn_dy, skybox_y)
+    ("nethpot", "NethPot - Gothic Nether Citadel", 0, 80, 0, build_nethpot, 30, 18, 10, -32, 12, 52, 2, 42),
+    ("axe-shield", "Axe & Shield - Ironkeep Castle", 300, 80, 0, build_axe_shield, 24, 15, 8, -29, 12, 38, 2, 42),
+    ("build-uhc", "Build UHC - Verdant Valley", 600, 80, 0, build_build_uhc, 22, 14, 8, -29, 14, 42, 2, 42),
+    ("sword", "Sword - Grand Roman Colosseum", 900, 80, 0, build_sword, 24, 15, 8, -28, 11, 42, 2, 42),
+    ("uhc", "UHC - Alpine Wild Frontier", 1200, 80, 0, build_uhc, 24, 15, 8, -31, 14, 42, 2, 42),
+    ("crystal", "Crystal - End Rift Spires (Flat)", 1600, 80, 0, build_crystal, 26, 16, 8, -31, 12, 42, 2, 42),
+    ("smp", "SMP - Fallen Cathedral", 1900, 80, 0, build_smp, 26, 16, 8, -31, 13, 41, 2, 42),
+    ("diamond-pot", "Diamond Pot - Frostglass Cathedral", 2200, 80, 0, build_diamond_pot, 24, 15, 8, -28, 11, 39, 2, 42),
+    ("crystal-ffa", "Crystal Terrain - Deep Bedrock Pit", 2500, 70, 0, build_crystal_ffa, 25, 16, 9, -32, 29, 42, 16, 52),
 ]
 
 WAITING_SKYBOX_THEMES = {
@@ -1839,6 +1927,16 @@ WAITING_SKYBOX_THEMES = {
         light_blk="soul_lantern[hanging=true]",
         glow_blk="sea_lantern",
     ),
+    "crystal-ffa": dict(
+        frame_blk="obsidian",
+        trim_blk="crying_obsidian",
+        center_blk="amethyst_block",
+        floor_glass="purple_stained_glass",
+        wall_glass="magenta_stained_glass",
+        roof_slab="deepslate_brick_slab[type=bottom]",
+        light_blk="end_rod[facing=down]",
+        glow_blk="sea_lantern",
+    ),
 }
 
 
@@ -1898,22 +1996,22 @@ def main() -> None:
         os.makedirs(d, exist_ok=True)
 
     yml_entries = []
-    for arena_id, display, px, py, pz, builder, r_w1, r_w2, r_fin, aud_dz, aud_dy, playable_r in ARENA_SPECS:
+    for arena_id, display, px, py, pz, builder, r_w1, r_w2, r_fin, aud_dz, aud_dy, playable_r, spawn_dy, skybox_y in ARENA_SPECS:
         canvas = builder()
-        # Add 100%-sealed themed panoramic Waiting Skybox directly above arena center (dy=42..50)!
-        canvas.add_waiting_skybox(42, **WAITING_SKYBOX_THEMES[arena_id])
+        # Add 100%-sealed themed panoramic Waiting Skybox directly above arena center!
+        canvas.add_waiting_skybox(skybox_y, **WAITING_SKYBOX_THEMES[arena_id])
 
-        w1 = ring_spawns(px, py, pz, r_w1, 8, dy=2)
-        w2 = ring_spawns(px, py, pz, r_w2, 4, dy=2)
+        w1 = ring_spawns(px, py, pz, r_w1, 8, dy=spawn_dy)
+        w2 = ring_spawns(px, py, pz, r_w2, 4, dy=spawn_dy)
         fin = [
-            {"dx": -r_fin, "dy": 2, "dz": 0, "x": px - r_fin + 0.5, "y": py + 2, "z": pz + 0.5, "yaw": -90.0},
-            {"dx": r_fin, "dy": 2, "dz": 0, "x": px + r_fin + 0.5, "y": py + 2, "z": pz + 0.5, "yaw": 90.0},
+            {"dx": -r_fin, "dy": spawn_dy, "dz": 0, "x": px - r_fin + 0.5, "y": py + spawn_dy, "z": pz + 0.5, "yaw": -90.0},
+            {"dx": r_fin, "dy": spawn_dy, "dz": 0, "x": px + r_fin + 0.5, "y": py + spawn_dy, "z": pz + 0.5, "yaw": 90.0},
         ]
         aud = [
             {"dx": 0, "dy": aud_dy, "dz": aud_dz, "x": px + 0.5, "y": py + aud_dy, "z": pz + aud_dz + 0.5, "yaw": 0.0}
         ]
         wait = [
-            {"dx": 0, "dy": 43, "dz": 0, "x": px + 0.5, "y": py + 43, "z": pz + 0.5, "yaw": 0.0}
+            {"dx": 0, "dy": skybox_y + 1, "dz": 0, "x": px + 0.5, "y": py + skybox_y + 1, "z": pz + 0.5, "yaw": 0.0}
         ]
 
         for group_name, group in (("wave1", w1), ("wave2", w2), ("final", fin), ("audience", aud), ("waiting", wait)):
@@ -1930,7 +2028,7 @@ def main() -> None:
         half_w = canvas.w // 2
         half_l = canvas.l // 2
         max_y = py + canvas.h + 2
-        combat_max_y = py + 36
+        combat_max_y = py + (skybox_y - 6)
         yml_entries.append(
             {
                 "id": arena_id,

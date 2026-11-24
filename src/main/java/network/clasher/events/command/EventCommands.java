@@ -6,6 +6,7 @@ import network.clasher.events.gui.EventGui;
 import network.clasher.events.kit.KitManager;
 import network.clasher.events.match.EventManager;
 import network.clasher.events.match.TournamentSquadManager;
+import network.clasher.events.match.WarmupFfaManager;
 import network.clasher.events.model.Arena;
 import network.clasher.events.model.EventMode;
 import network.clasher.events.model.EventModifier;
@@ -31,7 +32,7 @@ public final class EventCommands implements CommandExecutor, TabCompleter {
             "join", "leave", "queue", "party", "ffa", "inv", "squad", "bracket", "duel", "accept", "decline", "kiteditor", "modevote", "vote", "cheer", "team", "tc", "points", "stats", "top", "history", "spectate", "help"
     );
     private static final List<String> CE_SUBS = List.of(
-            "help", "setup", "create", "tournament", "modifiers", "autocam", "voteopen", "start", "skip", "timeskip", "stop", "pause", "resume", "status", "reload",
+            "help", "setup", "create", "tournament", "modifiers", "autocam", "ffareset", "voteopen", "start", "skip", "timeskip", "stop", "pause", "resume", "status", "reload",
             "holograms", "gui", "countdown", "tp", "setlobby", "settournamentlobby", "setwaiting", "clearwaiting", "setspectator", "setwinner", "setcrowd",
             "setspawn", "addspawn", "arena", "kit"
     );
@@ -107,10 +108,17 @@ public final class EventCommands implements CommandExecutor, TabCompleter {
             }
             case "ffa", "warmup" -> {
                 if (events.warmupFfa() == null) return;
-                if (args.length >= 2 && (args[1].equalsIgnoreCase("leave") || args[1].equalsIgnoreCase("exit"))) {
-                    events.warmupFfa().leaveFfa(player, true);
+                if (args.length < 2) {
+                    gui.openFfaSelectorGui(player);
                 } else {
-                    events.warmupFfa().joinFfa(player);
+                    String arg = args[1].toLowerCase(Locale.ROOT);
+                    if (arg.equals("leave") || arg.equals("exit")) {
+                        events.warmupFfa().leaveFfa(player, true);
+                    } else if (arg.equals("crystal") || arg.equals("crystal-ffa") || arg.equals("terrain") || arg.equals("deep")) {
+                        events.warmupFfa().joinFfa(player, WarmupFfaManager.PitType.CRYSTAL);
+                    } else {
+                        events.warmupFfa().joinFfa(player, WarmupFfaManager.PitType.SWORD);
+                    }
                 }
             }
             case "inv", "inspect" -> {
@@ -361,6 +369,9 @@ public final class EventCommands implements CommandExecutor, TabCompleter {
             case "autocam", "cam" -> {
                 if (sender instanceof Player admin) events.toggleAutoCam(admin);
                 else sender.sendMessage(FormatUtil.mm("<red>Players only.</red>"));
+            }
+            case "ffareset" -> {
+                if (events.warmupFfa() != null) events.warmupFfa().resetCrystalPitNow(sender);
             }
             case "setup" -> {
                 boolean refresh = args.length >= 2 && args[1].equalsIgnoreCase("refresh");
@@ -682,7 +693,7 @@ public final class EventCommands implements CommandExecutor, TabCompleter {
                 options.add("leave");
                 options.addAll(kits.kitIds());
             } else if (args.length == 2 && args[0].equalsIgnoreCase("ffa")) {
-                options.addAll(List.of("join", "leave"));
+                options.addAll(List.of("sword", "crystal", "leave"));
             } else if (args.length == 2 && args[0].equalsIgnoreCase("party")) {
                 options.addAll(List.of("invite", "accept", "decline", "leave", "kick", "disband", "list", "duel", "split"));
             } else if (args.length == 3 && args[0].equalsIgnoreCase("party")

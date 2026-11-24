@@ -39,6 +39,7 @@ public final class ClasherEventsPlugin extends JavaPlugin {
             "schematics/sword.schem",
             "schematics/uhc.schem",
             "schematics/crystal.schem",
+            "schematics/crystal-ffa.schem",
             "schematics/smp.schem",
             "schematics/diamond-pot.schem",
             "schematics/duel-nethpot.schem",

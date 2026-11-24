@@ -430,7 +430,7 @@ arenas:
         z: 0.5
         yaw: 0.0
   crystal:
-    display-name: Crystal - End Rift Spires
+    display-name: Crystal - End Rift Spires (Flat)
     schematic: crystal.schem
     paste:
       x: 1600
@@ -684,6 +684,92 @@ arenas:
         yaw: 0.0
       waiting:
       - x: 2200.5
+        y: 123
+        z: 0.5
+        yaw: 0.0
+  crystal-ffa:
+    display-name: Crystal Terrain - Deep Bedrock Pit
+    schematic: crystal-ffa.schem
+    paste:
+      x: 2500
+      y: 70
+      z: 0
+    bounds:
+      min-x: 2442
+      min-y: 69
+      min-z: -58
+      max-x: 2558
+      max-y: 134
+      max-z: 58
+      combat-max-y: 116
+      playable-radius: 42
+    spawns:
+      wave1:
+      - x: 2525.5
+        y: 86
+        z: 0.5
+        yaw: -90.0
+      - x: 2518.5
+        y: 86
+        z: 18.5
+        yaw: -135.0
+      - x: 2500.5
+        y: 86
+        z: 25.5
+        yaw: 180.0
+      - x: 2482.5
+        y: 86
+        z: 18.5
+        yaw: 135.0
+      - x: 2475.5
+        y: 86
+        z: 0.5
+        yaw: 90.0
+      - x: 2482.5
+        y: 86
+        z: -17.5
+        yaw: 45.0
+      - x: 2500.5
+        y: 86
+        z: -24.5
+        yaw: 0.0
+      - x: 2518.5
+        y: 86
+        z: -17.5
+        yaw: -45.0
+      wave2:
+      - x: 2516.5
+        y: 86
+        z: 0.5
+        yaw: -90.0
+      - x: 2500.5
+        y: 86
+        z: 16.5
+        yaw: 180.0
+      - x: 2484.5
+        y: 86
+        z: 0.5
+        yaw: 90.0
+      - x: 2500.5
+        y: 86
+        z: -15.5
+        yaw: 0.0
+      final:
+      - x: 2491.5
+        y: 86
+        z: 0.5
+        yaw: -90.0
+      - x: 2509.5
+        y: 86
+        z: 0.5
+        yaw: 90.0
+      audience:
+      - x: 2500.5
+        y: 99
+        z: -31.5
+        yaw: 0.0
+      waiting:
+      - x: 2500.5
         y: 123
         z: 0.5
         yaw: 0.0

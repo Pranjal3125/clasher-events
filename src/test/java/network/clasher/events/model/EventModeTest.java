@@ -13,6 +13,9 @@ final class EventModeTest {
         assertEquals(EventMode.TEAM_WARS, EventMode.fromInput("teams").orElseThrow());
         assertEquals(EventMode.DUEL, EventMode.fromInput("1v1").orElseThrow());
         assertEquals(EventMode.DIAMOND_POT, EventMode.fromInput("dia-pot").orElseThrow());
+        assertEquals(EventMode.CRYSTAL_FFA, EventMode.fromInput("crystal-ffa").orElseThrow());
+        assertEquals(EventMode.CRYSTAL_FFA, EventMode.fromInput("crystal-terrain").orElseThrow());
+        assertEquals("crystal", EventMode.CRYSTAL_FFA.defaultKitId());
         assertEquals(EventMode.TOURNAMENT, EventMode.fromInput("tourney").orElseThrow());
         assertTrue(EventMode.fromInput("nonexistent").isEmpty());
         assertTrue(EventMode.fromInput(null).isEmpty());
