@@ -52,6 +52,9 @@ public final class ArenaManager {
     public static final int WINNER_ORIGIN_X = -600;
     public static final int WINNER_ORIGIN_Y = 100;
     public static final int WINNER_ORIGIN_Z = 0;
+    public static final int TOURNAMENT_LOBBY_ORIGIN_X = -800;
+    public static final int TOURNAMENT_LOBBY_ORIGIN_Y = 100;
+    public static final int TOURNAMENT_LOBBY_ORIGIN_Z = 0;
 
     private final JavaPlugin plugin;
     private final Map<String, Arena> arenas = new LinkedHashMap<>();
@@ -97,6 +100,39 @@ public final class ArenaManager {
 
     public Set<String> arenaIds() {
         return Collections.unmodifiableSet(arenas.keySet());
+    }
+
+    /**
+     * Returns only the 8 main grand event arenas (excluding dedicated 1v1 `duel-*` arenas).
+     */
+    public List<String> mainArenaIds() {
+        List<String> out = new ArrayList<>();
+        for (String id : arenas.keySet()) {
+            if (!id.startsWith("duel-")) out.add(id);
+        }
+        return out;
+    }
+
+    /**
+     * Returns only the dedicated 1v1 duel arenas (`duel-*`).
+     */
+    public List<String> duelArenaIds() {
+        List<String> out = new ArrayList<>();
+        for (String id : arenas.keySet()) {
+            if (id.startsWith("duel-")) out.add(id);
+        }
+        return out;
+    }
+
+    /**
+     * Resolves the dedicated 1v1 duel arena ID (`duel-<kit>`) if configured, otherwise falls back cleanly to `<kit>`.
+     */
+    public String duelArenaId(String kitId) {
+        if (kitId == null || kitId.isBlank()) return "nethpot";
+        String clean = kitId.trim().toLowerCase(Locale.ROOT);
+        if (clean.startsWith("duel-") && exists(clean)) return clean;
+        String candidate = "duel-" + clean;
+        return exists(candidate) ? candidate : clean;
     }
 
     public String sharedWorldName() {
@@ -417,10 +453,23 @@ public final class ArenaManager {
         pasteStructureAsync(null, "winner-podium.schem", "Champions Winner Podium", WINNER_ORIGIN_X, WINNER_ORIGIN_Y, WINNER_ORIGIN_Z, onReady);
     }
 
+    public void ensureTournamentLobbyReady(Runnable onReady) {
+        World world = getOrCreateSharedWorld(null);
+        if (world == null) { if (onReady != null) onReady.run(); return; }
+        Material floor = world.getBlockAt(TOURNAMENT_LOBBY_ORIGIN_X, TOURNAMENT_LOBBY_ORIGIN_Y + 1, TOURNAMENT_LOBBY_ORIGIN_Z).getType();
+        if (!floor.isAir()) {
+            if (onReady != null) onReady.run();
+            return;
+        }
+        pasteStructureAsync(null, "tournament-lobby.schem", "Grand Esports Tournament Hall",
+                TOURNAMENT_LOBBY_ORIGIN_X, TOURNAMENT_LOBBY_ORIGIN_Y, TOURNAMENT_LOBBY_ORIGIN_Z, onReady);
+    }
+
     /**
      * One-command full turnkey setup (/ce setup [refresh]): creates void world, optionally refreshes
-     * bundled v2.1 architectural schematics + arenas.yml, pastes Grand Event Spawn Lobby,
-     * Champions Winner Podium, and all 8 PvP arenas, configures locations, and teleports admin to Lobby!
+     * bundled v2.5 architectural schematics + arenas.yml, pastes Grand Event Spawn Lobby,
+     * Champions Winner Podium, Grand Esports Tournament Hall, and all 16 arenas (8 grand + 8 dedicated 1v1 duel arenas),
+     * configures locations, and teleports admin to Lobby!
      */
     public void runFullSetup(CommandSender sender, java.util.function.Predicate<String> inUseCheck) {
         runFullSetup(sender, inUseCheck, false);
@@ -430,37 +479,41 @@ public final class ArenaManager {
         if (refreshBundled && plugin instanceof ClasherEventsPlugin cep) {
             int refreshed = cep.refreshBundledArenasAndSchematics();
             if (sender != null) {
-                sender.sendMessage(FormatUtil.mm("<aqua>Refreshed <white>" + refreshed + "</white> bundled v2.2 architectural schematics & arenas.yml from JAR.</aqua>"));
+                sender.sendMessage(FormatUtil.mm("<aqua>Refreshed <white>" + refreshed + "</white> bundled v2.5 schematics (Lobby, Tournament Hall, Podium, 8 Grand & 8 1v1 Duel Arenas) & arenas.yml from JAR.</aqua>"));
             }
         }
         World world = getOrCreateSharedWorld(sender);
         if (world == null) return;
 
-        // Save turnkey Lobby, Spectator, Winner Podium, & Crowd coordinates cleanly to config.yml
+        // Save turnkey Lobby, Spectator, Winner Podium, Crowd, & Tournament Hall coordinates cleanly to config.yml
         String wn = world.getName();
         saveLocConfig("locations.lobby", wn, LOBBY_ORIGIN_X + 0.5, LOBBY_ORIGIN_Y + 2.0, LOBBY_ORIGIN_Z + 0.5, 180.0f, 0.0f);
         saveLocConfig("locations.spectator", wn, LOBBY_ORIGIN_X + 0.5, LOBBY_ORIGIN_Y + 2.0, LOBBY_ORIGIN_Z + 0.5, 180.0f, 0.0f);
         saveLocConfig("locations.winner", wn, WINNER_ORIGIN_X + 0.5, WINNER_ORIGIN_Y + 5.0, WINNER_ORIGIN_Z - 5.5, 0.0f, 0.0f);
         saveLocConfig("locations.winner-crowd", wn, WINNER_ORIGIN_X + 0.5, WINNER_ORIGIN_Y + 2.0, WINNER_ORIGIN_Z + 9.5, 180.0f, 0.0f);
+        saveLocConfig("locations.tournament-lobby", wn, TOURNAMENT_LOBBY_ORIGIN_X + 0.5, TOURNAMENT_LOBBY_ORIGIN_Y + 2.0, TOURNAMENT_LOBBY_ORIGIN_Z + 0.5, 180.0f, 0.0f);
         plugin.saveConfig();
 
         if (sender != null) {
-            sender.sendMessage(FormatUtil.mm("<gold><bold>CLASHER EVENTS SETUP</bold></gold> <gray>— Pasting Sky Citadel Spawn Lobby, Winner Podium, and all 8 arenas with themed waiting skyboxes (zero-lag batched)...</gray>"));
+            sender.sendMessage(FormatUtil.mm("<gold><bold>CLASHER EVENTS v2.5 SETUP</bold></gold> <gray>— Pasting Sky Citadel Lobby, Winner Podium, Grand Tournament Hall, 8 Grand Arenas, and 8 Dedicated 1v1 Duel Arenas (zero-lag batched)...</gray>"));
             if (!refreshBundled) {
-                sender.sendMessage(FormatUtil.mm("<gray>(Upgrading? Use <yellow>/ce setup refresh</yellow> to update bundled schematics & waiting skyboxes!)</gray>"));
+                sender.sendMessage(FormatUtil.mm("<gray>(Upgrading? Use <yellow>/ce setup refresh</yellow> to update bundled schematics & dedicated duel arenas!)</gray>"));
             }
         }
         pasteStructureAsync(sender, "lobby.schem", "Grand Event Spawn Lobby", LOBBY_ORIGIN_X, LOBBY_ORIGIN_Y, LOBBY_ORIGIN_Z, () ->
-                pasteStructureAsync(sender, "winner-podium.schem", "Champions Winner Podium", WINNER_ORIGIN_X, WINNER_ORIGIN_Y, WINNER_ORIGIN_Z, () -> {
-                    if (plugin instanceof ClasherEventsPlugin cep) {
-                        cep.refreshHolograms();
-                    }
-                    pasteAllArenas(sender, inUseCheck);
-                    if (sender instanceof Player admin && admin.isOnline()) {
-                        admin.teleport(new Location(world, LOBBY_ORIGIN_X + 0.5, LOBBY_ORIGIN_Y + 2.0, LOBBY_ORIGIN_Z + 0.5, 180.0f, 0.0f));
-                        admin.sendMessage(FormatUtil.mm("<green><bold>Welcome to your new Grand Event Spawn Lobby!</bold></green> <gray>Use <yellow>/ce tp winner</yellow>, <yellow>/ce tp crowd</yellow>, or <yellow>/ce tp <arena></yellow> to inspect everything!</gray>"));
-                    }
-                })
+                pasteStructureAsync(sender, "winner-podium.schem", "Champions Winner Podium", WINNER_ORIGIN_X, WINNER_ORIGIN_Y, WINNER_ORIGIN_Z, () ->
+                        pasteStructureAsync(sender, "tournament-lobby.schem", "Grand Esports Tournament Hall",
+                                TOURNAMENT_LOBBY_ORIGIN_X, TOURNAMENT_LOBBY_ORIGIN_Y, TOURNAMENT_LOBBY_ORIGIN_Z, () -> {
+                                    if (plugin instanceof ClasherEventsPlugin cep) {
+                                        cep.refreshHolograms();
+                                    }
+                                    pasteAllArenas(sender, inUseCheck);
+                                    if (sender instanceof Player admin && admin.isOnline()) {
+                                        admin.teleport(new Location(world, LOBBY_ORIGIN_X + 0.5, LOBBY_ORIGIN_Y + 2.0, LOBBY_ORIGIN_Z + 0.5, 180.0f, 0.0f));
+                                        admin.sendMessage(FormatUtil.mm("<green><bold>Welcome to Clasher Events v2.5!</bold></green> <gray>Inspect with <yellow>/ce tp tournament-lobby</yellow>, <yellow>/ce tp duel-nethpot</yellow>, <yellow>/ce tp winner</yellow>, or <yellow>/ce tp <arena></yellow>!</gray>"));
+                                    }
+                                })
+                )
         );
     }
 
@@ -522,6 +575,14 @@ public final class ArenaManager {
                 Location loc = resolveStructureLocation(world, "winner-crowd", WINNER_ORIGIN_X + 0.5, WINNER_ORIGIN_Y + 2.0, WINNER_ORIGIN_Z + 9.5, 180.0f);
                 admin.teleport(loc);
                 admin.sendMessage(FormatUtil.mm("<green>Teleported to <gold>Winner Hall Crowd Area</gold>!</green>"));
+            });
+            return;
+        }
+        if (key.equals("tournament-lobby") || key.equals("tourney-lobby") || key.equals("tlobby") || key.equals("tournament")) {
+            ensureTournamentLobbyReady(() -> {
+                Location loc = resolveStructureLocation(world, "tournament-lobby", TOURNAMENT_LOBBY_ORIGIN_X + 0.5, TOURNAMENT_LOBBY_ORIGIN_Y + 2.0, TOURNAMENT_LOBBY_ORIGIN_Z + 0.5, 180.0f);
+                admin.teleport(loc);
+                admin.sendMessage(FormatUtil.mm("<green>Teleported to <gold>Grand Esports Tournament Hall</gold>!</green>"));
             });
             return;
         }

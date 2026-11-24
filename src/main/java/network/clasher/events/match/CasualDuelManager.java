@@ -91,7 +91,7 @@ public final class CasualDuelManager implements Listener {
         }
 
         boolean isDestructible() {
-            return arenaId.equals("build-uhc") || arenaId.equals("crystal") || arenaId.equals("uhc") || arenaId.equals("smp");
+            return kitId.equals("build-uhc") || kitId.equals("crystal") || kitId.equals("uhc") || kitId.equals("smp");
         }
     }
 
@@ -130,8 +130,12 @@ public final class CasualDuelManager implements Listener {
         return activeByPlayer.containsKey(playerId);
     }
 
-    public boolean isArenaBusy(String arenaId) {
-        return arenaId != null && activeByArena.containsKey(arenaId.toLowerCase(Locale.ROOT));
+    public boolean isArenaBusy(String arenaOrKitId) {
+        if (arenaOrKitId == null) return false;
+        String lower = arenaOrKitId.toLowerCase(Locale.ROOT);
+        if (activeByArena.containsKey(lower)) return true;
+        String dedicated = arenas.duelArenaId(lower);
+        return activeByArena.containsKey(dedicated);
     }
 
     /**
@@ -247,27 +251,28 @@ public final class CasualDuelManager implements Listener {
     }
 
     private void startCasualDuel(Player a, Player b, String kitId) {
-        Arena arena = arenas.get(kitId);
+        String duelArenaId = arenas.duelArenaId(kitId);
+        Arena arena = arenas.get(duelArenaId);
         if (arena == null) return;
         List<Location> spawns = arenas.spawns(arena, "final");
         if (spawns.size() < 2) spawns = arenas.spawns(arena, "wave1");
         if (spawns.size() < 2) {
-            a.sendMessage(FormatUtil.mm(PREFIX + "<red>Arena " + kitId + " is missing duel spawns.</red>"));
+            a.sendMessage(FormatUtil.mm(PREFIX + "<red>Arena " + duelArenaId + " is missing duel spawns.</red>"));
             return;
         }
         final List<Location> finalSpawns = spawns;
-        ActiveDuel duel = new ActiveDuel(kitId, kitId, a.getUniqueId(), b.getUniqueId());
-        activeByArena.put(kitId, duel);
+        ActiveDuel duel = new ActiveDuel(duelArenaId, kitId, a.getUniqueId(), b.getUniqueId());
+        activeByArena.put(duelArenaId, duel);
         activeByPlayer.put(a.getUniqueId(), duel);
         activeByPlayer.put(b.getUniqueId(), duel);
 
-        arenas.ensureArenaReady(kitId, null, () -> {
+        arenas.ensureArenaReady(duelArenaId, null, () -> {
             if (duel.finishing || !a.isOnline() || !b.isOnline() || isOfficialEventBlocking()) {
                 endDuelInternal(duel, null, "<yellow>Casual duel cancelled.</yellow>", true);
                 return;
             }
             duel.tracker.startTracking(arenas.sharedWorldName(), arena);
-            arenas.setArenaBuildAllowed(kitId, duel.isDestructible());
+            arenas.setArenaBuildAllowed(duelArenaId, duel.isDestructible());
 
             prepareDuelist(duel, a, finalSpawns.get(0), arena);
             prepareDuelist(duel, b, finalSpawns.get(1), arena);

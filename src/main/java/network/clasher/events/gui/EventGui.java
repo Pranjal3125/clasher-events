@@ -4,6 +4,7 @@ import net.kyori.adventure.text.Component;
 import network.clasher.events.arena.ArenaManager;
 import network.clasher.events.kit.KitManager;
 import network.clasher.events.match.EventManager;
+import network.clasher.events.match.TournamentSquadManager;
 import network.clasher.events.model.EventMode;
 import network.clasher.events.storage.DataStore;
 import network.clasher.events.util.FormatUtil;
@@ -81,6 +82,10 @@ public final class EventGui implements Listener {
         for (int i = 0; i < modes.length && i < modeSlots.length; i++) {
             EventMode mode = modes[i];
             boolean picksKit = mode.supportsKitSelection();
+            String clickAction = mode == EventMode.TOURNAMENT ? "pick-tourney-size"
+                    : (picksKit ? "pick-admin-kit" : "create");
+            String clickHint = mode == EventMode.TOURNAMENT ? "<green>Click to pick 1v1/2v2/3v3/4v4 & Kit</green>"
+                    : (picksKit ? "<green>Click to choose Kit & Arena</green>" : "<green>Click to open registration</green>");
             inv.setItem(modeSlots[i], button(
                     mode.icon(),
                     "<yellow><bold>" + mode.displayName() + "</bold></yellow>",
@@ -88,17 +93,27 @@ public final class EventGui implements Listener {
                             "<gray>Mode ID:</gray> <white>" + mode.id() + "</white>",
                             "<gray>Arena/Kit:</gray> <white>" + (picksKit ? "<aqua>Choose Any Kit!</aqua>" : (mode.defaultArenaId() == null ? "Random" : mode.defaultArenaId())) + "</white>",
                             "",
-                            picksKit ? "<green>Click to choose Kit & Arena</green>" : "<green>Click to open registration</green>"
+                            clickHint
                     ),
-                    picksKit ? "pick-admin-kit" : "create",
+                    clickAction,
                     mode.id()
             ));
         }
 
+        inv.setItem(28, button(
+                Material.GOLDEN_HELMET,
+                "<gold><bold>Tournament Control</bold></gold>",
+                List.of(
+                        "<gray>Inspect squads, Auto-Shuffle, Lock,</gray>",
+                        "<gray>Toggle Bo3 Finals & Start Kit Vote!</gray>"
+                ),
+                "open-admin-tourney",
+                ""
+        ));
         inv.setItem(29, button(
                 Material.BELL,
                 "<aqua><bold>Open Mode Vote</bold></aqua>",
-                List.of("<gray>Let players vote on the next PvP mode!</gray>"),
+                List.of("<gray>Let players vote on the next PvP mode</gray>", "<gray>using the interactive Voting GUI!</gray>"),
                 "start-mode-vote",
                 ""
         ));
@@ -127,8 +142,9 @@ public final class EventGui implements Listener {
                 Material.GRASS_BLOCK,
                 "<green><bold>Full Server Setup</bold></green>",
                 List.of(
-                        "<gray>Left-Click: Paste Lobby, Podium & all 8 arenas</gray>",
-                        "<yellow>Shift-Click: Refresh bundled v2.1 builds & paste all</yellow>"
+                        "<gray>Left-Click: Paste Imperial Lobby, Tournament Hall,</gray>",
+                        "<gray>Podium, 8 Grand Arenas & 8 Dedicated 1v1 Duel Arenas</gray>",
+                        "<yellow>Shift-Click: Refresh bundled v2.5 builds & paste all</yellow>"
                 ),
                 "full-setup",
                 ""
@@ -152,6 +168,80 @@ public final class EventGui implements Listener {
                 "status",
                 ""
         ));
+        admin.openInventory(inv);
+    }
+
+    // -------------------------------------------------------------------------
+    // Tournament Team Size Picker (1v1 / 2v2 / 3v3 / 4v4) -> Kit Picker
+    // -------------------------------------------------------------------------
+
+    public void openTournamentSizePicker(Player admin) {
+        EventMenuHolder holder = new EventMenuHolder(EventMenuHolder.ViewType.TOURNAMENT_SIZE_PICKER);
+        Inventory inv = Bukkit.createInventory(holder, 27,
+                FormatUtil.mm("<dark_gray>Tournament:</dark_gray> <gold><bold>Select Team Size</bold></gold>"));
+        holder.setInventory(inv);
+        fillBorder(inv, 27);
+
+        inv.setItem(10, button(Material.IRON_SWORD, "<yellow><bold>1v1 Solo Tournament</bold></yellow>", List.of(
+                "<gray>Format:</gray> <white>Solo Single-Elimination Bracket</white>",
+                "<gray>Arena:</gray> <aqua>Dedicated 1v1 Duel Arena</aqua>",
+                "<gray>Finals:</gray> <gold>" + (events.squads().isBo3Finals() ? "Best-of-3 Grand Final" : "Best-of-1 Final") + "</gold>",
+                "", "<green>Click to pick Kit!</green>"
+        ), "pick-tourney-kit", "1"));
+
+        inv.setItem(12, button(Material.DIAMOND_SWORD, "<aqua><bold>2v2 Duo Tournament</bold></aqua>", List.of(
+                "<gray>Format:</gray> <white>Teams of 2 • Timed Squad Invites</white>",
+                "<gray>Lobby:</gray> <gold>Grand Esports Tournament Hall</gold>",
+                "<gray>Arena:</gray> <aqua>Grand Event Arena</aqua>",
+                "", "<green>Click to pick Kit!</green>"
+        ), "pick-tourney-kit", "2"));
+
+        inv.setItem(14, button(Material.NETHERITE_SWORD, "<gold><bold>3v3 Trio Tournament</bold></gold>", List.of(
+                "<gray>Format:</gray> <white>Teams of 3 • Timed Squad Invites</white>",
+                "<gray>Lobby:</gray> <gold>Grand Esports Tournament Hall</gold>",
+                "<gray>Arena:</gray> <aqua>Grand Event Arena</aqua>",
+                "", "<green>Click to pick Kit!</green>"
+        ), "pick-tourney-kit", "3"));
+
+        inv.setItem(16, button(Material.GOLDEN_HELMET, "<light_purple><bold>4v4 Squad Tournament</bold></light_purple>", List.of(
+                "<gray>Format:</gray> <white>Teams of 4 • Timed Squad Invites</white>",
+                "<gray>Lobby:</gray> <gold>Grand Esports Tournament Hall</gold>",
+                "<gray>Arena:</gray> <aqua>Grand Event Arena</aqua>",
+                "", "<green>Click to pick Kit!</green>"
+        ), "pick-tourney-kit", "4"));
+
+        inv.setItem(22, button(Material.ARROW, "<yellow>Back</yellow>", List.of("<gray>Return to Control Panel</gray>"), "open-admin", ""));
+        admin.openInventory(inv);
+    }
+
+    public void openTournamentKitPicker(Player admin, int teamSize) {
+        int clamped = Math.max(1, Math.min(4, teamSize));
+        String fmt = clamped + "v" + clamped;
+        EventMenuHolder holder = new EventMenuHolder(EventMenuHolder.ViewType.KIT_PICKER);
+        Inventory inv = Bukkit.createInventory(holder, 36,
+                FormatUtil.mm("<dark_gray>" + fmt + " Tourney:</dark_gray> <gold><bold>Pick Kit</bold></gold>"));
+        holder.setInventory(inv);
+        fillBorder(inv, 36);
+
+        int[] slots = {10, 11, 12, 13, 14, 15, 16, 22};
+        List<EventMode> kitModes = EventMode.kitModes();
+        for (int i = 0; i < kitModes.size() && i < slots.length; i++) {
+            EventMode km = kitModes.get(i);
+            inv.setItem(slots[i], button(
+                    km.icon(),
+                    "<yellow><bold>" + km.displayName() + "</bold></yellow>",
+                    List.of(
+                            "<gray>Format:</gray> <gold>" + fmt + " Tournament</gold>",
+                            "<gray>Kit:</gray> <white>" + km.id() + "</white>",
+                            "<gray>Arena:</gray> <aqua>" + (clamped == 1 ? "Dedicated 1v1 Duel Arena" : "Grand Main Arena") + "</aqua>",
+                            "",
+                            "<green>Click to open registration!</green>"
+                    ),
+                    "create-tourney",
+                    clamped + ":" + km.id()
+            ));
+        }
+        inv.setItem(31, button(Material.ARROW, "<yellow>Back</yellow>", List.of("<gray>Choose Team Size</gray>"), "pick-tourney-size", ""));
         admin.openInventory(inv);
     }
 
@@ -216,8 +306,20 @@ public final class EventGui implements Listener {
     }
 
     // -------------------------------------------------------------------------
-    // Pre-Event Player Mode Voting GUI (36 slots)
+    // Smart Voting GUI Router + Mode Vote GUI + Tournament Kit Vote GUI
     // -------------------------------------------------------------------------
+
+    public void openSmartVoteGui(Player player) {
+        if (events.isModeVoteOpen()) {
+            openModeVoteGui(player);
+        } else if (events.isKitVoteOpen()) {
+            openKitVoteGui(player);
+        } else if (events.isEventRunning() && events.isSpectator(player.getUniqueId())) {
+            openVoteGui(player);
+        } else {
+            player.sendMessage(FormatUtil.mm("<yellow>No vote is currently open! Staff can open one with <gold>/ce voteopen</gold> or <gold>/ce tournament kitvote</gold>.</yellow>"));
+        }
+    }
 
     public void openModeVoteGui(Player player) {
         if (!events.isModeVoteOpen()) {
@@ -225,29 +327,324 @@ public final class EventGui implements Listener {
             return;
         }
         EventMenuHolder holder = new EventMenuHolder(EventMenuHolder.ViewType.MODE_VOTE);
-        Inventory inv = Bukkit.createInventory(holder, 36, FormatUtil.mm("<dark_gray><bold>Vote Next Event Mode</bold></dark_gray> <gray>(" + events.modeVoteRemaining() + "s)</gray>"));
+        Inventory inv = Bukkit.createInventory(holder, 45,
+                FormatUtil.mm("<dark_gray><bold>🗳 Vote Next Mode</bold></dark_gray> <gray>(" + events.modeVoteRemaining() + "s)</gray>"));
         holder.setInventory(inv);
-        fillBorder(inv, 36);
+        fillBorder(inv, 45);
 
         Map<String, Integer> counts = events.modeVoteCounts();
+        int totalVotes = Math.max(0, events.totalModeVotes());
+        String myVote = events.playerModeVote(player.getUniqueId());
+
         int slot = 10;
         for (EventMode mode : events.modeVoteOptions()) {
-            slot = nextInteriorSlot(slot, 26);
+            slot = nextInteriorSlot(slot, 35);
             if (slot < 0) break;
             int votes = counts.getOrDefault(mode.id(), 0);
-            inv.setItem(slot++, button(
+            boolean picked = mode.id().equalsIgnoreCase(myVote);
+            int pct = totalVotes > 0 ? (int) Math.round((votes * 100.0) / totalVotes) : 0;
+            ItemStack item = button(
                     mode.icon(),
-                    "<yellow><bold>" + mode.displayName() + "</bold></yellow>",
+                    (picked ? "<green><bold>✔ " : "<yellow><bold>") + mode.displayName() + (picked ? "</bold></green>" : "</bold></yellow>"),
                     List.of(
-                            "<gray>Current Votes:</gray> <green><bold>" + votes + "</bold></green>",
+                            "<gray>Votes:</gray> <green><bold>" + votes + "</bold></green> <gray>(" + pct + "%)</gray>",
+                            progressBarMini(pct),
                             "",
-                            "<aqua>Click to vote for this mode!</aqua>"
+                            picked ? "<green><bold>★ YOUR CURRENT VOTE ★</bold></green>" : "<aqua>Click to vote for this mode!</aqua>"
                     ),
                     "mode-vote",
                     mode.id()
-            ));
+            );
+            if (picked) setGlint(item);
+            inv.setItem(slot++, item);
         }
+        inv.setItem(39, button(Material.CLOCK, "<gold><bold>Time Remaining</bold></gold>",
+                List.of("<yellow>" + FormatUtil.formatDuration(events.modeVoteRemaining()) + "</yellow>"), "noop", ""));
+        inv.setItem(41, button(Material.PAPER, "<aqua><bold>Total Votes Cast</bold></aqua>",
+                List.of("<green>" + totalVotes + " players voted</green>", "<gray>Click any mode to switch your vote!</gray>"), "noop", ""));
         player.openInventory(inv);
+    }
+
+    public void openKitVoteGui(Player player) {
+        if (!events.isKitVoteOpen()) {
+            player.sendMessage(FormatUtil.mm("<red>Tournament kit voting is not currently open.</red>"));
+            return;
+        }
+        EventMenuHolder holder = new EventMenuHolder(EventMenuHolder.ViewType.KIT_VOTE);
+        Inventory inv = Bukkit.createInventory(holder, 36,
+                FormatUtil.mm("<dark_gray><bold>🗳 Vote Tourney Kit</bold></dark_gray> <gray>(" + events.kitVoteRemaining() + "s)</gray>"));
+        holder.setInventory(inv);
+        fillBorder(inv, 36);
+
+        Map<String, Integer> counts = events.kitVoteCounts();
+        int totalVotes = Math.max(0, events.totalKitVotes());
+        String myVote = events.playerKitVote(player.getUniqueId());
+        int[] slots = {10, 11, 12, 13, 14, 15, 16, 22};
+        List<EventMode> kitModes = EventMode.kitModes();
+        for (int i = 0; i < kitModes.size() && i < slots.length; i++) {
+            EventMode km = kitModes.get(i);
+            int votes = counts.getOrDefault(km.id(), 0);
+            boolean picked = km.id().equalsIgnoreCase(myVote);
+            int pct = totalVotes > 0 ? (int) Math.round((votes * 100.0) / totalVotes) : 0;
+            ItemStack item = button(
+                    km.icon(),
+                    (picked ? "<green><bold>✔ " : "<yellow><bold>") + km.displayName() + (picked ? "</bold></green>" : "</bold></yellow>"),
+                    List.of(
+                            "<gray>Votes:</gray> <green><bold>" + votes + "</bold></green> <gray>(" + pct + "%)</gray>",
+                            progressBarMini(pct),
+                            "",
+                            picked ? "<green><bold>★ YOUR CURRENT VOTE ★</bold></green>" : "<aqua>Click to vote for this kit!</aqua>"
+                    ),
+                    "kit-vote",
+                    km.id()
+            );
+            if (picked) setGlint(item);
+            inv.setItem(slots[i], item);
+        }
+        inv.setItem(31, button(Material.CLOCK, "<gold><bold>Kit Vote Timer</bold></gold>",
+                List.of("<yellow>" + FormatUtil.formatDuration(events.kitVoteRemaining()) + " left</yellow>",
+                        "<gray>Total Votes: <green>" + totalVotes + "</green></gray>"), "noop", ""));
+        player.openInventory(inv);
+    }
+
+    // -------------------------------------------------------------------------
+    // Tournament Squad Manager GUI (54 slots — Player 1-Click Teammate Invites!)
+    // -------------------------------------------------------------------------
+
+    public void openSquadManagerGui(Player viewer) {
+        if ((!events.isEventOpen() && !events.isEventRunning()) || events.eventMode() != EventMode.TOURNAMENT) {
+            viewer.sendMessage(FormatUtil.mm("<red>No tournament is currently active.</red>"));
+            return;
+        }
+        TournamentSquadManager sqMgr = events.squads();
+        TournamentSquadManager.TournamentTeam myTeam = sqMgr.teamOf(viewer.getUniqueId());
+        if (myTeam == null) {
+            viewer.sendMessage(FormatUtil.mm("<red>Join the tournament first with <yellow>/event join</yellow>!</red>"));
+            return;
+        }
+        EventMenuHolder holder = new EventMenuHolder(EventMenuHolder.ViewType.SQUAD_MANAGER);
+        Inventory inv = Bukkit.createInventory(holder, 54,
+                FormatUtil.mm("<dark_gray><bold>Squad Manager</bold></dark_gray> <gray>|</gray> <gold>" + FormatUtil.escape(myTeam.name()) + "</gold>"));
+        holder.setInventory(inv);
+        fillBorder(inv, 54);
+
+        boolean isLeader = viewer.getUniqueId().equals(myTeam.leader());
+        List<String> myLore = new ArrayList<>();
+        myLore.add("<gray>Format:</gray> <aqua>" + sqMgr.formatLabel() + " Tournament</aqua>");
+        myLore.add("<gray>Size:</gray> <green>" + myTeam.size() + "/" + sqMgr.teamSize() + "</green>");
+        myLore.add("<gray>Members:</gray>");
+        for (UUID m : myTeam.members()) {
+            String n = safeName(m);
+            myLore.add("  " + (m.equals(myTeam.leader()) ? "<gold>★ " : "<white>• ") + FormatUtil.escape(n) + (m.equals(myTeam.leader()) ? " (Leader)</gold>" : "</white>"));
+        }
+        myLore.add("");
+        myLore.add("<yellow>Rename:</yellow> <gray>/event squad name <TeamName></gray>");
+        myLore.add("<yellow>Squad Chat:</yellow> <gray>@message or /event tc <msg></gray>");
+        inv.setItem(4, button(Material.TOTEM_OF_UNDYING, "<gold><bold>Squad #" + myTeam.id() + " — " + FormatUtil.escape(myTeam.name()) + "</bold></gold>", myLore, "noop", ""));
+
+        // Row 1 controls
+        if (myTeam.size() > 1 && events.isEventOpen() && !sqMgr.isInvitesLocked()) {
+            inv.setItem(47, button(Material.RED_WOOL, "<red><bold>Leave Squad</bold></red>",
+                    List.of("<gray>Leave this squad and become solo</gray>", "<gray>(you stay registered in the tournament).</gray>"), "squad-leave", ""));
+        }
+        inv.setItem(49, button(Material.FILLED_MAP, "<aqua><bold>Live Teams & Bracket</bold></aqua>",
+                List.of("<gray>View all " + sqMgr.allTeams().size() + " registered squads & matchups!</gray>"), "open-bracket", ""));
+        inv.setItem(51, button(Material.CLOCK, "<yellow><bold>Refresh Roster</bold></yellow>",
+                List.of("<gray>Reload available players to invite.</gray>"), "open-squad", ""));
+
+        // Interior: Show current teammates first (kickable by leader), then solo players (1-click invite!)
+        int slot = 10;
+        for (UUID m : myTeam.members()) {
+            if (m.equals(viewer.getUniqueId())) continue;
+            slot = nextInteriorSlot(slot, 44);
+            if (slot < 0) break;
+            Player mp = Bukkit.getPlayer(m);
+            ItemStack head = new ItemStack(Material.PLAYER_HEAD);
+            if (head.getItemMeta() instanceof SkullMeta meta) {
+                if (mp != null) meta.setOwningPlayer(mp);
+                String n = safeName(m);
+                meta.displayName(FormatUtil.noItalic(FormatUtil.mm("<green><bold>★ Teammate: " + FormatUtil.escape(n) + "</bold></green>")));
+                List<Component> lore = new ArrayList<>();
+                lore.add(FormatUtil.noItalic(FormatUtil.mm("<gray>In your squad (" + FormatUtil.escape(myTeam.name()) + ")</gray>")));
+                if (isLeader && events.isEventOpen() && !sqMgr.isInvitesLocked()) {
+                    lore.add(FormatUtil.noItalic(FormatUtil.mm("<red>Click to kick from squad</red>")));
+                    meta.getPersistentDataContainer().set(actionKey, PersistentDataType.STRING, "squad-kick");
+                    meta.getPersistentDataContainer().set(valueKey, PersistentDataType.STRING, n);
+                } else {
+                    meta.getPersistentDataContainer().set(actionKey, PersistentDataType.STRING, "noop");
+                }
+                meta.lore(lore);
+                head.setItemMeta(meta);
+            }
+            inv.setItem(slot++, head);
+        }
+
+        if (events.isEventOpen() && sqMgr.isTeamMode() && isLeader && myTeam.size() < sqMgr.teamSize() && !sqMgr.isInvitesLocked()) {
+            for (UUID pid : events.participants()) {
+                if (myTeam.contains(pid)) continue;
+                TournamentSquadManager.TournamentTeam other = sqMgr.teamOf(pid);
+                if (other == null || other.size() > 1) continue; // Only show available solo players!
+                Player candidate = Bukkit.getPlayer(pid);
+                if (candidate == null) continue;
+                slot = nextInteriorSlot(slot, 44);
+                if (slot < 0) break;
+                ItemStack head = new ItemStack(Material.PLAYER_HEAD);
+                if (head.getItemMeta() instanceof SkullMeta meta) {
+                    meta.setOwningPlayer(candidate);
+                    meta.displayName(FormatUtil.noItalic(FormatUtil.mm("<yellow><bold>" + FormatUtil.escape(candidate.getName()) + "</bold></yellow> <gray>(Solo)</gray>")));
+                    meta.lore(List.of(
+                            FormatUtil.noItalic(FormatUtil.mm("<gray>Available to join your squad!</gray>")),
+                            FormatUtil.noItalic(FormatUtil.mm("<green>Click to send Squad Invite!</green>"))
+                    ));
+                    meta.getPersistentDataContainer().set(actionKey, PersistentDataType.STRING, "squad-invite");
+                    meta.getPersistentDataContainer().set(valueKey, PersistentDataType.STRING, candidate.getName());
+                    head.setItemMeta(meta);
+                }
+                inv.setItem(slot++, head);
+            }
+        } else if (myTeam.size() >= sqMgr.teamSize() && slot == 10) {
+            inv.setItem(22, button(Material.LIME_CONCRETE, "<green><bold>Squad Full & Ready!</bold></green>",
+                    List.of("<gray>Your squad has " + myTeam.size() + "/" + sqMgr.teamSize() + " players.</gray>"), "noop", ""));
+        }
+        viewer.openInventory(inv);
+    }
+
+    // -------------------------------------------------------------------------
+    // Live Tournament Bracket & Registered Squads Viewer GUI (54 slots)
+    // -------------------------------------------------------------------------
+
+    public void openBracketViewerGui(Player viewer) {
+        if ((!events.isEventOpen() && !events.isEventRunning() && !events.isCelebrating()) || events.eventMode() != EventMode.TOURNAMENT) {
+            viewer.sendMessage(FormatUtil.mm("<red>No tournament is currently active.</red>"));
+            return;
+        }
+        TournamentSquadManager sqMgr = events.squads();
+        EventMenuHolder holder = new EventMenuHolder(EventMenuHolder.ViewType.BRACKET_VIEWER);
+        Inventory inv = Bukkit.createInventory(holder, 54,
+                FormatUtil.mm("<dark_gray><bold>🏆 " + sqMgr.formatLabel().toUpperCase(Locale.ROOT) + " Tournament Bracket</bold></dark_gray>"));
+        holder.setInventory(inv);
+        fillBorder(inv, 54);
+
+        // Top Center Summary / Live Match Banner
+        TournamentSquadManager.ActiveMatchup cur = sqMgr.currentMatchup();
+        if (cur != null) {
+            inv.setItem(4, button(Material.NETHER_STAR,
+                    "<red><bold>⚔ LIVE: " + FormatUtil.escape(cur.teamA().name()) + " vs " + FormatUtil.escape(cur.teamB().name()) + "</bold></red>",
+                    List.of(
+                            "<gold>" + cur.seriesBadge() + "</gold>",
+                            "<gray>Format:</gray> <aqua>" + sqMgr.formatLabel() + " • Kit: " + FormatUtil.escape(events.selectedKit()) + "</aqua>",
+                            "<gray>Upcoming Matches:</gray> <yellow>" + sqMgr.upcomingMatchups().size() + "</yellow>",
+                            "<gray>Advanced This Round:</gray> <green>" + sqMgr.roundWinners().size() + "</green>"
+                    ), "noop", ""));
+        } else {
+            inv.setItem(4, button(Material.GOLDEN_HELMET,
+                    "<gold><bold>" + sqMgr.formatLabel().toUpperCase(Locale.ROOT) + " Tournament — " + (events.isEventOpen() ? "Registration" : "Round " + sqMgr.currentRound()) + "</bold></gold>",
+                    List.of(
+                            "<gray>Kit:</gray> <aqua>" + FormatUtil.escape(events.selectedKit()) + "</aqua>",
+                            "<gray>Total Squads:</gray> <yellow>" + sqMgr.allTeams().size() + "</yellow> <gray>(" + sqMgr.readyTeamCount() + " full)</gray>",
+                            "<gray>Grand Finals:</gray> <gold>" + (sqMgr.isBo3Finals() ? "Best-of-3" : "Best-of-1") + "</gold>"
+                    ), "noop", ""));
+        }
+
+        // Interior: All Registered Squads & their Bracket Status!
+        int slot = 10;
+        for (TournamentSquadManager.TournamentTeam team : sqMgr.allTeams()) {
+            slot = nextInteriorSlot(slot, 44);
+            if (slot < 0) break;
+            boolean isChamp = sqMgr.championTeam() != null && sqMgr.championTeam().id() == team.id();
+            boolean isFighting = cur != null && (cur.teamA().id() == team.id() || cur.teamB().id() == team.id());
+            Material mat = isChamp ? Material.GOLD_BLOCK
+                    : isFighting ? Material.DIAMOND_SWORD
+                    : team.isEliminated() ? Material.RED_STAINED_GLASS
+                    : team.size() >= sqMgr.teamSize() ? Material.LIME_CONCRETE
+                    : Material.YELLOW_CONCRETE;
+            String stateTag = isChamp ? "<gold><bold>🏆 CHAMPION</bold></gold>"
+                    : isFighting ? "<red><bold>⚔ FIGHTING NOW</bold></red>"
+                    : team.isEliminated() ? "<red>✖ Eliminated</red>"
+                    : team.size() >= sqMgr.teamSize() ? "<green>✔ Ready (" + team.size() + "/" + sqMgr.teamSize() + ")</green>"
+                    : "<yellow>⏳ Forming (" + team.size() + "/" + sqMgr.teamSize() + ")</yellow>";
+            List<String> lore = new ArrayList<>();
+            lore.add(stateTag);
+            lore.add("<gray>Roster:</gray>");
+            for (UUID m : team.members()) {
+                lore.add("  " + (m.equals(team.leader()) ? "<gold>★ " : "<white>• ") + FormatUtil.escape(safeName(m)) + (m.equals(team.leader()) ? "</gold>" : "</white>"));
+            }
+            ItemStack card = button(mat, "<gold>#" + team.id() + "</gold> <yellow><bold>" + FormatUtil.escape(team.name()) + "</bold></yellow>", lore, "noop", "");
+            if (isChamp || isFighting) setGlint(card);
+            inv.setItem(slot++, card);
+        }
+
+        if (events.isEventOpen() && sqMgr.isTeamMode() && events.participants().contains(viewer.getUniqueId())) {
+            inv.setItem(47, button(Material.TOTEM_OF_UNDYING, "<gold><bold>Manage My Squad</bold></gold>",
+                    List.of("<gray>Invite friends or leave your squad</gray>"), "open-squad", ""));
+        }
+        if (viewer.hasPermission("clasherevents.admin")) {
+            inv.setItem(49, button(Material.COMMAND_BLOCK, "<red><bold>Admin Tournament Controls</bold></red>",
+                    List.of("<gray>Shuffle, Lock, Disband, Kit Vote & Bo3</gray>"), "open-admin-tourney", ""));
+        }
+        inv.setItem(51, button(Material.CLOCK, "<yellow><bold>Refresh Bracket</bold></yellow>", List.of(), "open-bracket", ""));
+        viewer.openInventory(inv);
+    }
+
+    // -------------------------------------------------------------------------
+    // Admin Tournament Control Panel GUI (54 slots)
+    // -------------------------------------------------------------------------
+
+    public void openAdminTournamentGui(Player admin) {
+        TournamentSquadManager sqMgr = events.squads();
+        EventMenuHolder holder = new EventMenuHolder(EventMenuHolder.ViewType.ADMIN_TOURNAMENT);
+        Inventory inv = Bukkit.createInventory(holder, 54,
+                FormatUtil.mm("<dark_gray><bold>Admin</bold></dark_gray> <gray>|</gray> <gold>Tournament Controls (" + sqMgr.formatLabel() + ")</gold>"));
+        holder.setInventory(inv);
+        fillBorder(inv, 54);
+
+        boolean activeTourney = events.eventMode() == EventMode.TOURNAMENT && (events.isEventOpen() || events.isEventRunning());
+        inv.setItem(10, button(Material.ENDER_EYE, "<aqua><bold>Auto-Shuffle Balanced Squads</bold></aqua>",
+                List.of("<gray>Randomly packs all registered players into</gray>", "<gray>even " + sqMgr.formatLabel() + " squads!</gray>"), "tourney-shuffle", ""));
+        inv.setItem(11, button(sqMgr.isInvitesLocked() ? Material.REDSTONE_TORCH : Material.LEVER,
+                sqMgr.isInvitesLocked() ? "<red><bold>Squads: LOCKED</bold></red>" : "<green><bold>Squads: UNLOCKED</bold></green>",
+                List.of("<gray>Click to toggle player squad invites/leaves.</gray>"), "tourney-toggle-lock", ""));
+        inv.setItem(12, button(Material.GOLDEN_APPLE,
+                "<gold><bold>Grand Finals: " + (sqMgr.isBo3Finals() ? "Best-of-3" : "Best-of-1") + "</bold></gold>",
+                List.of("<gray>Click to toggle Best-of-3 vs Best-of-1 Finals!</gray>"), "tourney-toggle-bo3", ""));
+        inv.setItem(13, button(Material.BELL, "<yellow><bold>Start Kit Vote GUI (30s)</bold></yellow>",
+                List.of("<gray>Let players in the Tournament Hall vote</gray>", "<gray>for the PvP kit in an interactive GUI!</gray>"), "tourney-kitvote", ""));
+        inv.setItem(14, button(Material.FILLED_MAP, "<aqua><bold>Open Live Bracket</bold></aqua>",
+                List.of("<gray>View live matchups & all squads.</gray>"), "open-bracket", ""));
+        inv.setItem(15, button(Material.LIME_CONCRETE, "<green><bold>Start Bracket Now</bold></green>",
+                List.of("<gray>Auto-fills solos & starts Round 1 immediately!</gray>"), "tourney-start-now", ""));
+        inv.setItem(16, button(Material.COMPASS, "<gold><bold>New Tournament Setup</bold></gold>",
+                List.of("<gray>Pick 1v1 / 2v2 / 3v3 / 4v4 & Kit</gray>"), "pick-tourney-size", ""));
+
+        // Rows 3-4: All registered squads (click any multi-player squad to disband!)
+        int slot = 19;
+        if (activeTourney) {
+            for (TournamentSquadManager.TournamentTeam team : sqMgr.allTeams()) {
+                slot = nextInteriorSlot(slot, 44);
+                if (slot < 0) break;
+                List<String> lore = new ArrayList<>();
+                lore.add("<gray>Size:</gray> <yellow>" + team.size() + "/" + sqMgr.teamSize() + "</yellow>");
+                for (UUID m : team.members()) {
+                    lore.add("  <white>• " + FormatUtil.escape(safeName(m)) + "</white>");
+                }
+                if (events.isEventOpen() && team.size() > 1) {
+                    lore.add("");
+                    lore.add("<red>Click to Disband Squad</red>");
+                }
+                inv.setItem(slot++, button(
+                        team.size() >= sqMgr.teamSize() ? Material.LIME_BANNER : Material.YELLOW_BANNER,
+                        "<gold>#" + team.id() + "</gold> <yellow><bold>" + FormatUtil.escape(team.name()) + "</bold></yellow>",
+                        lore,
+                        (events.isEventOpen() && team.size() > 1) ? "tourney-disband" : "noop",
+                        String.valueOf(team.id())
+                ));
+            }
+        } else {
+            inv.setItem(31, button(Material.PAPER, "<gray>No Active Tournament</gray>",
+                    List.of("<yellow>Click 'New Tournament Setup' above to launch one!</yellow>"), "pick-tourney-size", ""));
+        }
+        inv.setItem(49, button(Material.ARROW, "<yellow>Back to Control Panel</yellow>", List.of(), "open-admin", ""));
+        admin.openInventory(inv);
     }
 
     // -------------------------------------------------------------------------
@@ -455,20 +852,27 @@ public final class EventGui implements Listener {
         fillBorder(inv, 45);
 
         int slot = 10;
+        Map<UUID, Integer> crowdVotes = events.predictionVoteCounts();
+        UUID myPick = events.playerPredictionVote(viewer.getUniqueId());
         for (UUID id : events.alive()) {
             Player fighter = Bukkit.getPlayer(id);
             if (fighter == null) continue;
             slot = nextInteriorSlot(slot, 35);
             if (slot < 0) break;
 
+            boolean isMine = id.equals(myPick);
+            int voteCount = crowdVotes.getOrDefault(id, 0);
             ItemStack head = new ItemStack(Material.PLAYER_HEAD);
             if (head.getItemMeta() instanceof SkullMeta meta) {
                 meta.setOwningPlayer(fighter);
-                meta.displayName(FormatUtil.noItalic(FormatUtil.mm("<yellow><bold>" + FormatUtil.escape(fighter.getName()) + "</bold></yellow>")));
+                meta.displayName(FormatUtil.noItalic(FormatUtil.mm((isMine ? "<green><bold>✔ " : "<yellow><bold>")
+                        + FormatUtil.escape(fighter.getName()) + (isMine ? "</bold></green>" : "</bold></yellow>"))));
                 meta.lore(List.of(
-                        FormatUtil.noItalic(FormatUtil.mm("<gray>Click to predict this fighter as the winner!</gray>")),
+                        FormatUtil.noItalic(FormatUtil.mm("<gray>Crowd Votes:</gray> <aqua><bold>" + voteCount + "</bold></aqua>")),
+                        FormatUtil.noItalic(FormatUtil.mm(isMine ? "<green><bold>★ YOUR PREDICTION ★</bold></green>" : "<gray>Click to predict this fighter as the winner!</gray>")),
                         FormatUtil.noItalic(FormatUtil.mm("<green>Correct predictions earn audience points.</green>"))
                 ));
+                if (isMine) meta.setEnchantmentGlintOverride(true);
                 meta.getPersistentDataContainer().set(actionKey, PersistentDataType.STRING, "vote");
                 meta.getPersistentDataContainer().set(valueKey, PersistentDataType.STRING, fighter.getName());
                 head.setItemMeta(meta);
@@ -549,6 +953,80 @@ public final class EventGui implements Listener {
                 if (!player.hasPermission("clasherevents.admin")) return;
                 player.closeInventory();
                 events.createEvent(value);
+            }
+            case "pick-tourney-size" -> {
+                if (!player.hasPermission("clasherevents.admin")) return;
+                openTournamentSizePicker(player);
+            }
+            case "pick-tourney-kit" -> {
+                if (!player.hasPermission("clasherevents.admin")) return;
+                try {
+                    openTournamentKitPicker(player, Integer.parseInt(value));
+                } catch (NumberFormatException ignored) {}
+            }
+            case "create-tourney" -> {
+                if (!player.hasPermission("clasherevents.admin")) return;
+                String[] parts = value.split(":", 2);
+                player.closeInventory();
+                if (parts.length == 2) {
+                    try {
+                        events.createEvent("tournament", parts[1], Integer.parseInt(parts[0]));
+                    } catch (NumberFormatException ignored) {}
+                }
+            }
+            case "open-admin-tourney" -> {
+                if (!player.hasPermission("clasherevents.admin")) return;
+                openAdminTournamentGui(player);
+            }
+            case "open-squad" -> openSquadManagerGui(player);
+            case "open-bracket" -> openBracketViewerGui(player);
+            case "squad-invite" -> {
+                events.handleSquadInvite(player, value);
+                openSquadManagerGui(player);
+            }
+            case "squad-kick" -> {
+                events.handleSquadKick(player, value);
+                openSquadManagerGui(player);
+            }
+            case "squad-leave" -> {
+                events.handleSquadLeave(player);
+                openSquadManagerGui(player);
+            }
+            case "tourney-shuffle" -> {
+                if (!player.hasPermission("clasherevents.admin")) return;
+                events.adminShuffleSquads(player);
+                openAdminTournamentGui(player);
+            }
+            case "tourney-toggle-lock" -> {
+                if (!player.hasPermission("clasherevents.admin")) return;
+                events.adminSetInvitesLocked(player, !events.squads().isInvitesLocked());
+                openAdminTournamentGui(player);
+            }
+            case "tourney-toggle-bo3" -> {
+                if (!player.hasPermission("clasherevents.admin")) return;
+                events.adminSetBo3Finals(player, !events.squads().isBo3Finals());
+                openAdminTournamentGui(player);
+            }
+            case "tourney-kitvote" -> {
+                if (!player.hasPermission("clasherevents.admin")) return;
+                player.closeInventory();
+                events.startTournamentKitVote(player, 30);
+            }
+            case "tourney-start-now" -> {
+                if (!player.hasPermission("clasherevents.admin")) return;
+                player.closeInventory();
+                events.skipTimer(player, 0, true);
+            }
+            case "tourney-disband" -> {
+                if (!player.hasPermission("clasherevents.admin")) return;
+                try {
+                    events.adminDisbandTeam(player, Integer.parseInt(value));
+                } catch (NumberFormatException ignored) {}
+                openAdminTournamentGui(player);
+            }
+            case "kit-vote" -> {
+                events.castTournamentKitVote(player, value);
+                openKitVoteGui(player);
             }
             case "pick-admin-kit" -> {
                 if (!player.hasPermission("clasherevents.admin")) return;
@@ -722,6 +1200,32 @@ public final class EventGui implements Listener {
     // -------------------------------------------------------------------------
     // UI helpers
     // -------------------------------------------------------------------------
+
+    private static String progressBarMini(int percent) {
+        int filled = Math.max(0, Math.min(10, (int) Math.round(percent / 10.0)));
+        StringBuilder sb = new StringBuilder("<green>");
+        for (int i = 0; i < filled; i++) sb.append("█");
+        sb.append("</green><dark_gray>");
+        for (int i = filled; i < 10; i++) sb.append("░");
+        sb.append("</dark_gray>");
+        return sb.toString();
+    }
+
+    private static void setGlint(ItemStack item) {
+        if (item == null) return;
+        ItemMeta meta = item.getItemMeta();
+        if (meta != null) {
+            meta.setEnchantmentGlintOverride(true);
+            item.setItemMeta(meta);
+        }
+    }
+
+    private static String safeName(UUID id) {
+        Player p = Bukkit.getPlayer(id);
+        if (p != null) return p.getName();
+        String n = Bukkit.getOfflinePlayer(id).getName();
+        return n != null ? n : id.toString().substring(0, 8);
+    }
 
     private static int nextInteriorSlot(int slot, int maxExclusive) {
         while (slot < maxExclusive) {

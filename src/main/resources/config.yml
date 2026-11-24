@@ -1,5 +1,5 @@
 # ==============================================================================
-# Clasher Events v2.4.0 Configuration
+# Clasher Events v2.5.0 Configuration
 # ==============================================================================
 # Zero-dependency plug-and-play PvP tournament & events engine.
 # WorldEdit, WorldGuard, Hologram plugins, and PlaceholderAPI are 100% optional!
@@ -98,10 +98,18 @@ world-border:
     shrink-seconds: 30
 
 # Player-initiated casual 1v1 duels (/event duel <player>) with automatic Admin Event Priority Override!
-# Whenever an admin opens an official event, active casual duels stop cleanly and free the arenas immediately.
+# Automatically runs in the 8 dedicated 1v1 Duel Arenas (duel-*), leaving the main grand arenas untouched!
 casual-duels:
   enabled: true
   request-expire-seconds: 60
+
+# Esports Team Tournaments (1v1 / 2v2 / 3v3 / 4v4) with dedicated Grand Tournament Hall,
+# timed teammate invites, auto-fill for solo players, & optional Best-of-3 Grand Finals!
+tournament:
+  default-team-size: 2
+  auto-fill-solos: true
+  bo3-finals: true
+  invite-expire-seconds: 60
 
 # Optional automatic event hosting (set enabled: true to auto-run events without staff online).
 auto-scheduler:
@@ -161,6 +169,13 @@ locations:
     x: -599.5
     y: 102.0
     z: 9.5
+    yaw: 180.0
+    pitch: 0.0
+  tournament-lobby:
+    world: clasher_events
+    x: -799.5
+    y: 102.0
+    z: 0.5
     yaw: 180.0
     pitch: 0.0
 

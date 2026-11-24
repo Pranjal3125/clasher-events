@@ -5,6 +5,7 @@ import network.clasher.events.arena.ArenaManager;
 import network.clasher.events.gui.EventGui;
 import network.clasher.events.kit.KitManager;
 import network.clasher.events.match.EventManager;
+import network.clasher.events.match.TournamentSquadManager;
 import network.clasher.events.model.Arena;
 import network.clasher.events.model.EventMode;
 import network.clasher.events.storage.DataStore;
@@ -26,11 +27,11 @@ import java.util.Locale;
  */
 public final class EventCommands implements CommandExecutor, TabCompleter {
     private static final List<String> EVENT_SUBS = List.of(
-            "join", "leave", "duel", "accept", "decline", "kiteditor", "modevote", "vote", "cheer", "team", "tc", "points", "stats", "top", "history", "spectate", "help"
+            "join", "leave", "squad", "bracket", "duel", "accept", "decline", "kiteditor", "modevote", "vote", "cheer", "team", "tc", "points", "stats", "top", "history", "spectate", "help"
     );
     private static final List<String> CE_SUBS = List.of(
-            "help", "setup", "create", "voteopen", "start", "skip", "timeskip", "stop", "pause", "resume", "status", "reload",
-            "holograms", "gui", "countdown", "tp", "setlobby", "setwaiting", "clearwaiting", "setspectator", "setwinner", "setcrowd",
+            "help", "setup", "create", "tournament", "voteopen", "start", "skip", "timeskip", "stop", "pause", "resume", "status", "reload",
+            "holograms", "gui", "countdown", "tp", "setlobby", "settournamentlobby", "setwaiting", "clearwaiting", "setspectator", "setwinner", "setcrowd",
             "setspawn", "addspawn", "arena", "kit"
     );
 
@@ -86,6 +87,8 @@ public final class EventCommands implements CommandExecutor, TabCompleter {
         switch (sub) {
             case "join" -> events.joinEvent(player);
             case "leave" -> events.leaveEvent(player);
+            case "bracket", "teams" -> gui.openBracketViewerGui(player);
+            case "squad", "party" -> handlePlayerSquad(player, args);
             case "duel" -> {
                 if (events.casualDuels() == null) return;
                 if (args.length < 2) {
@@ -118,8 +121,17 @@ public final class EventCommands implements CommandExecutor, TabCompleter {
                 else gui.openModeVoteGui(player);
             }
             case "vote" -> {
-                if (args.length >= 2) events.handleVote(player, args[1]);
-                else gui.openVoteGui(player);
+                if (events.isModeVoteOpen()) {
+                    if (args.length >= 2) events.castModeVote(player, args[1]);
+                    else gui.openModeVoteGui(player);
+                } else if (events.isKitVoteOpen()) {
+                    if (args.length >= 2) events.castTournamentKitVote(player, args[1]);
+                    else gui.openKitVoteGui(player);
+                } else if (args.length >= 2) {
+                    events.handleVote(player, args[1]);
+                } else {
+                    gui.openSmartVoteGui(player);
+                }
             }
             case "cheer" -> {
                 if (args.length >= 2) events.handleCheer(player, args[1]);
@@ -204,15 +216,46 @@ public final class EventCommands implements CommandExecutor, TabCompleter {
                 else player.sendMessage(FormatUtil.mm("<red>Only eliminated event spectators can use this command.</red>"));
             }
             default -> {
-                player.sendMessage(FormatUtil.mm("<gold><bold>Clasher Events v2.4 Commands</bold></gold>"));
+                player.sendMessage(FormatUtil.mm("<gold><bold>Clasher Events v2.5 Commands</bold></gold>"));
                 player.sendMessage(FormatUtil.mm("<yellow>/event join</yellow> <dark_gray>|</dark_gray> <yellow>/event leave</yellow> <dark_gray>-</dark_gray> <gray>Join or leave the active event</gray>"));
-                player.sendMessage(FormatUtil.mm("<yellow>/event duel <player> [kit]</yellow> <dark_gray>|</dark_gray> <yellow>accept</yellow> <dark_gray>|</dark_gray> <yellow>decline</yellow> <dark_gray>-</dark_gray> <gray>Casual 1v1 duels (auto-pauses for Server Events!)</gray>"));
+                player.sendMessage(FormatUtil.mm("<yellow>/event squad [invite|accept|decline|leave|kick|name|list]</yellow> <dark_gray>|</dark_gray> <yellow>/event bracket</yellow>"));
+                player.sendMessage(FormatUtil.mm("<yellow>/event duel <player> [kit]</yellow> <dark_gray>|</dark_gray> <yellow>accept</yellow> <dark_gray>|</dark_gray> <yellow>decline</yellow> <dark_gray>-</dark_gray> <gray>1v1 duels in dedicated Duel Arenas!</gray>"));
+                player.sendMessage(FormatUtil.mm("<yellow>/event vote</yellow> <dark_gray>|</dark_gray> <yellow>/event modevote</yellow> <dark_gray>-</dark_gray> <gray>Open interactive Voting GUI (Mode / Kit / Winner)</gray>"));
                 player.sendMessage(FormatUtil.mm("<yellow>/event kiteditor [kit]</yellow> <dark_gray>-</dark_gray> <gray>Customize your personal hotbar & offhand layout</gray>"));
-                player.sendMessage(FormatUtil.mm("<yellow>/event modevote [mode]</yellow> <dark_gray>-</dark_gray> <gray>Vote for the next event mode</gray>"));
-                player.sendMessage(FormatUtil.mm("<yellow>/event vote [player]</yellow> <dark_gray>|</dark_gray> <yellow>/event cheer <player></yellow> <dark_gray>-</dark_gray> <gray>Spectator predictions & cheers</gray>"));
-                player.sendMessage(FormatUtil.mm("<yellow>/event team</yellow> <dark_gray>|</dark_gray> <yellow>/event tc <msg></yellow> <dark_gray>-</dark_gray> <gray>Team Wars squad & private team chat</gray>"));
-                player.sendMessage(FormatUtil.mm("<yellow>/event spectate</yellow> <dark_gray>-</dark_gray> <gray>Open fighter spectator selector</gray>"));
-                player.sendMessage(FormatUtil.mm("<yellow>/event stats [player] | top [elo|wins|kills|points] | history</yellow>"));
+                player.sendMessage(FormatUtil.mm("<yellow>/event team</yellow> <dark_gray>|</dark_gray> <yellow>/event tc <msg></yellow> <dark_gray>-</dark_gray> <gray>Team Wars / Tournament Squad info & private chat</gray>"));
+                player.sendMessage(FormatUtil.mm("<yellow>/event spectate</yellow> <dark_gray>|</dark_gray> <yellow>/event cheer <player></yellow> <dark_gray>|</dark_gray> <yellow>/event stats | top | history</yellow>"));
+            }
+        }
+    }
+
+    private void handlePlayerSquad(Player player, String[] args) {
+        if (args.length < 2 || args[1].equalsIgnoreCase("gui")) {
+            gui.openSquadManagerGui(player);
+            return;
+        }
+        String action = args[1].toLowerCase(Locale.ROOT);
+        switch (action) {
+            case "invite", "inv", "add" -> {
+                if (args.length < 3) player.sendMessage(FormatUtil.mm("<red>Usage:</red> <yellow>/event squad invite <player></yellow>"));
+                else events.handleSquadInvite(player, args[2]);
+            }
+            case "accept", "join" -> events.handleSquadAccept(player, args.length >= 3 ? args[2] : null);
+            case "decline", "deny" -> events.handleSquadDecline(player, args.length >= 3 ? args[2] : null);
+            case "leave" -> events.handleSquadLeave(player);
+            case "kick", "remove" -> {
+                if (args.length < 3) player.sendMessage(FormatUtil.mm("<red>Usage:</red> <yellow>/event squad kick <player></yellow>"));
+                else events.handleSquadKick(player, args[2]);
+            }
+            case "name", "rename" -> {
+                if (args.length < 3) player.sendMessage(FormatUtil.mm("<red>Usage:</red> <yellow>/event squad name <TeamName></yellow>"));
+                else events.handleSquadRename(player, String.join(" ", java.util.Arrays.copyOfRange(args, 2, args.length)));
+            }
+            case "list", "info" -> events.showSquadList(player);
+            default -> {
+                player.sendMessage(FormatUtil.mm("<gold><bold>Tournament Squad Commands</bold></gold>"));
+                player.sendMessage(FormatUtil.mm("<yellow>/event squad</yellow> <gray>- Open 1-click Squad Manager GUI</gray>"));
+                player.sendMessage(FormatUtil.mm("<yellow>/event squad invite <player></yellow> <dark_gray>|</dark_gray> <yellow>accept [leader]</yellow> <dark_gray>|</dark_gray> <yellow>decline</yellow>"));
+                player.sendMessage(FormatUtil.mm("<yellow>/event squad name <TeamName></yellow> <dark_gray>|</dark_gray> <yellow>kick <player></yellow> <dark_gray>|</dark_gray> <yellow>leave</yellow> <dark_gray>|</dark_gray> <yellow>list</yellow>"));
             }
         }
     }
@@ -225,29 +268,40 @@ public final class EventCommands implements CommandExecutor, TabCompleter {
         String sub = args.length == 0 ? "help" : args[0].toLowerCase(Locale.ROOT);
         switch (sub) {
             case "help" -> {
-                sender.sendMessage(FormatUtil.mm("<gold><bold>Clasher Events v2.4 Admin Commands</bold></gold>"));
-                sender.sendMessage(FormatUtil.mm("<yellow>/ce setup [refresh]</yellow> <dark_gray>-</dark_gray> <gray>Paste Lobby, Podium, 3D Holograms & 8 arenas + skyboxes!</gray>"));
-                sender.sendMessage(FormatUtil.mm("<yellow>/ce gui</yellow> <dark_gray>|</dark_gray> <yellow>/ce create <mode> [kit]</yellow> <dark_gray>|</dark_gray> <yellow>/ce voteopen [sec]</yellow> <dark_gray>|</dark_gray> <yellow>/ce skip [sec|now]</yellow>"));
-                sender.sendMessage(FormatUtil.mm("<yellow>/ce start</yellow> <dark_gray>|</dark_gray> <yellow>/ce stop</yellow> <dark_gray>|</dark_gray> <yellow>/ce pause</yellow> <dark_gray>|</dark_gray> <yellow>/ce resume</yellow> <dark_gray>|</dark_gray> <yellow>/ce countdown</yellow> <dark_gray>|</dark_gray> <yellow>/ce status</yellow> <dark_gray>|</dark_gray> <yellow>/ce reload</yellow> <dark_gray>|</dark_gray> <yellow>/ce holograms</yellow>"));
-                sender.sendMessage(FormatUtil.mm("<yellow>/ce tp <lobby|winner|crowd|arena> [waiting|audience|wave1|final]</yellow>"));
-                sender.sendMessage(FormatUtil.mm("<yellow>/ce setwaiting <arena></yellow> <dark_gray>|</dark_gray> <yellow>/ce clearwaiting <arena></yellow> <dark_gray>|</dark_gray> <yellow>/ce setlobby|setwinner|setcrowd</yellow>"));
-                sender.sendMessage(FormatUtil.mm("<yellow>/ce setspawn|addspawn <mode|arena> [wave1|wave2|final|audience|waiting]</yellow>"));
-                sender.sendMessage(FormatUtil.mm("<yellow>/ce arena list|tp|paste|pasteall|reset|info|validate <arena></yellow>"));
-                sender.sendMessage(FormatUtil.mm("<yellow>/ce kit list|save <kit>|refresh-defaults|give|preview|reload</yellow>"));
-                sender.sendMessage(FormatUtil.mm("<yellow>/latejoin <player></yellow> <dark_gray>-</dark_gray> <gray>Force-add an online player to an active match</gray>"));
+                sender.sendMessage(FormatUtil.mm("<gold><bold>Clasher Events v2.5 Admin Commands</bold></gold>"));
+                sender.sendMessage(FormatUtil.mm("<yellow>/ce setup [refresh]</yellow> <dark_gray>-</dark_gray> <gray>Paste Imperial Lobby, Tournament Hall, Podium, 8 Grand & 8 1v1 Duel Arenas!</gray>"));
+                sender.sendMessage(FormatUtil.mm("<yellow>/ce gui</yellow> <dark_gray>|</dark_gray> <yellow>/ce create <mode> [kit] [1v1|2v2|3v3|4v4]</yellow> <dark_gray>|</dark_gray> <yellow>/ce voteopen [sec]</yellow>"));
+                sender.sendMessage(FormatUtil.mm("<yellow>/ce tournament [gui|teams|shuffle|pair|disband|lock|unlock|bo3|kitvote]</yellow>"));
+                sender.sendMessage(FormatUtil.mm("<yellow>/ce start</yellow> <dark_gray>|</dark_gray> <yellow>/ce skip [sec|now]</yellow> <dark_gray>|</dark_gray> <yellow>/ce stop</yellow> <dark_gray>|</dark_gray> <yellow>/ce pause|resume</yellow> <dark_gray>|</dark_gray> <yellow>/ce countdown|status|reload|holograms</yellow>"));
+                sender.sendMessage(FormatUtil.mm("<yellow>/ce tp <lobby|tournament-lobby|winner|crowd|arena|duel-arena> [phase]</yellow>"));
+                sender.sendMessage(FormatUtil.mm("<yellow>/ce setwaiting|clearwaiting <arena></yellow> <dark_gray>|</dark_gray> <yellow>/ce setlobby|settournamentlobby|setwinner|setcrowd</yellow>"));
+                sender.sendMessage(FormatUtil.mm("<yellow>/ce arena list|tp|paste|pasteall|reset|info|validate</yellow> <dark_gray>|</dark_gray> <yellow>/ce kit list|save|refresh-defaults|give|preview</yellow>"));
             }
             case "holograms", "holo" -> {
                 plugin.refreshHolograms();
-                sender.sendMessage(FormatUtil.mm("<green>Refreshed all 3D Lobby & Winner Podium holograms!</green>"));
+                sender.sendMessage(FormatUtil.mm("<green>Refreshed all 3D Lobby, Tournament Hall & Winner Podium holograms!</green>"));
             }
             case "setup" -> {
                 boolean refresh = args.length >= 2 && args[1].equalsIgnoreCase("refresh");
                 arenas.runFullSetup(sender, events::isArenaInUse, refresh);
             }
             case "create" -> {
-                if (args.length < 2) sender.sendMessage(FormatUtil.mm("<red>Usage:</red> <yellow>/ce create <mode> [kit]</yellow>"));
-                else events.createEvent(args[1], args.length >= 3 ? args[2] : null);
+                if (args.length < 2) {
+                    sender.sendMessage(FormatUtil.mm("<red>Usage:</red> <yellow>/ce create <mode> [kit] [1v1|2v2|3v3|4v4]</yellow>"));
+                } else if (args[1].equalsIgnoreCase("tournament") || args[1].equalsIgnoreCase("tourney")) {
+                    String kitArg = null;
+                    Integer sizeArg = null;
+                    for (int i = 2; i < args.length; i++) {
+                        int parsedSize = TournamentSquadManager.parseTeamSize(args[i], -1);
+                        if (parsedSize != -1 && sizeArg == null) sizeArg = parsedSize;
+                        else if (kitArg == null) kitArg = args[i];
+                    }
+                    events.createEvent("tournament", kitArg, sizeArg);
+                } else {
+                    events.createEvent(args[1], args.length >= 3 ? args[2] : null);
+                }
             }
+            case "tournament", "tourney" -> handleAdminTournament(sender, args);
             case "voteopen" -> {
                 int sec = plugin.getConfig().getInt("mode-vote.duration-seconds", 45);
                 if (args.length >= 2) {
@@ -301,6 +355,10 @@ public final class EventCommands implements CommandExecutor, TabCompleter {
             }
             case "setlobby" -> {
                 if (sender instanceof Player admin) events.setNamedLocation(admin, "lobby");
+                else sender.sendMessage(FormatUtil.mm("<red>Players only.</red>"));
+            }
+            case "settournamentlobby", "settlobby" -> {
+                if (sender instanceof Player admin) events.setNamedLocation(admin, "tournament-lobby");
                 else sender.sendMessage(FormatUtil.mm("<red>Players only.</red>"));
             }
             case "setspectator" -> {
@@ -386,6 +444,47 @@ public final class EventCommands implements CommandExecutor, TabCompleter {
             case "arena" -> handleArenaSub(sender, args);
             case "kit" -> handleKitSub(sender, args);
             default -> sender.sendMessage(FormatUtil.mm("<red>Unknown command. Use <yellow>/ce help</yellow>.</red>"));
+        }
+    }
+
+    private void handleAdminTournament(CommandSender sender, String[] args) {
+        if (args.length < 2 || args[1].equalsIgnoreCase("gui")) {
+            if (sender instanceof Player admin) gui.openAdminTournamentGui(admin);
+            else events.showSquadList(sender);
+            return;
+        }
+        String action = args[1].toLowerCase(Locale.ROOT);
+        switch (action) {
+            case "teams", "list" -> events.showSquadList(sender);
+            case "shuffle" -> events.adminShuffleSquads(sender);
+            case "pair" -> {
+                if (args.length < 4) sender.sendMessage(FormatUtil.mm("<red>Usage:</red> <yellow>/ce tournament pair <player1> <player2></yellow>"));
+                else events.adminForcePair(sender, args[2], args[3]);
+            }
+            case "disband" -> {
+                if (args.length < 3) sender.sendMessage(FormatUtil.mm("<red>Usage:</red> <yellow>/ce tournament disband <teamId></yellow>"));
+                else {
+                    try {
+                        events.adminDisbandTeam(sender, Integer.parseInt(args[2]));
+                    } catch (NumberFormatException ex) {
+                        sender.sendMessage(FormatUtil.mm("<red>Team ID must be a number (check /ce tournament teams).</red>"));
+                    }
+                }
+            }
+            case "lock" -> events.adminSetInvitesLocked(sender, true);
+            case "unlock" -> events.adminSetInvitesLocked(sender, false);
+            case "bo3" -> {
+                boolean next = args.length >= 3 ? (args[2].equalsIgnoreCase("on") || args[2].equalsIgnoreCase("true")) : !events.squads().isBo3Finals();
+                events.adminSetBo3Finals(sender, next);
+            }
+            case "kitvote", "vote" -> {
+                int sec = 30;
+                if (args.length >= 3) {
+                    try { sec = Math.max(15, Integer.parseInt(args[2])); } catch (NumberFormatException ignored) {}
+                }
+                events.startTournamentKitVote(sender, sec);
+            }
+            default -> sender.sendMessage(FormatUtil.mm("<red>Usage:</red> <yellow>/ce tournament [gui|teams|shuffle|pair <p1> <p2>|disband <id>|lock|unlock|bo3 <on|off>|kitvote [sec]]</yellow>"));
         }
     }
 
@@ -494,7 +593,12 @@ public final class EventCommands implements CommandExecutor, TabCompleter {
             }
         } else if (name.equals("event")) {
             if (args.length == 1) options.addAll(EVENT_SUBS);
-            else if (args.length == 2 && args[0].equalsIgnoreCase("top")) options.addAll(List.of("elo", "wins", "kills", "points"));
+            else if (args.length == 2 && args[0].equalsIgnoreCase("squad")) {
+                options.addAll(List.of("gui", "invite", "accept", "decline", "leave", "kick", "name", "list"));
+            } else if (args.length == 3 && args[0].equalsIgnoreCase("squad")
+                    && List.of("invite", "accept", "decline", "kick").contains(args[1].toLowerCase(Locale.ROOT))) {
+                for (Player p : Bukkit.getOnlinePlayers()) options.add(p.getName());
+            } else if (args.length == 2 && args[0].equalsIgnoreCase("top")) options.addAll(List.of("elo", "wins", "kills", "points"));
             else if (args.length == 2 && args[0].equalsIgnoreCase("kiteditor")) options.addAll(kits.kitIds());
             else if (args.length == 2 && List.of("stats", "duel", "accept").contains(args[0].toLowerCase(Locale.ROOT))) {
                 for (Player p : Bukkit.getOnlinePlayers()) options.add(p.getName());
@@ -504,7 +608,18 @@ public final class EventCommands implements CommandExecutor, TabCompleter {
             }
             else if (args.length == 2 && args[0].equalsIgnoreCase("modevote")) {
                 for (EventMode m : events.modeVoteOptions()) options.add(m.id());
-            } else if (args.length == 2 && List.of("vote", "cheer").contains(args[0].toLowerCase(Locale.ROOT))) {
+            } else if (args.length == 2 && args[0].equalsIgnoreCase("vote")) {
+                if (events.isModeVoteOpen()) {
+                    for (EventMode m : events.modeVoteOptions()) options.add(m.id());
+                } else if (events.isKitVoteOpen()) {
+                    options.addAll(kits.kitIds());
+                } else {
+                    for (var id : events.alive()) {
+                        Player p = Bukkit.getPlayer(id);
+                        if (p != null) options.add(p.getName());
+                    }
+                }
+            } else if (args.length == 2 && args[0].equalsIgnoreCase("cheer")) {
                 for (var id : events.alive()) {
                     Player p = Bukkit.getPlayer(id);
                     if (p != null) options.add(p.getName());
@@ -517,9 +632,26 @@ public final class EventCommands implements CommandExecutor, TabCompleter {
             else if (args.length == 3 && args[0].equalsIgnoreCase("create")
                     && EventMode.fromInput(args[1]).map(EventMode::supportsKitSelection).orElse(false)) {
                 options.addAll(kits.kitIds());
+                if (args[1].equalsIgnoreCase("tournament")) options.addAll(List.of("1v1", "2v2", "3v3", "4v4"));
+            }
+            else if (args.length == 4 && args[0].equalsIgnoreCase("create") && args[1].equalsIgnoreCase("tournament")) {
+                options.addAll(List.of("1v1", "2v2", "3v3", "4v4"));
+                options.addAll(kits.kitIds());
+            }
+            else if (args.length == 2 && List.of("tournament", "tourney").contains(args[0].toLowerCase(Locale.ROOT))) {
+                options.addAll(List.of("gui", "teams", "shuffle", "pair", "disband", "lock", "unlock", "bo3", "kitvote"));
+            }
+            else if (args.length == 3 && List.of("tournament", "tourney").contains(args[0].toLowerCase(Locale.ROOT))) {
+                if (args[1].equalsIgnoreCase("bo3")) options.addAll(List.of("on", "off"));
+                else if (args[1].equalsIgnoreCase("pair")) {
+                    for (Player p : Bukkit.getOnlinePlayers()) options.add(p.getName());
+                } else if (args[1].equalsIgnoreCase("kitvote")) options.addAll(List.of("30", "45", "60"));
+            }
+            else if (args.length == 4 && List.of("tournament", "tourney").contains(args[0].toLowerCase(Locale.ROOT)) && args[1].equalsIgnoreCase("pair")) {
+                for (Player p : Bukkit.getOnlinePlayers()) options.add(p.getName());
             }
             else if (args.length == 2 && args[0].equalsIgnoreCase("tp")) {
-                options.addAll(List.of("lobby", "winner", "crowd"));
+                options.addAll(List.of("lobby", "tournament-lobby", "winner", "crowd"));
                 options.addAll(arenas.arenaIds());
             }
             else if (args.length == 3 && args[0].equalsIgnoreCase("tp") && arenas.exists(args[1])) {
@@ -534,7 +666,7 @@ public final class EventCommands implements CommandExecutor, TabCompleter {
             else if (args.length == 3 && List.of("setspawn", "addspawn").contains(args[0].toLowerCase(Locale.ROOT))) options.addAll(List.of("wave1", "wave2", "final", "audience", "waiting"));
             else if (args.length == 2 && args[0].equalsIgnoreCase("kit")) options.addAll(List.of("list", "save", "refresh-defaults", "give", "preview", "reload"));
             else if (args.length == 3 && args[0].equalsIgnoreCase("arena") && !args[1].equalsIgnoreCase("pasteall")) {
-                if (List.of("tp", "goto").contains(args[1].toLowerCase(Locale.ROOT))) options.addAll(List.of("lobby", "winner", "crowd"));
+                if (List.of("tp", "goto").contains(args[1].toLowerCase(Locale.ROOT))) options.addAll(List.of("lobby", "tournament-lobby", "winner", "crowd"));
                 options.addAll(arenas.arenaIds());
             }
             else if (args.length == 4 && args[0].equalsIgnoreCase("arena") && List.of("tp", "goto").contains(args[1].toLowerCase(Locale.ROOT)) && arenas.exists(args[2])) {

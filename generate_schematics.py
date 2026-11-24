@@ -1077,97 +1077,280 @@ def build_diamond_pot() -> VoxelCanvas:
 
 
 # ---------------------------------------------------------------------------
-# 9. Grand Event Spawn Lobby — Floating Sky Citadel Hub (96x46x96, y_origin=14)
+# 9. Grand Event Spawn Lobby — Flagship Imperial Sky Citadel Hub (116x58x116, y_origin=16)
 # ---------------------------------------------------------------------------
 
 def build_spawn_lobby() -> VoxelCanvas:
-    # y_origin=14 gives 14 full blocks of sculpted floating island rock underside hanging into the void!
-    c = VoxelCanvas(96, 46, 96, y_origin=14)
-    c.add_floating_underside(31.0, 14, ["deepslate", "tuff", "stone", "andesite", "blackstone"], seed=91)
+    # Massive flagship server hub with 16-block tapered floating rock & crystal roots,
+    # lush cherry-blossom & oak gardens, cascading waterfalls, twin Citadel Gate Towers,
+    # giant 34-block Enchanted Diamond Sword Monument, golden crown rotunda, 4 orbiting
+    # floating satellite islets, and our 42-jump mathematically verified Sky Parkour!
+    c = VoxelCanvas(116, 58, 116, y_origin=16)
+    rock_pal = ["deepslate", "tuff", "stone", "andesite", "blackstone", "mossy_cobblestone"]
+    c.add_floating_underside(35.0, 16, rock_pal, seed=91)
 
-    # Grand Royal Floating Plaza at y=1
-    c.disk(30, 0, "deepslate_bricks")
-    c.disk(29, 1, ["quartz_bricks", "smooth_quartz", "polished_diorite"], seed=92)
-    c.disk(20, 1, ["polished_blackstone_bricks", "polished_blackstone", "deepslate_tiles"], seed=93)
-    c.disk(12, 1, ["quartz_bricks", "chiseled_quartz_block"])
-    c.disk(6, 1, "gold_block")
-    c.disk(3, 1, "sea_lantern")
+    # Glowing Amethyst & Cyan Crystal Stalactite Roots hanging under the floating island
+    for deg in range(0, 360, 45):
+        rad = math.radians(deg)
+        rx, rz = round(20 * math.cos(rad)), round(20 * math.sin(rad))
+        for y in range(-12, -2):
+            c.rel_put(rx, y, rz, "sea_lantern" if y == -12 else ("cyan_stained_glass" if y % 2 == 0 else "amethyst_block"))
 
-    # Radiant Compass Rose Lanes
+    # --- Layer 1: Multi-Ring Royal Plaza + Lush Botanical Outer Gardens ---
+    c.disk(34, 0, "deepslate_bricks")
+    # Lush botanical outer terrace (r=26..34)
+    c.disk(34, 1, ["grass_block", "moss_block", "grass_block", "rooted_dirt"], 25.5, seed=92)
+    # Grand stone promenade ring (r=15..26)
+    c.disk(26, 1, ["quartz_bricks", "smooth_quartz", "polished_diorite", "calcite"], 14.5, seed=93)
+    # Dark obsidian-marble inner court ring (r=8..15)
+    c.disk(15, 1, ["polished_blackstone_bricks", "deepslate_tiles", "polished_blackstone"], 7.5, seed=94)
+    # Center radiant golden & diamond spawn medallion (r=0..8)
+    c.disk(8, 1, ["quartz_bricks", "chiseled_quartz_block"])
+    c.disk(5, 1, "gold_block")
+    c.disk(3, 1, "cyan_stained_glass")
+    c.disk(3, 0, "sea_lantern")
+    c.disk(1, 1, "sea_lantern")
+
+    # Flush glowing cyan glass floor channels + gold-trimmed axial walkways
     for t in range(-28, 29):
-        for w in (-1, 0, 1):
-            blk = "gold_block" if (w == 0 and abs(t) % 3 == 0) else ("cyan_terracotta" if w == 0 else "polished_blackstone_bricks")
+        for w in (-2, -1, 0, 1, 2):
+            if abs(w) == 2:
+                blk = "polished_blackstone_bricks"
+            elif abs(w) == 1:
+                blk = "quartz_bricks"
+            else:
+                blk = "gold_block" if abs(t) % 4 == 0 else "cyan_stained_glass"
             c.rel_put(t, 1, w, blk)
             c.rel_put(w, 1, t, blk)
+            if blk == "cyan_stained_glass":
+                c.rel_put(t, 0, w, "sea_lantern")
+                c.rel_put(w, 0, t, "sea_lantern")
 
-    # Soaring Golden & Quartz Crown Canopy Ribs arcing 26 blocks high above the Spawn Center!
-    for dx, dz in ((-16, -16), (16, -16), (-16, 16), (16, 16)):
-        c.pillar(dx, dz, 2, 14, "quartz_pillar", 1)
-        c.rel_put(dx, 15, dz, "gold_block")
-        c.add_curved_arch(dx, 14, dz, 0, 26, 0, 29, ["gold_block", "quartz_bricks"], 0)
-    # Floating Glowing Crystal Beacon Diamond at apex (0, 23..28, 0)
-    for oy in range(-3, 4):
-        rad = 3 - abs(oy)
-        for ox in range(-rad, rad + 1):
-            for oz in range(-rad, rad + 1):
-                if abs(ox) + abs(oz) <= rad:
-                    c.rel_put(ox, 25 + oy, oz, "sea_lantern" if abs(oy) <= 1 and ox == 0 and oz == 0 else "cyan_stained_glass")
+    # 4 Cozy Reflective Koi Ponds nestled in the diagonal garden quadrants
+    for sx, sz in ((-1, -1), (1, -1), (-1, 1), (1, 1)):
+        px, pz = sx * 22, sz * 22
+        # Skip NE quadrant pond slightly closer to center so Parkour Start Pad (20..24, -20..-17) stays crystal clear!
+        if sx == 1 and sz == -1:
+            px, pz = 28, -11
+        for ox in range(-4, 5):
+            for oz in range(-4, 5):
+                d = math.hypot(ox, oz)
+                if d <= 3.6:
+                    c.rel_put(px + ox, 0, pz + oz, "sea_lantern" if d <= 1.2 else "prismarine_bricks")
+                    c.rel_put(px + ox, 1, pz + oz, "water")
+                elif d <= 4.5:
+                    c.rel_put(px + ox, 1, pz + oz, "moss_block" if (ox + oz) % 2 == 0 else "stone_bricks")
 
-    # Ornamental Perimeter Balustrade + Lantern Columns
-    for deg in range(0, 360, 4):
+    # 4 Cascading Luminous Waterfalls pouring off the outer floating rim into the void!
+    for deg in (45, 135, 225, 315):
         rad = math.radians(deg)
-        dx, dz = round(28.5 * math.cos(rad)), round(28.5 * math.sin(rad))
-        c.rel_put(dx, 2, dz, "polished_blackstone_brick_wall")
-        if deg % 30 == 0:
-            c.pillar(dx, dz, 2, 6, "quartz_pillar", 0)
-            c.rel_put(dx, 7, dz, "gold_block")
-            c.rel_put(dx, 8, dz, "lantern")
+        wx, wz = round(33 * math.cos(rad)), round(33 * math.sin(rad))
+        ox_out, oz_out = round(35 * math.cos(rad)), round(35 * math.sin(rad))
+        c.fill_box(wx - 1, 1, wz - 1, wx + 1, 1, wz + 1, "prismarine_bricks")
+        c.rel_put(wx, 1, wz, "water")
+        for y in range(-13, 2):
+            c.rel_put(ox_out, y, oz_out, "water")
+        c.rel_put(wx, 2, wz, "sea_lantern")
 
-    # 4 Iconic Themed Event Portal Shrines (N: Nether, S: End Crystal, E: Colosseum, W: Frost Temple)
-    shrines = [
-        (0, -23, "red_nether_bricks", "blackstone", "shroomlight", "red_stained_glass"),
-        (0, 23, "obsidian", "purpur_block", "amethyst_block", "purple_stained_glass"),
-        (23, 0, "smooth_sandstone", "quartz_pillar", "gold_block", "yellow_stained_glass"),
-        (-23, 0, "prismarine_bricks", "quartz_pillar", "sea_lantern", "cyan_stained_glass"),
+    # Sculpted Ornamental Perimeter Stone & Gold Balustrade + Garden Lanterns
+    for deg in range(0, 360, 3):
+        rad = math.radians(deg)
+        dx, dz = round(33.5 * math.cos(rad)), round(33.5 * math.sin(rad))
+        # Leave clean openings at North Citadel Gate & South Observatory
+        if abs(dx) <= 5 and abs(dz) >= 30:
+            continue
+        c.rel_put(dx, 2, dz, "quartz_bricks" if deg % 9 == 0 else "polished_blackstone_brick_wall")
+        if deg % 18 == 0:
+            c.pillar(dx, dz, 2, 5, "quartz_pillar", 0)
+            c.rel_put(dx, 6, dz, "gold_block")
+            c.rel_put(dx, 7, dz, "lantern")
+
+    # Lush Custom Cherry Blossom & Ancient Oak Trees + Azalea Bushes around the garden ring!
+    garden_trees = [
+        (-28, -14, "cherry_log", "cherry_leaves", 8, 95),
+        (-16, -27, "oak_log", "oak_leaves", 9, 96),
+        (16, -27, "cherry_log", "cherry_leaves", 8, 97),
+        (-28, 14, "oak_log", "oak_leaves", 9, 98),
+        (28, 14, "cherry_log", "cherry_leaves", 9, 99),
+        (-17, 27, "cherry_log", "cherry_leaves", 8, 100),
+        (17, 27, "oak_log", "oak_leaves", 8, 101),
     ]
-    for gx, gz, m1, m2, glow, glass in shrines:
-        is_ns = (gx == 0)
-        for side in (-4, 4):
-            px, pz = (side, gz) if is_ns else (gx, side)
-            c.pillar(px, pz, 2, 12, [m1, m2], 1, seed=96)
-            c.rel_put(px, 13, pz, glow)
-        for span in range(-4, 5):
-            for y in range(2, 12):
-                ax, az = (span, gz) if is_ns else (gx, span)
-                if abs(span) <= 2 and y <= 10:
-                    c.rel_put(ax, y, az, glass)
-                elif y >= 11:
-                    c.rel_put(ax, y, az, m1)
-            ax, az = (span, gz) if is_ns else (gx, span)
-            c.rel_put(ax, 12, az, glow if span == 0 else m2)
-            if abs(span) <= 2:
-                c.rel_put(ax, 13, az, m1)
-        # Flank braziers
-        for side in (-6, 6):
-            bx, bz = (side, gz + (2 if gz < 0 else -2)) if is_ns else (gx + (2 if gx < 0 else -2), side)
-            c.add_brazier(bx, 2, bz, m2, "campfire[lit=true]")
+    for tx, tz, trunk, leaves, th, tseed in garden_trees:
+        c.add_organic_tree(tx, 2, tz, trunk, leaves, height=th, pine=False, seed=tseed)
+        # Warm hanging lantern nestled under tree canopy
+        c.rel_put(tx + 2, 5, tz, "lantern[hanging=true]")
 
-    # Floating Illuminated Spiral Sky-Parkour circling the Lobby (42 mathematically verified playable jumps!)
+    # Decorative Flower Beds & Cozy Marble-Spruce Benches along the promenade
+    for bx, bz in ((-12, -12), (12, -12), (-12, 12), (12, 12)):
+        c.fill_box(bx - 1, 2, bz - 1, bx + 1, 2, bz + 1, "moss_block")
+        c.rel_put(bx, 3, bz, "flowering_azalea_leaves")
+        c.rel_put(bx, 4, bz, "lantern")
+
+    # --- Layer 2: Soaring Open-Sky Golden Crown Rotunda & Floating Celestial Crystal ---
+    # 8 Grand Fluted Columns at r=18 (keeps center & hologram sightlines 100% wide open!)
+    for deg in range(22, 360, 45):
+        rad = math.radians(deg)
+        cx, cz = round(18 * math.cos(rad)), round(18 * math.sin(rad))
+        c.fill_box(cx - 1, 2, cz - 1, cx + 1, 2, cz + 1, "polished_blackstone_bricks")
+        c.pillar(cx, cz, 3, 18, ["quartz_pillar", "quartz_bricks"], 0, seed=105)
+        c.rel_put(cx, 19, cz, "gold_block")
+        c.rel_put(cx, 20, cz, "sea_lantern")
+        # Graceful golden rib arching up to the celestial apex at y=31!
+        c.add_curved_arch(cx, 19, cz, 0, 31, 0, 34, ["gold_block", "quartz_bricks"], 0)
+        # Hanging lantern chandelier halfway along every second rib
+        if deg in (22, 112, 202, 292):
+            mx, mz = round(11 * math.cos(rad)), round(11 * math.sin(rad))
+            c.add_hanging_chandelier(mx, mz, 25, 5, "sea_lantern", "gold_block", "lantern[hanging=true]")
+
+    # Upper Golden Halo Ring connecting the 8 rotunda columns at y=19
+    for deg in range(0, 360, 3):
+        rad = math.radians(deg)
+        rx, rz = round(18 * math.cos(rad)), round(18 * math.sin(rad))
+        c.rel_put(rx, 19, rz, "gold_block" if deg % 9 == 0 else "quartz_bricks")
+        if deg % 15 == 0:
+            c.rel_put(rx, 20, rz, "sea_lantern")
+
+    # Giant Glowing Celestial Diamond Beacon suspended at apex (0, 27..37, 0)
+    for oy in range(-5, 6):
+        rad_d = 4 - abs(oy)
+        if rad_d < 0:
+            continue
+        for ox in range(-rad_d, rad_d + 1):
+            for oz in range(-rad_d, rad_d + 1):
+                if abs(ox) + abs(oz) <= rad_d:
+                    blk = "sea_lantern" if abs(oy) <= 1 and abs(ox) + abs(oz) <= 1 else (
+                        "gold_block" if abs(oy) == 0 and abs(ox) + abs(oz) == rad_d else "cyan_stained_glass"
+                    )
+                    c.rel_put(ox, 32 + oy, oz, blk)
+
+    # --- Layer 3: MONUMENTAL NORTH CITADEL GATE & GIANT ENCHANTED SWORD (z = -24..-33) ---
+    # Players spawn at (0, 2, 0) facing NORTH (yaw=180) straight into this iconic skyline!
+    for side in (-11, 11):
+        # Twin Tall Royal Citadel Spires (height 36!)
+        c.pillar(side, -26, 2, 24, ["quartz_bricks", "deepslate_bricks", "smooth_quartz"], 3, seed=110)
+        # Glowing Cyan Stained-Glass Cathedral Slits on each tower
+        for y in range(7, 21):
+            c.rel_put(side, y, -23, "cyan_stained_glass")
+            c.rel_put(side, y, -29, "cyan_stained_glass")
+        # Royal Conical Spire Roof (y=25..36) in Warped Teal + Gold Trim
+        for step in range(12):
+            r_roof = max(0, 4 - step // 3)
+            yy = 25 + step
+            for ox in range(-r_roof, r_roof + 1):
+                for oz in range(-r_roof, r_roof + 1):
+                    if abs(ox) + abs(oz) <= r_roof + 1:
+                        is_edge = abs(ox) == r_roof or abs(oz) == r_roof
+                        c.rel_put(side + ox, yy, -26 + oz, "gold_block" if (step == 0 and is_edge) else "cyan_terracotta")
+        c.rel_put(side, 37, -26, "gold_block")
+        c.rel_put(side, 38, -26, "sea_lantern")
+        c.rel_put(side, 39, -26, "end_rod[facing=up]")
+
+    # Sweeping Grand Citadel Bridge Arch spanning between the Twin North Towers!
+    c.add_curved_arch(-11, 18, -26, 11, 18, -26, 27, ["quartz_bricks", "gold_block"], 1)
+    c.rel_put(0, 28, -26, "gold_block")
+    c.rel_put(0, 29, -26, "sea_lantern")
+
+    # GIANT 32-BLOCK SCULPTED ENCHANTED DIAMOND & GOLD SWORD MONUMENT at (0, 2..36, -31)!
+    # Stone & Gold Altar Pedestal
+    c.fill_box(-5, 2, -33, 5, 4, -29, "polished_blackstone_bricks")
+    c.fill_box(-3, 5, -32, 3, 5, -30, "gold_block")
+    # Blade rising dramatically up to y=36 (visible right above the holograms from spawn!)
+    for y in range(6, 29):
+        c.rel_put(0, y, -31, "sea_lantern" if y % 4 == 0 else "diamond_block")
+        c.rel_put(-1, y, -31, "light_blue_stained_glass")
+        c.rel_put(1, y, -31, "light_blue_stained_glass")
+        c.rel_put(0, y, -30, "cyan_stained_glass")
+        c.rel_put(0, y, -32, "cyan_stained_glass")
+    # Tapered Glowing Tip (y=29..33)
+    for y in range(29, 33):
+        c.rel_put(0, y, -31, "diamond_block" if y < 32 else "sea_lantern")
+    c.rel_put(0, 33, -31, "end_rod[facing=up]")
+    # Wide Golden Crossguard (at y=11, spanning x=-6..+6) — sword embedded tip-up like a monument!
+    c.fill_box(-6, 10, -32, 6, 11, -30, "gold_block")
+    c.rel_put(-6, 12, -31, "sea_lantern")
+    c.rel_put(6, 12, -31, "sea_lantern")
+    c.rel_put(0, 11, -30, "amethyst_block")
+    # Twin Roaring Flame Braziers flanking the North Gate
+    c.add_brazier(-7, 2, -22, "polished_blackstone_bricks", "campfire[lit=true]")
+    c.add_brazier(7, 2, -22, "polished_blackstone_bricks", "campfire[lit=true]")
+
+    # --- Layer 4: SOUTH ROYAL OBSERVATORY PAVILION (z = +23..+31) ---
+    c.fill_box(-7, 2, 23, 7, 3, 31, "quartz_bricks")
+    c.fill_box(-3, 2, 22, 3, 2, 22, "quartz_stairs[facing=south,half=bottom]")
+    c.fill_box(-2, 3, 23, 2, 3, 30, "red_wool")
+    for px in (-6, 6):
+        for pz in (24, 30):
+            c.pillar(px, pz, 4, 13, "quartz_pillar", 0)
+            c.rel_put(px, 14, pz, "gold_block")
+    # Vaulted Golden-Ribbed Pavilion Roof
+    for y in range(14, 19):
+        span = 6 - (y - 14)
+        c.fill_box(-span, y, 27 - max(2, span // 2), span, y, 27 + max(2, span // 2),
+                   "gold_block" if y in (14, 18) else "cyan_terracotta")
+    c.rel_put(0, 19, 27, "sea_lantern")
+    # Royal Crimson Throne at South Pavilion
+    c.fill_box(-2, 4, 29, 2, 6, 30, "gold_block")
+    c.rel_put(0, 4, 28, "red_wool")
+    c.rel_put(0, 7, 30, "sea_lantern")
+
+    # --- Layer 5: EAST (LEGENDS) & WEST (GLADIATORS) GRAND ARCHED SANCTUARIES ---
+    # West — Crimson & Obsidian Gladiators Arch (x = -26, z = 0)
+    for side in (-5, 5):
+        c.pillar(-26, side, 2, 14, ["polished_blackstone_bricks", "red_nether_bricks"], 1, seed=115)
+        c.rel_put(-26, 15, side, "shroomlight")
+    c.add_curved_arch(-26, 13, -5, -26, 13, 5, 19, ["red_nether_bricks", "gold_block"], 1)
+    for dz in range(-3, 4):
+        for y in range(3, 14):
+            if abs(dz) <= 2 and y <= 12:
+                c.rel_put(-27, y, dz, "red_stained_glass" if (y + dz) % 2 == 0 else "orange_stained_glass")
+    c.add_brazier(-23, 2, -6, "blackstone", "campfire[lit=true]")
+    c.add_brazier(-23, 2, 6, "blackstone", "campfire[lit=true]")
+
+    # East — Frost & Diamond Legends Arch (x = +26, z = 0)
+    for side in (-5, 5):
+        c.pillar(26, side, 2, 14, ["prismarine_bricks", "quartz_pillar"], 1, seed=116)
+        c.rel_put(26, 15, side, "sea_lantern")
+    c.add_curved_arch(26, 13, -5, 26, 13, 5, 19, ["prismarine_bricks", "gold_block"], 1)
+    for dz in range(-3, 4):
+        for y in range(3, 14):
+            if abs(dz) <= 2 and y <= 12:
+                c.rel_put(27, y, dz, "cyan_stained_glass" if (y + dz) % 2 == 0 else "light_blue_stained_glass")
+    c.add_brazier(23, 2, -6, "prismarine_bricks", "soul_campfire[lit=true]")
+    c.add_brazier(23, 2, 6, "prismarine_bricks", "soul_campfire[lit=true]")
+
+    # --- Layer 6: 4 Orbiting Floating Sky Islets for Epic Horizon Depth! ---
+    islets = [(-44, 15, -32, "cherry_log", "cherry_leaves"), (44, 17, 32, "cherry_log", "cherry_leaves"),
+              (-44, 16, 32, "spruce_log", "spruce_leaves"), (44, 15, -34, "oak_log", "oak_leaves")]
+    for ix, iy, iz, itrk, ilvs in islets:
+        for ox in range(-5, 6):
+            for oz in range(-5, 6):
+                d = math.hypot(ox, oz)
+                if d <= 5.0:
+                    depth = int(round((1.0 - d / 5.2) * 6.0))
+                    c.rel_put(ix + ox, iy, iz + oz, "grass_block" if d <= 4.0 else "moss_block")
+                    for dd in range(1, depth + 1):
+                        c.rel_put(ix + ox, iy - dd, iz + oz, "stone" if dd <= 2 else "deepslate")
+        c.add_organic_tree(ix, iy + 1, iz, itrk, ilvs, height=6, pine=(itrk == "spruce_log"), seed=120 + abs(ix))
+        c.rel_put(ix + 2, iy + 1, iz, "sea_lantern")
+
+    # --- Layer 7: Playable Illuminated 42-Jump Spiral Sky-Parkour (Mathematically Verified!) ---
+    # Preserves EXACT EventManager start pad (20..24, 2, -20..-17) & finish crown (10, 19, -37)!
     parkour_colors = ["lime_concrete", "cyan_concrete", "light_blue_concrete", "yellow_concrete", "orange_concrete", "magenta_concrete"]
     c.fill_box(20, 2, -20, 24, 2, -17, "gold_block")
-    # Lead-out stepping stone from Start Gold Pad onto the outer spiral ring
-    parkour_pads = [(22, 2, -18, 2), (26, 3, -21, 1)]
-    c.fill_box(25, 3, -22, 27, 3, -20, "lime_concrete")
-    c.rel_put(26, 2, -21, "sea_lantern")
+    # Smooth 3-pad lead-out bridge over the garden rim onto the r=39 outer sky ring
+    parkour_pads = [(22, 2, -18, 2), (26, 3, -21, 1), (30, 3, -24, 1)]
+    for bx, by, bz in ((26, 3, -21), (30, 3, -24)):
+        c.fill_box(bx - 1, by, bz - 1, bx + 1, by, bz + 1, "lime_concrete")
+        c.rel_put(bx, by - 1, bz, "sea_lantern")
 
-    total_steps = 42
+    total_steps = 44
     for step in range(total_steps):
         t = step / (total_steps - 1)
         ang = math.radians(-37.0 + t * 322.0)  # -37 deg -> +285 deg (lands squarely at 10, 19, -37!)
-        rad = 36.0 + t * 1.4
+        rad = 38.5 - t * 0.2
         px = round(rad * math.cos(ang))
         pz = round(rad * math.sin(ang))
-        py = 3 + round(t * 16.0)
+        py = 4 + round(t * 15.0)
         blk = parkour_colors[step % len(parkour_colors)]
         if step == total_steps - 1:
             px, py, pz = 10, 19, -37
@@ -1187,7 +1370,6 @@ def build_spawn_lobby() -> VoxelCanvas:
         dy = y1 - y0
         if dy > 1:
             raise AssertionError(f"Parkour step {i} rises +{dy} blocks (max playable is +1)")
-        # Closest horizontal edge-to-edge gap between axis-aligned square pads
         gap_x = max(0, abs(x1 - x0) - (r0 + r1) - 1)
         gap_z = max(0, abs(z1 - z0) - (r0 + r1) - 1)
         edge_gap = math.hypot(gap_x, gap_z)
@@ -1195,7 +1377,8 @@ def build_spawn_lobby() -> VoxelCanvas:
         if edge_gap > max_gap:
             raise AssertionError(f"Parkour step {i} edge gap {edge_gap:.2f} > {max_gap} (from ({x0},{y0},{z0}) to ({x1},{y1},{z1}))")
 
-    c.clear_cylinder(0, 0, 2, 10, 5.5)
+    # Guarantee wide-open Spawn Center & Hologram sightlines!
+    c.clear_cylinder(0, 0, 2, 12, 6.0)
     return c
 
 
@@ -1263,6 +1446,299 @@ def build_winner_podium() -> VoxelCanvas:
 
     c.clear_cylinder(0, -6, 5, 12, 2.5)
     c.clear_cylinder(0, 9, 2, 8, 4.5)
+    return c
+
+
+# ---------------------------------------------------------------------------
+# 11. Grand Esports Tournament Hall & Squad Lobby (104x44x104, y_origin=12)
+# ---------------------------------------------------------------------------
+
+def build_tournament_lobby() -> VoxelCanvas:
+    c = VoxelCanvas(104, 44, 104, y_origin=12)
+    c.add_floating_underside(41.0, 12, ["deepslate", "polished_blackstone", "tuff", "stone"], seed=111)
+
+    # Grand dark-luxury Esports Arena floor with glowing RED vs BLUE split carpet & central trophy medallion!
+    c.disk(40, 0, "deepslate_bricks")
+    c.disk(39, 1, ["polished_blackstone_bricks", "deepslate_tiles", "polished_blackstone"], seed=112)
+    c.disk(30, 1, ["quartz_bricks", "smooth_quartz", "polished_diorite"], seed=113)
+    c.disk(14, 1, ["polished_blackstone", "polished_blackstone_bricks"], seed=114)
+
+    # RED (West, dx < 0) vs BLUE (East, dx > 0) Championship Floor Wings!
+    for dx in range(-32, 33):
+        for dz in range(-5, 6):
+            if abs(dx) >= 7:
+                is_edge = abs(dz) == 5
+                if dx < 0:
+                    blk = "gold_block" if is_edge else ("red_wool" if abs(dz) <= 2 else "red_terracotta")
+                else:
+                    blk = "gold_block" if is_edge else ("blue_wool" if abs(dz) <= 2 else "blue_terracotta")
+                c.rel_put(dx, 1, dz, blk)
+
+    # Central Illuminated Gold & Diamond VS Medallion (spawn at 0, 2, 0)
+    c.disk(7, 1, "gold_block")
+    c.disk(5, 1, "quartz_bricks")
+    c.disk(3, 1, "diamond_block")
+    c.rel_put(0, 1, 0, "sea_lantern")
+    for ox, oz in ((-5, 0), (5, 0), (0, -5), (0, 5)):
+        c.rel_put(ox, 1, oz, "sea_lantern")
+
+    # 4 Illuminated Team Staging Alcoves (NW Red, NE Blue, SW Gold, SE Cyan) for 2v2/3v3/4v4 Squads!
+    alcoves = [
+        (-22, -22, "red_wool", "red_stained_glass", "red_nether_bricks"),
+        (22, -22, "blue_wool", "blue_stained_glass", "prismarine_bricks"),
+        (-22, 22, "yellow_concrete", "yellow_stained_glass", "gold_block"),
+        (22, 22, "lime_concrete", "cyan_stained_glass", "prismarine_bricks"),
+    ]
+    for ax, az, carpet, glass, accent in alcoves:
+        for ox in range(-6, 7):
+            for oz in range(-6, 7):
+                edge = max(abs(ox), abs(oz))
+                if edge <= 6:
+                    c.rel_put(ax + ox, 1, az + oz, accent if edge == 6 else ("quartz_bricks" if edge == 5 else carpet))
+                    if edge <= 4:
+                        c.rel_put(ax + ox, 2, az + oz, "quartz_slab[type=bottom]" if edge == 4 else carpet)
+        c.rel_put(ax, 2, az, "sea_lantern")
+        for sx in (-6, 6):
+            for sz in (-6, 6):
+                c.pillar(ax + sx, az + sz, 2, 10, ["quartz_pillar", accent], 0)
+                c.rel_put(ax + sx, 11, az + sz, "gold_block")
+                c.rel_put(ax + sx, 12, az + sz, "sea_lantern")
+        for s in range(-6, 7):
+            c.rel_put(ax + s, 10, az - 6, glass if abs(s) <= 4 else accent)
+            c.rel_put(ax + s, 10, az + 6, glass if abs(s) <= 4 else accent)
+            c.rel_put(ax - 6, 10, az + s, glass if abs(s) <= 4 else accent)
+            c.rel_put(ax + 6, 10, az + s, glass if abs(s) <= 4 else accent)
+
+    # Grand Esports Championship Stage & Hologram Backdrop (North, z = -16..-25)
+    c.fill_box(-16, 2, -25, 16, 2, -16, "polished_blackstone_bricks")
+    c.fill_box(-15, 2, -24, 15, 2, -17, "quartz_bricks")
+    for x in range(-14, 15):
+        c.rel_put(x, 2, -16, "gold_block" if x % 2 == 0 else "sea_lantern")
+    for sx in (-16, 16):
+        c.pillar(sx, -24, 2, 19, ["quartz_pillar", "polished_blackstone_bricks"], 1, seed=115)
+        c.rel_put(sx, 20, -24, "gold_block")
+        c.rel_put(sx, 21, -24, "sea_lantern")
+        c.add_brazier(sx, 3, -17, "gold_block", "soul_campfire[lit=true]")
+    c.add_curved_arch(-16, 18, -24, 16, 18, -24, 28, ["gold_block", "quartz_bricks"], 1)
+    c.rel_put(0, 29, -24, "diamond_block")
+    c.rel_put(0, 30, -24, "sea_lantern")
+
+    # Outer Championship Perimeter Balustrade + 12 Soaring Marble/Blackstone Columns + Vaulted Rib Dome!
+    for deg in range(0, 360, 3):
+        rad = math.radians(deg)
+        dx, dz = round(38.0 * math.cos(rad)), round(38.0 * math.sin(rad))
+        c.rel_put(dx, 2, dz, "polished_blackstone_brick_wall")
+        if deg % 30 == 0:
+            c.pillar(dx, dz, 2, 18, ["quartz_pillar", "polished_blackstone_bricks"], 1, seed=116)
+            c.rel_put(dx, 19, dz, "gold_block")
+            c.rel_put(dx, 20, dz, "sea_lantern")
+            c.add_curved_arch(dx, 18, dz, round(12 * math.cos(rad)), 29, round(12 * math.sin(rad)), 30, ["quartz_bricks", "gold_block"], 0)
+
+    c.disk(13, 29, "gold_block", 11)
+    c.disk(11, 29, "yellow_stained_glass", 8)
+    for sx in (-12, 12):
+        for sz in (-10, 10):
+            c.add_hanging_chandelier(sx, sz, 27, 8, "gold_block", "quartz_bricks", "soul_lantern[hanging=true]")
+
+    c.clear_cylinder(0, 0, 2, 10, 6.0)
+    return c
+
+
+# ---------------------------------------------------------------------------
+# 12. Dedicated 1v1 Duel Arenas (64x36x64, crisp 44-block combat diameter!)
+# ---------------------------------------------------------------------------
+
+def build_duel_arena(theme_id: str) -> VoxelCanvas:
+    """Builds a tight, zero-void-hole, pro-balanced 64x36x64 1v1 Duel arena tailored to each PvP mode."""
+    c = VoxelCanvas(64, 36, 64)
+    themes = {
+        "nethpot": dict(
+            sub="obsidian",
+            floor=["polished_blackstone_bricks", "polished_blackstone", "cracked_polished_blackstone_bricks"],
+            center="gilded_blackstone",
+            cross="red_nether_bricks",
+            wall=["blackstone", "polished_blackstone_bricks", "basalt", "deepslate_bricks"],
+            trim="red_nether_bricks",
+            glass="red_stained_glass",
+            pillar="polished_blackstone_bricks",
+            rail="polished_blackstone_brick_wall",
+            slab="polished_blackstone_brick_slab[type=bottom]",
+            light="soul_lantern[hanging=true]",
+            liquid="lava",
+        ),
+        "sword": dict(
+            sub="smooth_sandstone",
+            floor=["smooth_sandstone", "sandstone", "cut_sandstone", "stripped_birch_wood"],
+            center="gold_block",
+            cross="quartz_bricks",
+            wall=["quartz_bricks", "smooth_quartz", "smooth_sandstone", "chiseled_quartz_block"],
+            trim="gold_block",
+            glass="yellow_stained_glass",
+            pillar="quartz_pillar",
+            rail="sandstone_wall",
+            slab="quartz_slab[type=bottom]",
+            light="lantern[hanging=true]",
+            liquid=None,
+        ),
+        "crystal": dict(
+            sub="bedrock",
+            floor=["end_stone_bricks", "end_stone_bricks", "end_stone", "obsidian"],
+            center="amethyst_block",
+            cross="obsidian",
+            wall=["obsidian", "purpur_block", "end_stone_bricks", "crying_obsidian"],
+            trim="purpur_pillar",
+            glass="purple_stained_glass",
+            pillar="purpur_pillar",
+            rail="end_stone_brick_wall",
+            slab="purpur_slab[type=bottom]",
+            light="end_rod[facing=down]",
+            liquid=None,
+        ),
+        "build-uhc": dict(
+            sub="bedrock",
+            floor=["grass_block", "grass_block", "moss_block", "coarse_dirt"],
+            center="polished_andesite",
+            cross="oak_planks",
+            wall=["stone", "andesite", "cobblestone", "mossy_cobblestone"],
+            trim="stripped_oak_log",
+            glass="white_stained_glass",
+            pillar="stripped_oak_log",
+            rail="oak_fence",
+            slab="spruce_slab[type=bottom]",
+            light="lantern[hanging=true]",
+            liquid="water",
+        ),
+        "axe-shield": dict(
+            sub="deepslate_bricks",
+            floor=["stone_bricks", "polished_andesite", "cracked_stone_bricks", "tuff_bricks"],
+            center="iron_block",
+            cross="polished_tuff",
+            wall=["deepslate_bricks", "deepslate_tiles", "stone_bricks", "cobblestone"],
+            trim="dark_oak_planks",
+            glass="blue_stained_glass",
+            pillar="deepslate_bricks",
+            rail="deepslate_brick_wall",
+            slab="deepslate_brick_slab[type=bottom]",
+            light="lantern[hanging=true]",
+            liquid=None,
+        ),
+        "uhc": dict(
+            sub="bedrock",
+            floor=["grass_block", "podzol", "coarse_dirt", "snow_block"],
+            center="calcite",
+            cross="stripped_spruce_log",
+            wall=["stone", "andesite", "deepslate", "snow_block"],
+            trim="stripped_spruce_log",
+            glass="light_blue_stained_glass",
+            pillar="spruce_log",
+            rail="spruce_fence",
+            slab="spruce_slab[type=bottom]",
+            light="lantern[hanging=true]",
+            liquid=None,
+        ),
+        "smp": dict(
+            sub="cobblestone",
+            floor=["stone_bricks", "mossy_stone_bricks", "cracked_stone_bricks", "polished_andesite"],
+            center="gold_block",
+            cross="chiseled_stone_bricks",
+            wall=["stone_bricks", "mossy_stone_bricks", "deepslate_bricks", "cobblestone"],
+            trim="mossy_stone_bricks",
+            glass="cyan_stained_glass",
+            pillar="mossy_stone_bricks",
+            rail="mossy_stone_brick_wall",
+            slab="deepslate_tile_slab[type=bottom]",
+            light="lantern[hanging=true]",
+            liquid=None,
+        ),
+        "diamond-pot": dict(
+            sub="prismarine_bricks",
+            floor=["quartz_bricks", "polished_diorite", "smooth_quartz", "prismarine_bricks"],
+            center="diamond_block",
+            cross="cyan_terracotta",
+            wall=["prismarine_bricks", "quartz_bricks", "packed_ice"],
+            trim="prismarine_bricks",
+            glass="cyan_stained_glass",
+            pillar="quartz_pillar",
+            rail="prismarine_wall",
+            slab="quartz_slab[type=bottom]",
+            light="soul_lantern[hanging=true]",
+            liquid=None,
+        ),
+    }
+    th = themes[theme_id]
+
+    # 1. 100%-sealed continuous subfloor (r=30) + crisp 44-block diameter combat floor (r=22)
+    c.disk(30, 0, th["sub"])
+    c.disk(29, 1, th["wall"], 22, seed=201)
+    c.disk(23, 1, th["floor"], seed=202)
+    c.disk(5, 1, th["cross"])
+    c.disk(3, 1, th["center"])
+    c.rel_put(0, 1, 0, "sea_lantern" if theme_id != "crystal" else "obsidian")
+    for t in range(-21, 22):
+        if abs(t) >= 5:
+            c.rel_put(t, 1, 0, th["cross"])
+            c.rel_put(0, 1, t, th["cross"])
+
+    # 2. High sculpted perimeter walls (r=23..29, y=1..14) with recessed stained-glass windows!
+    for y in range(1, 15):
+        c.disk(29, y, th["wall"], 23, seed=205)
+        if y in (6, 13):
+            c.disk(24, y, th["trim"], 22.5)
+    for deg in range(0, 360, 30):
+        rad = math.radians(deg)
+        for r_step in range(23, 29):
+            gx, gz = round(r_step * math.cos(rad)), round(r_step * math.sin(rad))
+            for y in range(4, 12):
+                c.rel_put(gx, y, gz, th["glass"])
+
+    # 3. 4 Dramatic Corner Turrets / Spires (height 26) + Diagonal Connecting Rib Arches!
+    for deg in (45, 135, 225, 315):
+        rad = math.radians(deg)
+        tx, tz = round(25.5 * math.cos(rad)), round(25.5 * math.sin(rad))
+        c.pillar(tx, tz, 1, 20, th["wall"], 2, seed=207)
+        for step in range(6):
+            rs = max(0, 2 - step // 2)
+            for ox in range(-rs, rs + 1):
+                for oz in range(-rs, rs + 1):
+                    c.rel_put(tx + ox, 20 + step, tz + oz, th["trim"] if step < 4 else th["center"])
+        c.rel_put(tx, 26, tz, "sea_lantern" if theme_id != "crystal" else "end_rod[facing=up]")
+        cx_l, cz_l = round(18.5 * math.cos(rad)), round(18.5 * math.sin(rad))
+        c.add_hanging_chandelier(cx_l, cz_l, 22, 5, th["trim"], th["pillar"], th["light"])
+
+    c.add_curved_arch(-24, 15, 0, 24, 15, 0, 27, [th["pillar"], th["trim"]], 0)
+    c.add_curved_arch(0, 15, -24, 0, 15, 24, 27, [th["pillar"], th["trim"]], 0)
+
+    if th["liquid"] is not None:
+        for deg in (45, 135, 225, 315):
+            rad = math.radians(deg)
+            fx, fz = round(22.5 * math.cos(rad)), round(22.5 * math.sin(rad))
+            for y in range(2, 13):
+                c.rel_put(fx, y, fz, th["liquid"])
+            c.rel_put(fx, 1, fz, th["liquid"])
+    if theme_id in ("build-uhc", "uhc"):
+        is_pine = (theme_id == "uhc")
+        log_b = "spruce_log" if is_pine else "oak_log"
+        leaf_b = "spruce_leaves" if is_pine else "oak_leaves"
+        for deg in (22, 112, 202, 292):
+            rad = math.radians(deg)
+            tx, tz = round(25.0 * math.cos(rad)), round(25.0 * math.sin(rad))
+            c.add_organic_tree(tx, 15, tz, log_b, leaf_b, height=7, pine=is_pine, seed=210 + deg)
+    if theme_id == "crystal":
+        c.disk(15, 1, "obsidian", 13.5)
+
+    # Elevated Spectator Viewing Balcony (North wall, dz=-20, dy=9 -> spawn at dy=10)
+    for dx in range(-6, 7):
+        for dz in range(-22, -17):
+            c.rel_put(dx, 9, dz, th["trim"] if abs(dx) == 6 or dz in (-22, -18) else th["pillar"])
+            for cy in range(10, 14):
+                c.rel_put(dx, cy, dz, "air")
+            if abs(dx) == 6 or dz in (-22, -18):
+                c.rel_put(dx, 10, dz, th["rail"])
+            c.rel_put(dx, 14, dz, th["slab"])
+    c.rel_put(-4, 13, -20, th["light"])
+    c.rel_put(4, 13, -20, th["light"])
+    c.clear_cylinder(-13, 0, 2, 6, 2.0)
+    c.clear_cylinder(13, 0, 2, 6, 2.0)
     return c
 
 
@@ -1402,8 +1878,12 @@ def write_arenas_yml(entries: list[dict]) -> None:
             lines.append(f"      {k}: {e['bounds'][k]}")
         lines.append("    spawns:")
         for phase in ("wave1", "wave2", "final", "audience", "waiting"):
+            pts = e["spawns"].get(phase, [])
+            if not pts:
+                lines.append(f"      {phase}: []")
+                continue
             lines.append(f"      {phase}:")
-            for sp in e["spawns"][phase]:
+            for sp in pts:
                 lines.append(f"      - x: {sp['x']}")
                 lines.append(f"        y: {sp['y']}")
                 lines.append(f"        z: {sp['z']}")
@@ -1476,9 +1956,64 @@ def main() -> None:
     write_arenas_yml(yml_entries)
     print(f"Updated {ARENAS_YML}")
 
+    # Dedicated 1v1 Duel Arenas (row Z = 400, crisp 64x36x64 2-player arenas!)
+    duel_specs = [
+        ("duel-nethpot", "nethpot", "NethPot 1v1 - Nether Sanctum", 0, 80, 400),
+        ("duel-axe-shield", "axe-shield", "Axe & Shield 1v1 - Ironkeep Pit", 300, 80, 400),
+        ("duel-build-uhc", "build-uhc", "Build UHC 1v1 - Brook Valley", 600, 80, 400),
+        ("duel-sword", "sword", "Sword 1v1 - Gladiator Ring", 900, 80, 400),
+        ("duel-uhc", "uhc", "UHC 1v1 - Alpine Clearing", 1200, 80, 400),
+        ("duel-crystal", "crystal", "Crystal 1v1 - End Pit", 1600, 80, 400),
+        ("duel-smp", "smp", "SMP 1v1 - Ruined Chapel", 1900, 80, 400),
+        ("duel-diamond-pot", "diamond-pot", "Diamond Pot 1v1 - Frost Chamber", 2200, 80, 400),
+    ]
+    for duel_id, theme_id, display, px, py, pz in duel_specs:
+        dc = build_duel_arena(theme_id)
+        fin = [
+            {"dx": -13, "dy": 2, "dz": 0, "x": px - 13 + 0.5, "y": py + 2, "z": pz + 0.5, "yaw": -90.0},
+            {"dx": 13, "dy": 2, "dz": 0, "x": px + 13 + 0.5, "y": py + 2, "z": pz + 0.5, "yaw": 90.0},
+        ]
+        w1 = ring_spawns(px, py, pz, 14, 4, dy=2)
+        w2 = fin
+        aud = [{"dx": 0, "dy": 10, "dz": -20, "x": px + 0.5, "y": py + 10, "z": pz - 20 + 0.5, "yaw": 0.0}]
+        for gname, grp in (("wave1", w1), ("final", fin), ("audience", aud)):
+            for idx, sp in enumerate(grp):
+                verify_and_clear_spawn(dc, sp["dx"], sp["dy"], sp["dz"], f"{duel_id}.{gname}[{idx}]")
+        payload = dc.encode()
+        for out_dir in OUT_DIRS:
+            with open(os.path.join(out_dir, f"{duel_id}.schem"), "wb") as f:
+                f.write(payload)
+        half_w = dc.w // 2
+        half_l = dc.l // 2
+        yml_entries.append(
+            {
+                "id": duel_id,
+                "display": display,
+                "px": px,
+                "py": py,
+                "pz": pz,
+                "bounds": {
+                    "min-x": px - half_w - 2,
+                    "min-y": py - 1,
+                    "min-z": pz - half_l - 2,
+                    "max-x": px + half_w + 2,
+                    "max-y": py + dc.h + 2,
+                    "max-z": pz + half_l + 2,
+                    "combat-max-y": py + 26,
+                    "playable-radius": 22,
+                },
+                "spawns": {"wave1": w1, "wave2": w2, "final": fin, "audience": aud, "waiting": []},
+            }
+        )
+        print(f"OK {duel_id:16s} | {dc.w:3d}x{dc.h:2d}x{dc.l:3d} | palette={len(dc.palette):2d} | {len(payload):6d} bytes | 1v1 duel spawns verified")
+
+    write_arenas_yml(yml_entries)
+    print(f"Updated {ARENAS_YML} ({len(yml_entries)} arenas total: 8 grand + 8 dedicated 1v1 duel)")
+
     extras = [
         ("lobby", build_spawn_lobby, [(0, 2, 0, "lobby.spawn")]),
         ("winner-podium", build_winner_podium, [(0, 5, -6, "winner-podium.champion"), (0, 2, 9, "winner-podium.crowd")]),
+        ("tournament-lobby", build_tournament_lobby, [(0, 2, 0, "tournament-lobby.spawn"), (-22, 3, -22, "tournament-lobby.squad-red"), (22, 3, -22, "tournament-lobby.squad-blue")]),
     ]
     for extra_id, fn, checks in extras:
         c = fn()

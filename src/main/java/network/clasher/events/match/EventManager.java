@@ -131,8 +131,7 @@ public final class EventManager implements Listener {
     private final Map<UUID, UUID> votes = new HashMap<>();
     private final Map<UUID, String> modeVotes = new LinkedHashMap<>();
     private final Map<UUID, Integer> teams = new HashMap<>();
-    private final Deque<UUID> tournamentQueue = new ArrayDeque<>();
-    private final List<UUID> tournamentWinners = new ArrayList<>();
+    private final TournamentSquadManager squads = new TournamentSquadManager();
     private final Map<UUID, BukkitTask> disconnectTasks = new HashMap<>();
     private final Set<UUID> disconnectedFighters = new HashSet<>();
     private final Set<UUID> kitDelivered = new HashSet<>();
@@ -167,9 +166,6 @@ public final class EventManager implements Listener {
     private int countdownRemaining;
     private int countdownInitial = 120;
     private int initialFighters;
-    private UUID tournamentPlayerA;
-    private UUID tournamentPlayerB;
-    private int tournamentRound = 1;
     private boolean eventCompleted;
     private boolean firstBloodClaimed;
     private UUID eventWinner;
@@ -181,10 +177,14 @@ public final class EventManager implements Listener {
     private long activeBorderStartMs = 0L;
     private long activeBorderEndMs = 0L;
 
-    // Pre-event Mode Vote state
+    // Pre-event Mode Vote & Tournament Kit Vote state
     private boolean modeVoteOpen;
     private int modeVoteRemaining;
     private BukkitTask modeVoteTask;
+    private boolean kitVoteOpen;
+    private int kitVoteRemaining;
+    private BukkitTask kitVoteTask;
+    private final Map<UUID, String> kitVotes = new LinkedHashMap<>();
 
     private BukkitTask countdownTask;
     private BukkitTask statusTask;
@@ -228,20 +228,129 @@ public final class EventManager implements Listener {
         return casualDuels;
     }
 
+    public TournamentSquadManager squads() {
+        return squads;
+    }
+
+    public int tournamentTeamSize() {
+        return squads.teamSize();
+    }
+
     public void refreshHologramsSafe() {
         if (holograms == null) return;
         String summary = null;
         if (eventOpen) {
-            summary = "<green>OPEN: " + eventMode.displayName() + " (" + participants.size() + " joined)</green>";
+            String modeLabel = eventMode == EventMode.TOURNAMENT
+                    ? squads.formatLabel() + " " + eventMode.displayName()
+                    : eventMode.displayName();
+            summary = "<green>OPEN: " + modeLabel + " (" + participants.size() + " joined)</green>";
         } else if (eventRunning) {
-            summary = "<red>LIVE: " + eventMode.displayName() + " (" + alive.size() + " alive)</red>";
+            String modeLabel = eventMode == EventMode.TOURNAMENT
+                    ? squads.formatLabel() + " " + eventMode.displayName()
+                    : eventMode.displayName();
+            summary = "<red>LIVE: " + modeLabel + " (" + alive.size() + " alive)</red>";
         }
-        holograms.refreshAll(summary);
+        String tourneyBanner = null;
+        String tourneySquads = null;
+        String tourneyBracket = null;
+        if (eventMode == EventMode.TOURNAMENT && (eventOpen || eventRunning || celebrating)) {
+            tourneyBanner = buildTournamentBannerHolo();
+            tourneySquads = buildTournamentSquadsHolo();
+            tourneyBracket = buildTournamentBracketHolo();
+        }
+        holograms.refreshAll(summary, tourneyBanner, tourneySquads, tourneyBracket);
+    }
+
+    private String buildTournamentBannerHolo() {
+        String ip = plugin.getConfig().getString("branding.server-ip", "play.clashernetwork.fun");
+        String kitLabel = EventMode.fromInput(selectedKit).map(EventMode::displayName).orElse(selectedKit);
+        String statusLine;
+        if (eventOpen) {
+            statusLine = "<green><bold>REGISTRATION OPEN</bold></green> <dark_gray>•</dark_gray> <yellow>"
+                    + FormatUtil.formatDuration(countdownRemaining) + "</yellow>";
+        } else if (celebrating && squads.championTeam() != null) {
+            statusLine = "<gold><bold>🏆 CHAMPIONS: " + FormatUtil.escape(squads.championTeam().name()) + "</bold></gold>";
+        } else {
+            TournamentSquadManager.ActiveMatchup m = squads.currentMatchup();
+            statusLine = m != null ? "<red><bold>LIVE: " + m.seriesBadge() + "</bold></red>" : "<aqua><bold>ROUND " + squads.currentRound() + "</bold></aqua>";
+        }
+        return "<gold><bold>⚔ " + squads.formatLabel().toUpperCase(Locale.ROOT) + " TOURNAMENT HALL ⚔</bold></gold>\n"
+                + "<gray>Kit:</gray> <aqua><bold>" + FormatUtil.escape(kitLabel) + "</bold></aqua>"
+                + (squads.isBo3Finals() ? " <dark_gray>•</dark_gray> <yellow>Bo3 Grand Finals</yellow>" : "") + "\n\n"
+                + statusLine + "\n"
+                + "<gray>Players:</gray> <white>" + participants.size() + "</white> <dark_gray>|</dark_gray> <gray>Squads:</gray> <green>"
+                + squads.allTeams().size() + "</green> <gray>(" + squads.readyTeamCount() + " full)</gray>\n"
+                + "<aqua>" + FormatUtil.escape(ip) + "</aqua>";
+    }
+
+    private String buildTournamentSquadsHolo() {
+        StringBuilder sb = new StringBuilder("<aqua><bold>👥 REGISTERED SQUADS (" + squads.allTeams().size() + ")</bold></aqua>\n"
+                + "<dark_gray><st>------------------</st></dark_gray>");
+        List<TournamentSquadManager.TournamentTeam> all = squads.allTeams();
+        if (all.isEmpty()) {
+            sb.append("\n<gray>Waiting for players to join...</gray>");
+            return sb.toString();
+        }
+        int shown = Math.min(8, all.size());
+        for (int i = 0; i < shown; i++) {
+            TournamentSquadManager.TournamentTeam t = all.get(i);
+            String badge = t.isEliminated() ? "<dark_gray><st>" : (t.size() >= squads.teamSize() ? "<green>" : "<yellow>");
+            String endBadge = t.isEliminated() ? "</st></dark_gray>" : (t.size() >= squads.teamSize() ? "</green>" : "</yellow>");
+            sb.append("\n<gold>#").append(t.id()).append("</gold> ")
+                    .append(badge).append(FormatUtil.escape(t.name())).append(endBadge)
+                    .append(" <gray>(").append(t.size()).append("/").append(squads.teamSize()).append(")</gray>");
+        }
+        if (all.size() > shown) {
+            sb.append("\n<gray>+ ").append(all.size() - shown).append(" more squads (/event bracket)</gray>");
+        }
+        return sb.toString();
+    }
+
+    private String buildTournamentBracketHolo() {
+        if (eventOpen) {
+            boolean autoFill = plugin.getConfig().getBoolean("tournament.auto-fill-solos", true);
+            StringBuilder sb = new StringBuilder("<gold><bold>📋 FORM YOUR SQUAD</bold></gold>\n<dark_gray><st>------------------</st></dark_gray>");
+            if (squads.isTeamMode()) {
+                sb.append("\n<yellow>/event squad invite <player></yellow>")
+                        .append("\n<yellow>/event squad name <TeamName></yellow>")
+                        .append("\n<yellow>/event bracket</yellow> <gray>— View Teams</gray>")
+                        .append("\n<gray>Solos:</gray> ").append(autoFill ? "<green>Auto-Matched at Start</green>" : "<yellow>Play Solo</yellow>");
+            } else {
+                sb.append("\n<gray>Solo 1v1 Bracket — Fight to the Crown!</gray>")
+                        .append("\n<yellow>/event kiteditor</yellow> <gray>— Custom Hotbar</gray>")
+                        .append("\n<yellow>/event bracket</yellow> <gray>— View Bracket</gray>");
+            }
+            if (squads.isInvitesLocked()) {
+                sb.append("\n<red><bold>🔒 Squads Locked by Admin</bold></red>");
+            }
+            return sb.toString();
+        }
+        StringBuilder sb = new StringBuilder("<gold><bold>🏆 LIVE BRACKET — R" + squads.currentRound() + "</bold></gold>\n<dark_gray><st>------------------</st></dark_gray>");
+        TournamentSquadManager.ActiveMatchup cur = squads.currentMatchup();
+        if (cur != null) {
+            sb.append("\n<red><bold>NOW:</bold></red> <white>").append(FormatUtil.escape(cur.teamA().name()))
+                    .append("</white> <gray>vs</gray> <white>").append(FormatUtil.escape(cur.teamB().name())).append("</white>");
+            if (cur.bo3Series()) {
+                sb.append("\n<gold>Series: ").append(cur.winsA()).append(" - ").append(cur.winsB()).append(" (Bo3)</gold>");
+            }
+        }
+        List<TournamentSquadManager.MatchPair> next = squads.upcomingMatchups();
+        int maxNext = Math.min(3, next.size());
+        for (int i = 0; i < maxNext; i++) {
+            TournamentSquadManager.MatchPair mp = next.get(i);
+            sb.append("\n<yellow>Next:</yellow> <gray>").append(FormatUtil.escape(mp.teamA().name()))
+                    .append(" vs ").append(FormatUtil.escape(mp.teamB().name())).append("</gray>");
+        }
+        if (!squads.roundWinners().isEmpty()) {
+            sb.append("\n<green>Advanced:</green> <white>").append(squads.roundWinners().size()).append(" squad(s)</white>");
+        }
+        return sb.toString();
     }
 
     public void shutdown() {
         cancelCountdown();
         cancelModeVote();
+        cancelKitVote();
         cancelCelebration();
         cancelGrace();
         if (statusTask != null) {
@@ -265,6 +374,24 @@ public final class EventManager implements Listener {
     public boolean isPaused() { return paused; }
     public boolean isModeVoteOpen() { return modeVoteOpen; }
     public int modeVoteRemaining() { return modeVoteRemaining; }
+    public String playerModeVote(UUID id) { return modeVotes.get(id); }
+    public int totalModeVotes() { return modeVotes.size(); }
+    public UUID playerPredictionVote(UUID id) { return votes.get(id); }
+    public Map<UUID, Integer> predictionVoteCounts() {
+        Map<UUID, Integer> counts = new HashMap<>();
+        for (UUID pick : votes.values()) counts.merge(pick, 1, Integer::sum);
+        return counts;
+    }
+    public boolean isKitVoteOpen() { return kitVoteOpen; }
+    public int kitVoteRemaining() { return kitVoteRemaining; }
+    public String playerKitVote(UUID id) { return kitVotes.get(id); }
+    public int totalKitVotes() { return kitVotes.size(); }
+    public Map<String, Integer> kitVoteCounts() {
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        for (EventMode km : EventMode.kitModes()) counts.put(km.id(), 0);
+        for (String v : kitVotes.values()) counts.merge(v, 1, Integer::sum);
+        return counts;
+    }
     public String selectedArena() { return selectedArena; }
     public String selectedKit() { return selectedKit; }
     public EventMode eventMode() { return eventMode; }
@@ -319,9 +446,9 @@ public final class EventManager implements Listener {
         modeVotes.clear();
         modeVoteOpen = true;
         modeVoteRemaining = Math.max(15, seconds);
-        broadcast("<aqua><bold>MODE VOTING OPEN!</bold></aqua> <gray>Vote for the next PvP event mode within</gray> <yellow>"
+        broadcast("<aqua><bold>🗳 MODE VOTING OPEN!</bold></aqua> <gray>Vote for the next PvP event mode within</gray> <yellow>"
                 + FormatUtil.formatDuration(modeVoteRemaining) + "</yellow><gray>:</gray> "
-                + "<green><click:run_command:'/event modevote'><hover:show_text:'<green>Click to vote for the next mode!</green>'>[/event modevote]</hover></click></green>");
+                + "<green><click:run_command:'/event vote'><hover:show_text:'<green>Click to open the Voting GUI!</green>'>[🗳 Open Vote GUI]</hover></click></green>");
         discord.notifyModeVoteOpen(modeVoteRemaining);
 
         modeVoteTask = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
@@ -380,20 +507,121 @@ public final class EventManager implements Listener {
         }
     }
 
+    public void startTournamentKitVote(CommandSender sender, int seconds) {
+        if (!eventOpen || eventMode != EventMode.TOURNAMENT) {
+            if (sender != null) sender.sendMessage(FormatUtil.mm(PREFIX + "<red>Kit voting can only be started during Tournament registration!</red>"));
+            return;
+        }
+        cancelKitVote();
+        kitVotes.clear();
+        kitVoteOpen = true;
+        kitVoteRemaining = Math.max(15, Math.min(seconds, Math.max(15, countdownRemaining - 3)));
+        broadcast("<aqua><bold>🗳 TOURNAMENT KIT VOTE OPEN!</bold></aqua> <gray>Vote for the " + squads.formatLabel()
+                + " Tournament Kit (" + FormatUtil.formatDuration(kitVoteRemaining) + "):</gray> "
+                + "<green><click:run_command:'/event vote'><hover:show_text:'<green>Open Kit Voting GUI!</green>'>[🗳 Open Kit Vote GUI]</hover></click></green>");
+        for (UUID id : participants) {
+            Player p = Bukkit.getPlayer(id);
+            if (p != null) playCue(p, "join");
+        }
+        kitVoteTask = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
+            if (!kitVoteOpen || !eventOpen) {
+                cancelKitVote();
+                return;
+            }
+            if (kitVoteRemaining <= 0) {
+                finishTournamentKitVote();
+                return;
+            }
+            if (kitVoteRemaining == 10 || kitVoteRemaining <= 5) {
+                broadcast("<aqua>Kit vote ends in <yellow><bold>" + kitVoteRemaining + "s</bold></yellow>! Click <green>/event vote</green>!</aqua>");
+            }
+            kitVoteRemaining--;
+        }, 0L, 20L);
+    }
+
+    public void castTournamentKitVote(Player player, String rawKitId) {
+        if (!kitVoteOpen || !eventOpen || eventMode != EventMode.TOURNAMENT) {
+            player.sendMessage(FormatUtil.mm(PREFIX + "<red>No tournament kit vote is currently open.</red>"));
+            return;
+        }
+        String resolved = EventMode.fromInput(rawKitId)
+                .map(EventMode::defaultArenaId)
+                .orElse(rawKitId == null ? null : rawKitId.trim().toLowerCase(Locale.ROOT));
+        if (resolved == null || !kitManager.exists(resolved)) {
+            player.sendMessage(FormatUtil.mm(PREFIX + "<red>Unknown kit: " + FormatUtil.escape(rawKitId) + "</red>"));
+            return;
+        }
+        kitVotes.put(player.getUniqueId(), resolved);
+        playCue(player, "join");
+        String label = EventMode.fromInput(resolved).map(EventMode::displayName).orElse(resolved);
+        player.sendMessage(FormatUtil.mm(PREFIX + "<green>Voted for Tournament Kit:</green> <gold><bold>" + FormatUtil.escape(label) + "</bold></gold>!"));
+    }
+
+    private void finishTournamentKitVote() {
+        cancelKitVote();
+        Map<String, Integer> counts = kitVoteCounts();
+        int best = -1;
+        List<String> leaders = new ArrayList<>();
+        for (Map.Entry<String, Integer> e : counts.entrySet()) {
+            if (e.getValue() > best) {
+                best = e.getValue();
+                leaders.clear();
+                leaders.add(e.getKey());
+            } else if (e.getValue() == best) {
+                leaders.add(e.getKey());
+            }
+        }
+        if (best <= 0 || leaders.isEmpty()) {
+            kitVotes.clear();
+            broadcast("<gray>Kit vote ended with no votes — keeping <gold>" + FormatUtil.escape(selectedKit) + "</gold>.</gray>");
+            return;
+        }
+        String winningKit = leaders.get(random.nextInt(leaders.size()));
+        kitVotes.clear();
+        applyTournamentKitSelection(winningKit, best);
+    }
+
+    private void applyTournamentKitSelection(String kitId, int votesWon) {
+        String nextArena = squads.teamSize() == 1 ? arenaManager.duelArenaId(kitId) : kitId;
+        if (!arenaManager.exists(nextArena) || !kitManager.exists(kitId)) return;
+        arenaManager.setArenaBuildAllowed(selectedArena, false);
+        selectedKit = kitId;
+        selectedArena = nextArena;
+        arenaManager.ensureArenaReady(selectedArena, null, null);
+        arenaManager.setArenaBuildAllowed(selectedArena, isDestructibleCurrentMatch());
+        String label = EventMode.fromInput(kitId).map(EventMode::displayName).orElse(kitId);
+        broadcast("<green><bold>🗳 KIT VOTE FINISHED!</bold></green> <gray>Winning Tournament Kit:</gray> <gold><bold>"
+                + FormatUtil.escape(label) + "</bold></gold> <gray>(" + votesWon + " votes)</gray>");
+        refreshHologramsSafe();
+    }
+
+    private void cancelKitVote() {
+        kitVoteOpen = false;
+        if (kitVoteTask != null) {
+            kitVoteTask.cancel();
+            kitVoteTask = null;
+        }
+    }
+
     // -------------------------------------------------------------------------
     // Event creation, registration countdown, start & stop
     // -------------------------------------------------------------------------
 
     public void createEvent(String rawMode) {
-        createEvent(rawMode, null);
+        createEvent(rawMode, null, null);
+    }
+
+    public void createEvent(String rawMode, String kitOverride) {
+        createEvent(rawMode, kitOverride, null);
     }
 
     /**
      * Opens registration for an official Server Event, with optional kit/arena override
-     * for 1v1 Duel, Team Wars, and Tournament modes (e.g. `/ce create duel sword`, `/ce create team-wars crystal`).
-     * Automatically terminates any active casual player duels so admins NEVER face busy arenas!
+     * and tournament team size (1v1 / 2v2 / 3v3 / 4v4).
+     * Automatically routes 1v1 Duels & 1v1 Tournaments to dedicated 1v1 Duel Arenas (`duel-*`),
+     * routes Team Tournaments to the Grand Esports Tournament Hall, and clears active casual duels!
      */
-    public void createEvent(String rawMode, String kitOverride) {
+    public void createEvent(String rawMode, String kitOverride, Integer teamSizeOverride) {
         Optional<EventMode> parsed = EventMode.fromInput(rawMode);
         if (parsed.isEmpty()) {
             broadcast("<red>Unknown event mode: " + FormatUtil.escape(rawMode) + "</red>");
@@ -403,32 +631,50 @@ public final class EventManager implements Listener {
         cancelModeVote();
         stopEvent("Replaced by a new event");
         eventMode = parsed.get();
+
+        // Resolve kit ID first
         if (eventMode == EventMode.RANDOM_KIT) {
-            List<String> keys = new ArrayList<>(arenaManager.arenaIds());
+            List<String> keys = arenaManager.mainArenaIds();
             if (keys.isEmpty()) {
                 broadcast("<red>No arenas are configured for Random Kit mode.</red>");
                 return;
             }
-            selectedArena = keys.get(random.nextInt(keys.size()));
+            selectedKit = keys.get(random.nextInt(keys.size()));
         } else if (kitOverride != null && !kitOverride.isBlank()) {
             String resolved = EventMode.fromInput(kitOverride)
                     .map(EventMode::defaultArenaId)
                     .orElse(kitOverride.trim().toLowerCase(Locale.ROOT));
-            selectedArena = (resolved != null && arenaManager.exists(resolved)) ? resolved : eventMode.defaultArenaId();
+            if (resolved != null && resolved.startsWith("duel-")) resolved = resolved.substring("duel-".length());
+            selectedKit = (resolved != null && kitManager.exists(resolved)) ? resolved : eventMode.defaultArenaId();
         } else {
-            selectedArena = eventMode.defaultArenaId();
+            selectedKit = eventMode.defaultArenaId();
         }
-        selectedKit = selectedArena;
+
+        // Configure tournament squad format & resolve dedicated 1v1 duel vs grand main arena!
+        if (eventMode == EventMode.TOURNAMENT) {
+            int defaultSize = plugin.getConfig().getInt("tournament.default-team-size", 2);
+            int chosenSize = teamSizeOverride != null ? teamSizeOverride : defaultSize;
+            boolean bo3 = plugin.getConfig().getBoolean("tournament.bo3-finals", true);
+            squads.reset(chosenSize, bo3);
+            selectedArena = (squads.teamSize() == 1) ? arenaManager.duelArenaId(selectedKit) : selectedKit;
+        } else if (eventMode == EventMode.DUEL) {
+            selectedArena = arenaManager.duelArenaId(selectedKit);
+        } else {
+            selectedArena = selectedKit;
+        }
 
         if (!arenaManager.exists(selectedArena) || !kitManager.exists(selectedKit)) {
-            broadcast("<red>Missing arena or kit configuration for " + FormatUtil.escape(selectedArena) + ".</red>");
+            broadcast("<red>Missing arena or kit configuration for " + FormatUtil.escape(selectedArena) + " / " + FormatUtil.escape(selectedKit) + ".</red>");
             return;
         }
 
-        // Plug-and-play: ensure arena, Spawn Lobby, and Winner Podium are pasted automatically!
+        // Plug-and-play: ensure arena, Spawn Lobby, Winner Podium, & Tournament Hall are pasted automatically!
         arenaManager.ensureArenaReady(selectedArena, null, null);
         arenaManager.ensureLobbyReady(null);
         arenaManager.ensureWinnerPodiumReady(null);
+        if (eventMode == EventMode.TOURNAMENT) {
+            arenaManager.ensureTournamentLobbyReady(null);
+        }
         arenaManager.setArenaBuildAllowed(selectedArena, isDestructibleCurrentMatch());
 
         eventCompleted = false;
@@ -450,11 +696,18 @@ public final class EventManager implements Listener {
 
         Arena arena = arenaManager.get(selectedArena);
         String arenaLabel = arena != null ? arena.displayName() : selectedArena;
-        broadcast("<yellow>" + FormatUtil.escape(eventMode.displayName()) + "</yellow> <gray>(</gray><white>"
+        String modeHeadline = eventMode == EventMode.TOURNAMENT
+                ? squads.formatLabel().toUpperCase(Locale.ROOT) + " " + eventMode.displayName()
+                : eventMode.displayName();
+        broadcast("<yellow><bold>" + FormatUtil.escape(modeHeadline) + "</bold></yellow> <gray>(</gray><white>"
                 + FormatUtil.escape(arenaLabel) + "</white><gray>) registration is open for</gray> <yellow>"
                 + FormatUtil.formatDuration(countdownRemaining) + "</yellow><gray>! Use</gray> "
                 + "<green><click:run_command:'/event join'><hover:show_text:'<green>Click to join!</green>'>[/event join]</hover></click></green>");
-        discord.notifyEventOpen(eventMode.displayName(), arenaLabel, countdownRemaining);
+        if (eventMode == EventMode.TOURNAMENT && squads.isTeamMode()) {
+            broadcast("<aqua>Grand Tournament Hall is open!</aqua> <gray>Join now and form your <gold>" + squads.formatLabel()
+                    + " squad</gold> with <yellow>/event squad invite <player></yellow> before the timer ends!</gray>");
+        }
+        discord.notifyEventOpen(modeHeadline, arenaLabel, countdownRemaining);
         refreshHologramsSafe();
         startCountdown();
     }
@@ -520,6 +773,9 @@ public final class EventManager implements Listener {
     }
 
     private void deliverPendingKits() {
+        // In Tournaments, keep Squad Manager & Bracket Viewer hotbar active in the Tournament Hall;
+        // fighters receive fresh kits at the start of every single bracket match!
+        if (eventMode == EventMode.TOURNAMENT) return;
         boolean deliveredAny = false;
         for (UUID id : participants) {
             if (kitDelivered.contains(id)) continue;
@@ -728,6 +984,7 @@ public final class EventManager implements Listener {
 
     private void stopEventInternal(String reason, boolean immediateShutdown) {
         cancelCountdown();
+        cancelKitVote();
         cancelCelebration();
         cancelGrace();
         if (!eventOpen && !eventRunning && !celebrating && participants.isEmpty() && snapshots.isEmpty()) return;
@@ -737,6 +994,8 @@ public final class EventManager implements Listener {
         hud.clearAll();
         arenaManager.setArenaBuildAllowed(arenaToClean, false);
         clearCollections();
+        squads.reset(plugin.getConfig().getInt("tournament.default-team-size", 2),
+                plugin.getConfig().getBoolean("tournament.bo3-finals", true));
         eventOpen = false;
         eventRunning = false;
         celebrating = false;
@@ -784,10 +1043,6 @@ public final class EventManager implements Listener {
         matchDamageDealt.clear();
         eliminationOrder.clear();
         afkWarned.clear();
-        tournamentQueue.clear();
-        tournamentWinners.clear();
-        tournamentPlayerA = null;
-        tournamentPlayerB = null;
         kitDelivered.clear();
         disconnectedFighters.clear();
         for (BukkitTask task : disconnectTasks.values()) task.cancel();
@@ -817,6 +1072,9 @@ public final class EventManager implements Listener {
             player.sendMessage(FormatUtil.mm(PREFIX + "<yellow>You are already registered for this event!</yellow>"));
             return;
         }
+        if (eventMode == EventMode.TOURNAMENT) {
+            squads.registerPlayer(player.getUniqueId(), player.getName());
+        }
         parkourStartedAt.remove(player.getUniqueId());
         snapshotIfNeeded(player);
         if (isDestructibleCurrentMatch()) {
@@ -834,7 +1092,9 @@ public final class EventManager implements Listener {
                 giveLobbyHotbar(player);
             }
         };
-        if (isUsingPerArenaWaiting()) {
+        if (eventMode == EventMode.TOURNAMENT) {
+            arenaManager.ensureTournamentLobbyReady(finishJoinTp);
+        } else if (isUsingPerArenaWaiting()) {
             arenaManager.ensureArenaReady(selectedArena, null, finishJoinTp);
         } else {
             arenaManager.ensureLobbyReady(finishJoinTp);
@@ -847,6 +1107,16 @@ public final class EventManager implements Listener {
         playCue(player, "join");
         broadcast("<yellow>" + FormatUtil.escape(player.getName()) + "</yellow> <gray>joined the event!</gray> <dark_gray>(</dark_gray><green>"
                 + participants.size() + "/" + maxPlayers + "</green><dark_gray>)</dark_gray>");
+        if (eventMode == EventMode.TOURNAMENT) {
+            if (squads.isTeamMode()) {
+                player.sendMessage(FormatUtil.mm(PREFIX + "<gold><bold>Welcome to the " + squads.formatLabel().toUpperCase(Locale.ROOT)
+                        + " Tournament Hall!</bold></gold> <gray>Form your squad before the timer ends: "
+                        + "<yellow>/event squad invite <player></yellow>, <yellow>/event squad name <name></yellow>, or right-click your <aqua>Squad Manager</aqua>!</gray>"));
+            } else {
+                player.sendMessage(FormatUtil.mm(PREFIX + "<gold><bold>Welcome to the 1v1 Tournament Hall!</bold></gold> <gray>Right-click <aqua>Bracket Viewer</aqua> or <green>Edit Kit Layout</green> while waiting!</gray>"));
+            }
+            refreshHologramsSafe();
+        }
 
         int fastStart = Math.max(5, plugin.getConfig().getInt("registration.fast-start-seconds", 10));
         if (participants.size() >= maxPlayers && countdownRemaining > fastStart) {
@@ -866,6 +1136,10 @@ public final class EventManager implements Listener {
         spectators.remove(id);
         votes.remove(id);
         teams.remove(id);
+        if (eventMode == EventMode.TOURNAMENT && eventOpen) {
+            squads.unregisterPlayer(id);
+            refreshHologramsSafe();
+        }
         disconnectedFighters.remove(id);
         BukkitTask dc = disconnectTasks.remove(id);
         if (dc != null) dc.cancel();
@@ -936,8 +1210,26 @@ public final class EventManager implements Listener {
     }
 
     public void showTeamInfo(Player player) {
+        if (eventMode == EventMode.TOURNAMENT && (eventOpen || eventRunning)) {
+            TournamentSquadManager.TournamentTeam sq = squads.teamOf(player.getUniqueId());
+            if (sq == null) {
+                player.sendMessage(FormatUtil.mm(PREFIX + "<gray>You are not in a tournament squad. Join with <yellow>/event join</yellow>!</gray>"));
+                return;
+            }
+            List<String> memberNames = new ArrayList<>();
+            for (UUID m : sq.members()) {
+                String n = safePlayerName(m);
+                boolean isLeader = m.equals(sq.leader());
+                memberNames.add((isLeader ? "<gold>★ " : "<green>") + FormatUtil.escape(n) + (isLeader ? "</gold>" : "</green>"));
+            }
+            player.sendMessage(FormatUtil.mm(PREFIX + "<gold><bold>Squad #" + sq.id() + " — " + FormatUtil.escape(sq.name())
+                    + "</bold></gold> <gray>(" + sq.size() + "/" + squads.teamSize() + " • " + squads.formatLabel() + ")</gray>"));
+            player.sendMessage(FormatUtil.mm("<gray>Members:</gray> " + String.join("<gray>, </gray>", memberNames)
+                    + "  <aqua><click:run_command:'/event squad'><hover:show_text:'<aqua>Open Squad Manager</aqua>'>[Manage Squad]</hover></click></aqua>"));
+            return;
+        }
         if (!eventRunning || eventMode != EventMode.TEAM_WARS) {
-            player.sendMessage(FormatUtil.mm(PREFIX + "<gray>Team Wars is not currently active.</gray>"));
+            player.sendMessage(FormatUtil.mm(PREFIX + "<gray>Team Wars or a Team Tournament is not currently active.</gray>"));
             return;
         }
         Integer team = teams.get(player.getUniqueId());
@@ -1023,8 +1315,19 @@ public final class EventManager implements Listener {
     }
 
     public void sendTeamChat(Player sender, String message) {
+        if (eventMode == EventMode.TOURNAMENT && (eventOpen || eventRunning) && participants.contains(sender.getUniqueId())) {
+            TournamentSquadManager.TournamentTeam sq = squads.teamOf(sender.getUniqueId());
+            if (sq == null) return;
+            Component msg = FormatUtil.mm("<gold><bold>[" + FormatUtil.escape(sq.name()) + "]</bold></gold> <yellow>"
+                    + FormatUtil.escape(sender.getName()) + "</yellow><dark_gray>:</dark_gray> <white>" + FormatUtil.escape(message) + "</white>");
+            for (UUID m : sq.members()) {
+                Player member = Bukkit.getPlayer(m);
+                if (member != null) member.sendMessage(msg);
+            }
+            return;
+        }
         if (!eventRunning || eventMode != EventMode.TEAM_WARS || !participants.contains(sender.getUniqueId())) {
-            sender.sendMessage(FormatUtil.mm(PREFIX + "<red>Team chat is only available during Team Wars.</red>"));
+            sender.sendMessage(FormatUtil.mm(PREFIX + "<red>Team chat is only available during Team Wars or Team Tournaments.</red>"));
             return;
         }
         Integer team = teams.get(sender.getUniqueId());
@@ -1137,12 +1440,303 @@ public final class EventManager implements Listener {
         scheduleCelebrationAndFinish(winners, "Team Wars finished");
     }
 
+    // -------------------------------------------------------------------------
+    // Esports Team Tournament Squads (1v1 / 2v2 / 3v3 / 4v4) & Admin Controls
+    // -------------------------------------------------------------------------
+
+    public void handleSquadInvite(Player leader, String targetName) {
+        if (!eventOpen || eventMode != EventMode.TOURNAMENT) {
+            leader.sendMessage(FormatUtil.mm(PREFIX + "<red>Squad invites are only available during Tournament registration!</red>"));
+            return;
+        }
+        Player target = Bukkit.getPlayerExact(targetName);
+        if (target == null) {
+            leader.sendMessage(FormatUtil.mm(PREFIX + "<red>Player not found online: " + FormatUtil.escape(targetName) + "</red>"));
+            return;
+        }
+        long expireMs = Math.max(15L, plugin.getConfig().getLong("tournament.invite-expire-seconds", 60L)) * 1000L;
+        TournamentSquadManager.ActionResult res = squads.sendInvite(leader.getUniqueId(), target.getUniqueId(), System.currentTimeMillis(), expireMs);
+        if (!res.ok()) {
+            leader.sendMessage(FormatUtil.mm(PREFIX + "<red>" + FormatUtil.escape(res.message()) + "</red>"));
+            return;
+        }
+        leader.sendMessage(FormatUtil.mm(PREFIX + "<green>Invited <yellow>" + FormatUtil.escape(target.getName())
+                + "</yellow> to join <gold>" + FormatUtil.escape(res.team().name()) + "</gold> (" + res.team().size() + "/" + squads.teamSize() + ")!</green>"));
+        target.sendMessage(FormatUtil.mm(PREFIX + "<yellow><bold>" + FormatUtil.escape(leader.getName())
+                + "</bold></yellow> <gray>invited you to join squad</gray> <gold><bold>" + FormatUtil.escape(res.team().name())
+                + "</bold></gold> <gray>(" + squads.formatLabel() + " Tournament)!</gray> "
+                + "<green><click:run_command:'/event squad accept " + leader.getName() + "'><hover:show_text:'<green>Join this squad!</green>'>[✔ Accept]</hover></click></green> "
+                + "<red><click:run_command:'/event squad decline " + leader.getName() + "'><hover:show_text:'<red>Decline invite</red>'>[✖ Decline]</hover></click></red>"));
+        playCue(target, "join");
+    }
+
+    public void handleSquadAccept(Player target, String optionalLeaderName) {
+        if (!eventOpen || eventMode != EventMode.TOURNAMENT) {
+            target.sendMessage(FormatUtil.mm(PREFIX + "<red>No tournament registration is currently open.</red>"));
+            return;
+        }
+        UUID leaderId = null;
+        if (optionalLeaderName != null && !optionalLeaderName.isBlank()) {
+            Player leader = Bukkit.getPlayerExact(optionalLeaderName);
+            if (leader == null) {
+                target.sendMessage(FormatUtil.mm(PREFIX + "<red>Leader is no longer online: " + FormatUtil.escape(optionalLeaderName) + "</red>"));
+                return;
+            }
+            leaderId = leader.getUniqueId();
+        }
+        TournamentSquadManager.ActionResult res = squads.acceptInvite(target.getUniqueId(), leaderId, System.currentTimeMillis());
+        if (!res.ok()) {
+            target.sendMessage(FormatUtil.mm(PREFIX + "<red>" + FormatUtil.escape(res.message()) + "</red>"));
+            return;
+        }
+        TournamentSquadManager.TournamentTeam team = res.team();
+        for (UUID m : team.members()) {
+            Player mp = Bukkit.getPlayer(m);
+            if (mp != null) {
+                mp.sendMessage(FormatUtil.mm(PREFIX + "<green><bold>" + FormatUtil.escape(target.getName())
+                        + "</bold></green> <gray>joined squad</gray> <gold><bold>" + FormatUtil.escape(team.name())
+                        + "</bold></gold> <gray>(" + team.size() + "/" + squads.teamSize() + ")!</gray>"));
+                playCue(mp, "join");
+            }
+        }
+        refreshHologramsSafe();
+    }
+
+    public void handleSquadDecline(Player target, String optionalLeaderName) {
+        UUID leaderId = null;
+        if (optionalLeaderName != null && !optionalLeaderName.isBlank()) {
+            Player leader = Bukkit.getPlayerExact(optionalLeaderName);
+            if (leader != null) leaderId = leader.getUniqueId();
+        }
+        TournamentSquadManager.ActionResult res = squads.declineInvite(target.getUniqueId(), leaderId);
+        if (!res.ok()) {
+            target.sendMessage(FormatUtil.mm(PREFIX + "<red>" + FormatUtil.escape(res.message()) + "</red>"));
+            return;
+        }
+        target.sendMessage(FormatUtil.mm(PREFIX + "<gray>Declined the squad invite.</gray>"));
+        if (res.relatedPlayer() != null) {
+            Player leader = Bukkit.getPlayer(res.relatedPlayer());
+            if (leader != null) {
+                leader.sendMessage(FormatUtil.mm(PREFIX + "<red>" + FormatUtil.escape(target.getName()) + " declined your squad invite.</red>"));
+            }
+        }
+    }
+
+    public void handleSquadLeave(Player member) {
+        if (!eventOpen || eventMode != EventMode.TOURNAMENT) {
+            member.sendMessage(FormatUtil.mm(PREFIX + "<red>You can only leave a squad during Tournament registration.</red>"));
+            return;
+        }
+        TournamentSquadManager.ActionResult res = squads.leaveSquad(member.getUniqueId(), member.getName());
+        if (!res.ok()) {
+            member.sendMessage(FormatUtil.mm(PREFIX + "<red>" + FormatUtil.escape(res.message()) + "</red>"));
+            return;
+        }
+        member.sendMessage(FormatUtil.mm(PREFIX + "<yellow>" + FormatUtil.escape(res.message()) + "</yellow>"));
+        if (res.team() != null) {
+            for (UUID m : res.team().members()) {
+                Player mp = Bukkit.getPlayer(m);
+                if (mp != null) {
+                    mp.sendMessage(FormatUtil.mm(PREFIX + "<yellow>" + FormatUtil.escape(member.getName()) + " left your squad.</yellow>"));
+                }
+            }
+        }
+        refreshHologramsSafe();
+    }
+
+    public void handleSquadKick(Player leader, String targetName) {
+        if (!eventOpen || eventMode != EventMode.TOURNAMENT) {
+            leader.sendMessage(FormatUtil.mm(PREFIX + "<red>Squad kicks are only available during Tournament registration.</red>"));
+            return;
+        }
+        Player target = Bukkit.getPlayerExact(targetName);
+        if (target == null) {
+            leader.sendMessage(FormatUtil.mm(PREFIX + "<red>Player not found online: " + FormatUtil.escape(targetName) + "</red>"));
+            return;
+        }
+        TournamentSquadManager.ActionResult res = squads.kickMember(leader.getUniqueId(), target.getUniqueId(), target.getName());
+        if (!res.ok()) {
+            leader.sendMessage(FormatUtil.mm(PREFIX + "<red>" + FormatUtil.escape(res.message()) + "</red>"));
+            return;
+        }
+        leader.sendMessage(FormatUtil.mm(PREFIX + "<yellow>Removed <white>" + FormatUtil.escape(target.getName()) + "</white> from your squad.</yellow>"));
+        target.sendMessage(FormatUtil.mm(PREFIX + "<red>You were removed from squad <gold>" + FormatUtil.escape(res.team().name()) + "</gold> — you are now solo.</red>"));
+        refreshHologramsSafe();
+    }
+
+    public void handleSquadRename(Player leader, String rawName) {
+        if ((!eventOpen && !eventRunning) || eventMode != EventMode.TOURNAMENT) {
+            leader.sendMessage(FormatUtil.mm(PREFIX + "<red>No tournament is currently active.</red>"));
+            return;
+        }
+        TournamentSquadManager.ActionResult res = squads.renameSquad(leader.getUniqueId(), rawName);
+        if (!res.ok()) {
+            leader.sendMessage(FormatUtil.mm(PREFIX + "<red>" + FormatUtil.escape(res.message()) + "</red>"));
+            return;
+        }
+        for (UUID m : res.team().members()) {
+            Player mp = Bukkit.getPlayer(m);
+            if (mp != null) {
+                mp.sendMessage(FormatUtil.mm(PREFIX + "<green>Your squad was renamed to <gold><bold>" + FormatUtil.escape(res.team().name()) + "</bold></gold>!</green>"));
+            }
+        }
+        refreshHologramsSafe();
+    }
+
+    public void showSquadList(CommandSender viewer) {
+        if ((!eventOpen && !eventRunning) || eventMode != EventMode.TOURNAMENT) {
+            viewer.sendMessage(FormatUtil.mm(PREFIX + "<red>No tournament is currently open or running.</red>"));
+            return;
+        }
+        List<TournamentSquadManager.TournamentTeam> all = squads.allTeams();
+        viewer.sendMessage(FormatUtil.mm("<dark_gray><st>-----------------------------------------</st></dark_gray>"));
+        viewer.sendMessage(FormatUtil.mm("  <gold><bold>⚔ " + squads.formatLabel().toUpperCase(Locale.ROOT)
+                + " TOURNAMENT SQUADS (" + all.size() + ")</bold></gold> <gray>• " + squads.readyTeamCount() + " Full</gray>"));
+        if (all.isEmpty()) {
+            viewer.sendMessage(FormatUtil.mm("  <gray>No squads registered yet.</gray>"));
+        } else {
+            for (TournamentSquadManager.TournamentTeam t : all) {
+                List<String> names = new ArrayList<>();
+                for (UUID m : t.members()) {
+                    names.add((m.equals(t.leader()) ? "<gold>★" : "<white>") + FormatUtil.escape(safePlayerName(m)) + (m.equals(t.leader()) ? "</gold>" : "</white>"));
+                }
+                String state = t.isEliminated() ? "<red>[OUT]</red>" : (t.size() >= squads.teamSize() ? "<green>[READY]</green>" : "<yellow>[" + t.size() + "/" + squads.teamSize() + "]</yellow>");
+                viewer.sendMessage(FormatUtil.mm("  <gold>#" + t.id() + "</gold> <yellow><bold>" + FormatUtil.escape(t.name())
+                        + "</bold></yellow> " + state + " <gray>—</gray> " + String.join("<gray>, </gray>", names)));
+            }
+        }
+        viewer.sendMessage(FormatUtil.mm("<dark_gray><st>-----------------------------------------</st></dark_gray>"));
+    }
+
+    public void adminShuffleSquads(CommandSender sender) {
+        if (!eventOpen || eventMode != EventMode.TOURNAMENT) {
+            sender.sendMessage(FormatUtil.mm(PREFIX + "<red>Squad shuffle is only available during Tournament registration.</red>"));
+            return;
+        }
+        List<UUID> online = new ArrayList<>();
+        for (UUID id : participants) {
+            if (Bukkit.getPlayer(id) != null) online.add(id);
+        }
+        int created = squads.shuffleBalancedTeams(online, this::safePlayerName, random);
+        broadcast("<aqua><bold>ADMIN SHUFFLED SQUADS!</bold></aqua> <yellow>Created " + created + " balanced " + squads.formatLabel() + " squads!</yellow>");
+        for (TournamentSquadManager.TournamentTeam t : squads.allTeams()) {
+            List<String> names = new ArrayList<>();
+            for (UUID m : t.members()) names.add(safePlayerName(m));
+            String line = PREFIX + "<gold>Your new squad:</gold> <yellow><bold>" + FormatUtil.escape(t.name())
+                    + "</bold></yellow> <gray>(" + FormatUtil.escape(String.join(", ", names)) + ")</gray>";
+            for (UUID m : t.members()) {
+                Player p = Bukkit.getPlayer(m);
+                if (p != null) p.sendMessage(FormatUtil.mm(line));
+            }
+        }
+        refreshHologramsSafe();
+    }
+
+    public void adminForcePair(CommandSender sender, String nameA, String nameB) {
+        if (!eventOpen || eventMode != EventMode.TOURNAMENT) {
+            sender.sendMessage(FormatUtil.mm(PREFIX + "<red>Force-pairing is only available during Tournament registration.</red>"));
+            return;
+        }
+        Player a = Bukkit.getPlayerExact(nameA);
+        Player b = Bukkit.getPlayerExact(nameB);
+        if (a == null || b == null) {
+            sender.sendMessage(FormatUtil.mm(PREFIX + "<red>Both players must be online.</red>"));
+            return;
+        }
+        TournamentSquadManager.ActionResult res = squads.forcePair(a.getUniqueId(), a.getName(), b.getUniqueId(), b.getName());
+        if (!res.ok()) {
+            sender.sendMessage(FormatUtil.mm(PREFIX + "<red>" + FormatUtil.escape(res.message()) + "</red>"));
+            return;
+        }
+        sender.sendMessage(FormatUtil.mm(PREFIX + "<green>" + FormatUtil.escape(res.message()) + "</green>"));
+        a.sendMessage(FormatUtil.mm(PREFIX + "<aqua>An admin paired you with <yellow>" + FormatUtil.escape(b.getName()) + "</yellow> in <gold>" + FormatUtil.escape(res.team().name()) + "</gold>!</aqua>"));
+        b.sendMessage(FormatUtil.mm(PREFIX + "<aqua>An admin paired you with <yellow>" + FormatUtil.escape(a.getName()) + "</yellow> in <gold>" + FormatUtil.escape(res.team().name()) + "</gold>!</aqua>"));
+        refreshHologramsSafe();
+    }
+
+    public void adminDisbandTeam(CommandSender sender, int teamId) {
+        if (!eventOpen || eventMode != EventMode.TOURNAMENT) {
+            sender.sendMessage(FormatUtil.mm(PREFIX + "<red>Disbanding is only available during Tournament registration.</red>"));
+            return;
+        }
+        TournamentSquadManager.ActionResult res = squads.disbandTeam(teamId, this::safePlayerName);
+        if (!res.ok()) {
+            sender.sendMessage(FormatUtil.mm(PREFIX + "<red>" + FormatUtil.escape(res.message()) + "</red>"));
+            return;
+        }
+        sender.sendMessage(FormatUtil.mm(PREFIX + "<green>" + FormatUtil.escape(res.message()) + "</green>"));
+        if (res.team() != null) {
+            for (UUID m : res.team().members()) {
+                Player p = Bukkit.getPlayer(m);
+                if (p != null) p.sendMessage(FormatUtil.mm(PREFIX + "<yellow>An admin disbanded your squad — you are now solo.</yellow>"));
+            }
+        }
+        refreshHologramsSafe();
+    }
+
+    public void adminSetInvitesLocked(CommandSender sender, boolean locked) {
+        if (eventMode != EventMode.TOURNAMENT || (!eventOpen && !eventRunning)) {
+            sender.sendMessage(FormatUtil.mm(PREFIX + "<red>No tournament is currently active.</red>"));
+            return;
+        }
+        squads.setInvitesLocked(locked);
+        broadcast(locked
+                ? "<red><bold>🔒 SQUADS LOCKED!</bold></red> <gray>Tournament rosters are now frozen by staff.</gray>"
+                : "<green><bold>🔓 SQUADS UNLOCKED!</bold></green> <gray>Players can invite/edit squads again.</gray>");
+        refreshHologramsSafe();
+    }
+
+    public void adminSetBo3Finals(CommandSender sender, boolean bo3) {
+        squads.setBo3Finals(bo3);
+        plugin.getConfig().set("tournament.bo3-finals", bo3);
+        plugin.saveConfig();
+        broadcast("<gold>Tournament Grand Finals format set to:</gold> "
+                + (bo3 ? "<green><bold>Best-of-3 (First to 2 Wins)</bold></green>" : "<yellow><bold>Best-of-1 (Single Decider)</bold></yellow>"));
+        refreshHologramsSafe();
+    }
+
     private void startTournament() {
         if (!eventOpen || participants.size() < 2) {
             broadcast("<red>Tournament requires at least 2 registered players.</red>");
             stopEvent("Tournament cancelled: not enough players");
             return;
         }
+        Set<UUID> onlineSet = new LinkedHashSet<>();
+        for (UUID id : participants) {
+            if (Bukkit.getPlayer(id) != null) onlineSet.add(id);
+        }
+        if (onlineSet.size() < 2) {
+            stopEvent("Tournament cancelled: players unavailable");
+            return;
+        }
+        // Auto-fill solos / incomplete squads cleanly if enabled (preserves existing friend pairs!)
+        if (squads.isTeamMode() && plugin.getConfig().getBoolean("tournament.auto-fill-solos", true)) {
+            int moved = squads.autoFillIncompleteTeams(onlineSet, this::safePlayerName, random);
+            if (moved > 0) {
+                broadcast("<aqua>Auto-matched <yellow>" + moved + "</yellow> solo/incomplete players into balanced <gold>"
+                        + squads.formatLabel() + "</gold> squads!</aqua>");
+                for (TournamentSquadManager.TournamentTeam t : squads.allTeams()) {
+                    List<String> names = new ArrayList<>();
+                    for (UUID m : t.members()) names.add(safePlayerName(m));
+                    for (UUID m : t.members()) {
+                        Player p = Bukkit.getPlayer(m);
+                        if (p != null) {
+                            p.sendMessage(FormatUtil.mm(PREFIX + "<gold>Finalized Squad:</gold> <yellow><bold>"
+                                    + FormatUtil.escape(t.name()) + "</bold></yellow> <gray>("
+                                    + FormatUtil.escape(String.join(", ", names)) + ")</gray>"));
+                        }
+                    }
+                }
+            }
+        }
+
+        int teamCount = squads.startBracket(onlineSet, random);
+        if (teamCount < 2) {
+            broadcast("<red>Tournament requires at least 2 teams to start the bracket (currently " + teamCount + ").</red>");
+            stopEvent("Tournament cancelled: not enough teams");
+            return;
+        }
+
         Arena arena = arenaManager.get(selectedArena);
         if (arena != null) {
             blockTracker.startTracking(arenaManager.sharedWorldName(), arena);
@@ -1153,81 +1747,63 @@ public final class EventManager implements Listener {
         paused = false;
         matchStartedAt = System.currentTimeMillis();
         phase = "tournament";
-        List<UUID> entrants = new ArrayList<>();
-        for (UUID id : participants) {
-            if (Bukkit.getPlayer(id) != null) entrants.add(id);
-        }
-        Collections.shuffle(entrants, random);
-        if (entrants.size() < 2) {
-            stopEvent("Tournament cancelled: players unavailable");
-            return;
-        }
+        initialFighters = onlineSet.size();
         spectators.clear();
+
         Location audLoc = arena != null ? arenaManager.firstSpawn(arena, "audience") : null;
-        for (UUID id : entrants) {
+        for (UUID id : onlineSet) {
             Player p = Bukkit.getPlayer(id);
             if (p != null) {
                 snapshotIfNeeded(p);
+                removeRulesBooks(p);
+                p.getInventory().clear();
                 p.setGameMode(GameMode.SPECTATOR);
                 if (audLoc != null) p.teleport(audLoc);
                 spectators.add(id);
             }
         }
-        tournamentQueue.clear();
-        tournamentWinners.clear();
-        tournamentRound = 1;
-        if ((entrants.size() & 1) == 1) tournamentWinners.add(entrants.remove(entrants.size() - 1));
-        for (int i = 0; i + 1 < entrants.size(); i += 2) {
-            tournamentQueue.addLast(entrants.get(i));
-            tournamentQueue.addLast(entrants.get(i + 1));
+
+        broadcast("<gold><bold>⚔ " + squads.formatLabel().toUpperCase(Locale.ROOT) + " TOURNAMENT BEGINS! ⚔</bold></gold> <yellow>"
+                + teamCount + " squads competing" + (squads.isBo3Finals() ? " • Best-of-3 Grand Finals!" : "") + "</yellow>");
+        if (squads.lastByeTeam() != null) {
+            broadcast("<aqua>Bye Round:</aqua> <gold><bold>" + FormatUtil.escape(squads.lastByeTeam().name())
+                    + "</bold></gold> <gray>advances automatically to Round 2!</gray>");
         }
-        broadcast("<yellow>Tournament Round 1 begins with " + entrants.size() + " fighters!</yellow>");
         refreshHologramsSafe();
         startNextTournamentMatch();
     }
 
     private void startNextTournamentMatch() {
-        if (!eventRunning || eventMode != EventMode.TOURNAMENT) return;
-        if (tournamentQueue.isEmpty()) {
-            if (tournamentWinners.size() == 1) {
-                finishWinner(tournamentWinners.get(0));
-                return;
-            }
-            if (tournamentWinners.size() < 2) {
+        if (!eventRunning || eventMode != EventMode.TOURNAMENT || celebrating) return;
+        int prevRound = squads.currentRound();
+        TournamentSquadManager.ActiveMatchup match = squads.nextMatchup(random);
+        if (match == null) {
+            if (squads.championTeam() != null) {
+                finishTournamentChampion(squads.championTeam());
+            } else {
                 stopEvent("Tournament ended without a champion");
-                return;
             }
-            List<UUID> next = new ArrayList<>(tournamentWinners);
-            tournamentWinners.clear();
-            Collections.shuffle(next, random);
-            tournamentRound++;
-            if ((next.size() & 1) == 1) tournamentWinners.add(next.remove(next.size() - 1));
-            for (int i = 0; i + 1 < next.size(); i += 2) {
-                tournamentQueue.addLast(next.get(i));
-                tournamentQueue.addLast(next.get(i + 1));
-            }
-            broadcast("<yellow>Tournament Round " + tournamentRound + " begins!</yellow>");
-        }
-        if (tournamentQueue.size() < 2) {
-            startNextTournamentMatch();
             return;
         }
-        tournamentPlayerA = tournamentQueue.removeFirst();
-        tournamentPlayerB = tournamentQueue.removeFirst();
-        Player a = Bukkit.getPlayer(tournamentPlayerA);
-        Player b = Bukkit.getPlayer(tournamentPlayerB);
-        if (a == null || b == null) {
-            UUID advancing = a != null ? tournamentPlayerA : b != null ? tournamentPlayerB : null;
-            if (advancing != null) tournamentWinners.add(advancing);
-            Bukkit.getScheduler().runTaskLater(plugin, this::startNextTournamentMatch, 20L);
-            return;
+        if (match.round() > prevRound) {
+            broadcast("<gold><bold>★ TOURNAMENT ROUND " + match.round() + " BEGINS! ★</bold></gold>");
+            if (squads.lastByeTeam() != null) {
+                broadcast("<aqua>Bye:</aqua> <gold>" + FormatUtil.escape(squads.lastByeTeam().name()) + "</gold> <gray>advances!</gray>");
+            }
         }
 
-        alive.clear();
-        alive.add(tournamentPlayerA);
-        alive.add(tournamentPlayerB);
-        spectators.remove(tournamentPlayerA);
-        spectators.remove(tournamentPlayerB);
+        List<Player> teamAPlayers = onlineMembers(match.teamA());
+        List<Player> teamBPlayers = onlineMembers(match.teamB());
+        if (teamAPlayers.isEmpty() || teamBPlayers.isEmpty()) {
+            int forfeitWinnerId = !teamAPlayers.isEmpty() ? match.teamA().id()
+                    : (!teamBPlayers.isEmpty() ? match.teamB().id() : -1);
+            if (forfeitWinnerId > 0) {
+                String wName = forfeitWinnerId == match.teamA().id() ? match.teamA().name() : match.teamB().name();
+                broadcast("<yellow>" + FormatUtil.escape(wName) + "</yellow> <gray>wins by forfeit (opponent offline)!</gray>");
+            }
+            completeTournamentMatch(forfeitWinnerId);
+            return;
+        }
 
         Arena arena = arenaManager.get(selectedArena);
         List<Location> points = arena == null ? List.of() : arenaManager.spawns(arena, "final");
@@ -1235,16 +1811,13 @@ public final class EventManager implements Listener {
             stopEvent("Tournament arena requires at least two final spawn points");
             return;
         }
-        a.setGameMode(GameMode.SURVIVAL);
-        b.setGameMode(GameMode.SURVIVAL);
-        resetVitals(a);
-        resetVitals(b);
-        a.teleport(points.get(0));
-        b.teleport(points.get(1));
-        removeRulesBooks(a);
-        removeRulesBooks(b);
-        giveKitWithPlayerLayout(a, selectedKit);
-        giveKitWithPlayerLayout(b, selectedKit);
+
+        alive.clear();
+        teams.clear();
+        Location spawnA = points.get(0);
+        Location spawnB = points.get(1);
+        prepareTournamentSide(teamAPlayers, 1, spawnA, arena);
+        prepareTournamentSide(teamBPlayers, 2, spawnB, arena);
 
         Location audLoc = arena != null ? arenaManager.firstSpawn(arena, "audience") : null;
         for (UUID id : participants) {
@@ -1259,49 +1832,121 @@ public final class EventManager implements Listener {
                 }
             }
         }
-        applyPhaseBorder("final");
+
+        // Larger border for 2v2/3v3/4v4 team fights vs tight duel border for 1v1
+        applyPhaseBorder(squads.isTeamMode() ? "wave2" : "final");
         applyFinalDuelGlowIfEnabled();
-        startGracePeriod(alive, a.getName() + " vs " + b.getName());
-        hud.broadcastTitle(spectators, "<gold><bold>ROUND " + tournamentRound + "</bold></gold>",
-                "<green>" + FormatUtil.escape(a.getName()) + "</green> <gray>vs</gray> <red>" + FormatUtil.escape(b.getName()) + "</red>", 100, 1500, 300);
-        broadcast("<yellow>Round " + tournamentRound + ":</yellow> <green>" + FormatUtil.escape(a.getName())
-                + "</green> <gray>vs</gray> <red>" + FormatUtil.escape(b.getName()) + "</red>");
+
+        String headline = match.grandFinal() ? "<gold><bold>🏆 " + match.seriesBadge() + "</bold></gold>"
+                : "<gold><bold>ROUND " + match.round() + "</bold></gold>";
+        String matchupLine = "<red><bold>" + FormatUtil.escape(match.teamA().name()) + "</bold></red> <gray>vs</gray> <blue><bold>"
+                + FormatUtil.escape(match.teamB().name()) + "</bold></blue>";
+        startGracePeriod(alive, match.teamA().name() + " vs " + match.teamB().name());
+        hud.broadcastTitle(spectators, headline, matchupLine, 100, 1700, 300);
+        broadcast(headline + " <dark_gray>—</dark_gray> " + matchupLine);
+        refreshHologramsSafe();
     }
 
-    private void completeTournamentMatch(UUID winnerId) {
-        if (!eventRunning || eventMode != EventMode.TOURNAMENT) return;
-        cancelGrace();
-        if (winnerId != null) {
-            tournamentWinners.add(winnerId);
-            Player winner = Bukkit.getPlayer(winnerId);
-            broadcast("<yellow>" + FormatUtil.escape(winner == null ? "A player" : winner.getName())
-                    + "</yellow> <gray>advances to the next round!</gray>");
+    private List<Player> onlineMembers(TournamentSquadManager.TournamentTeam team) {
+        List<Player> out = new ArrayList<>();
+        for (UUID m : team.members()) {
+            Player p = Bukkit.getPlayer(m);
+            if (p != null && p.isOnline()) out.add(p);
         }
+        return out;
+    }
+
+    private void prepareTournamentSide(List<Player> sidePlayers, int sideNum, Location baseSpawn, Arena arena) {
+        int count = sidePlayers.size();
+        for (int i = 0; i < count; i++) {
+            Player p = sidePlayers.get(i);
+            UUID id = p.getUniqueId();
+            alive.add(id);
+            teams.put(id, sideNum);
+            spectators.remove(id);
+            if (isDestructibleCurrentMatch()) {
+                arenaManager.addArenaBuilder(selectedArena, id);
+            }
+            p.setGameMode(GameMode.SURVIVAL);
+            resetVitals(p);
+            Location tpLoc = baseSpawn.clone();
+            if (count > 1 && arena != null) {
+                double offsetZ = (i - (count - 1) / 2.0) * 1.5;
+                if (arena.isInsideCombatBounds(tpLoc.getX(), tpLoc.getY(), tpLoc.getZ() + offsetZ)) {
+                    tpLoc.add(0.0, 0.0, offsetZ);
+                }
+            }
+            p.setFallDistance(0f);
+            p.teleport(tpLoc);
+            lastMovementAt.put(id, System.currentTimeMillis());
+            removeRulesBooks(p);
+            giveKitWithPlayerLayout(p, selectedKit);
+        }
+    }
+
+    private void checkTournamentMatchEnd() {
+        if (!eventRunning || eventMode != EventMode.TOURNAMENT || celebrating) return;
+        TournamentSquadManager.ActiveMatchup match = squads.currentMatchup();
+        if (match == null) return;
+        int aliveA = 0;
+        int aliveB = 0;
+        for (UUID id : alive) {
+            Integer side = teams.get(id);
+            if (side == null) continue;
+            if (side == 1) aliveA++;
+            else if (side == 2) aliveB++;
+        }
+        if (aliveA > 0 && aliveB > 0) return; // Match still going in 2v2/3v3/4v4!
+        int winnerTeamId = aliveA > 0 ? match.teamA().id() : (aliveB > 0 ? match.teamB().id() : -1);
+        Bukkit.getScheduler().runTask(plugin, () -> completeTournamentMatch(winnerTeamId));
+    }
+
+    private void completeTournamentMatch(int winningTeamId) {
+        if (!eventRunning || eventMode != EventMode.TOURNAMENT || celebrating) return;
+        TournamentSquadManager.ActiveMatchup active = squads.currentMatchup();
+        if (active == null) return;
+        cancelGrace();
+
+        // Move active fighters back to spectator gallery & clear their borders
         Arena arena = arenaManager.get(selectedArena);
         Location audLoc = arena != null ? arenaManager.firstSpawn(arena, "audience") : null;
-        if (tournamentPlayerA != null) {
-            Player a = Bukkit.getPlayer(tournamentPlayerA);
-            if (a != null) {
-                clearPlayerBorder(a);
-                a.setGameMode(GameMode.SPECTATOR);
-                if (audLoc != null) a.teleport(audLoc);
+        Set<UUID> matchPlayers = new LinkedHashSet<>();
+        matchPlayers.addAll(active.teamA().members());
+        matchPlayers.addAll(active.teamB().members());
+        for (UUID id : matchPlayers) {
+            Player p = Bukkit.getPlayer(id);
+            if (p != null) {
+                clearPlayerBorder(p);
+                p.setGameMode(GameMode.SPECTATOR);
+                if (audLoc != null) p.teleport(audLoc);
             }
-            spectators.add(tournamentPlayerA);
-        }
-        if (tournamentPlayerB != null) {
-            Player b = Bukkit.getPlayer(tournamentPlayerB);
-            if (b != null) {
-                clearPlayerBorder(b);
-                b.setGameMode(GameMode.SPECTATOR);
-                if (audLoc != null) b.teleport(audLoc);
-            }
-            spectators.add(tournamentPlayerB);
+            spectators.add(id);
         }
         alive.clear();
-        tournamentPlayerA = null;
-        tournamentPlayerB = null;
+        teams.clear();
 
-        // Roll back arena edits & wipe drops/crystals cleanly between tournament rounds!
+        TournamentSquadManager.MatchResult res = squads.recordMatchWinner(winningTeamId);
+        refreshHologramsSafe();
+
+        if (res.outcome() == TournamentSquadManager.MatchOutcome.TOURNAMENT_CHAMPION && res.winner() != null) {
+            finishTournamentChampion(res.winner());
+            return;
+        }
+
+        if (res.outcome() == TournamentSquadManager.MatchOutcome.SERIES_CONTINUES && res.winner() != null) {
+            broadcast("<gold><bold>🏆 GRAND FINAL — GAME " + res.gameNumber() + ":</bold></gold> <yellow><bold>"
+                    + FormatUtil.escape(res.winner().name()) + "</bold></yellow> <green>wins the game!</green> "
+                    + "<dark_gray>|</dark_gray> <gray>Series:</gray> <red><bold>" + res.winsA()
+                    + "</bold></red><gray>-</gray><blue><bold>" + res.winsB() + "</bold></blue> <gray>(First to 2)</gray>");
+        } else if (res.outcome() == TournamentSquadManager.MatchOutcome.TEAM_ADVANCES && res.winner() != null) {
+            broadcast("<yellow><bold>" + FormatUtil.escape(res.winner().name()) + "</bold></yellow> <green>defeated</green> <gray>"
+                    + FormatUtil.escape(res.loser() != null ? res.loser().name() : "Opponent")
+                    + "</gray> <green>and advances!</green>");
+        } else {
+            broadcast("<gray>Match ended in a draw — advancing bracket.</gray>");
+        }
+
+        // Roll back arena edits & wipe drops/crystals cleanly between tournament rounds/games!
         int batch = Math.max(100, plugin.getConfig().getInt("arenas.rollback-blocks-per-tick", 300));
         blockTracker.rollbackBatched(plugin, batch, () -> {
             arenaManager.clearArenaEntities(selectedArena);
@@ -1310,6 +1955,105 @@ public final class EventManager implements Listener {
             }
             Bukkit.getScheduler().runTaskLater(plugin, this::startNextTournamentMatch, 60L);
         });
+    }
+
+    private void finishTournamentChampion(TournamentSquadManager.TournamentTeam champion) {
+        if (eventCompleted || champion == null) return;
+        // 1v1 solo tournament delegates cleanly to finishWinner so 1v1 Elo/predictions/podium match identically!
+        if (!squads.isTeamMode() && champion.size() == 1) {
+            finishWinner(champion.leader());
+            return;
+        }
+        eventCompleted = true;
+        celebrating = true;
+        eventWinner = champion.leader();
+
+        String champLabel = champion.name();
+        String secondLabel = squads.runnerUpTeam() != null ? squads.runnerUpTeam().name() : "---";
+        String thirdLabel = squads.thirdPlaceTeam() != null ? squads.thirdPlaceTeam().name() : "---";
+
+        // Reward audience prediction voters who picked ANY member of the winning squad!
+        int rewardPts = plugin.getConfig().getInt("audience-correct-prediction-points", 10);
+        for (Map.Entry<UUID, UUID> vote : votes.entrySet()) {
+            if (champion.contains(vote.getValue())) {
+                String voterName = Bukkit.getOfflinePlayer(vote.getKey()).getName();
+                data.addAudiencePoints(vote.getKey(), voterName, rewardPts);
+                Player onlineVoter = Bukkit.getPlayer(vote.getKey());
+                if (onlineVoter != null) {
+                    onlineVoter.sendMessage(FormatUtil.mm(PREFIX + "<green>Your winner prediction was correct! +" + rewardPts + " audience points.</green>"));
+                }
+            }
+        }
+
+        List<String> champMembers = new ArrayList<>();
+        for (UUID m : champion.members()) {
+            String n = safePlayerName(m);
+            champMembers.add(n);
+            data.recordWin(m, n);
+            runRewardCommands("team-winner", m, n);
+        }
+
+        recordMatchSummaryAndNotify(champLabel + " (" + String.join(", ", champMembers) + ")", champion.leader().toString(), secondLabel, thirdLabel);
+        broadcast("<gold><bold>🏆 " + squads.formatLabel().toUpperCase(Locale.ROOT) + " TOURNAMENT CHAMPIONS:</bold></gold> <yellow><bold>"
+                + FormatUtil.escape(champLabel) + "</bold></yellow> <gray>(" + FormatUtil.escape(String.join(", ", champMembers)) + ") (+20 Elo)</gray>");
+        hud.broadcastTitle(participants, "<gold><bold>🏆 CHAMPIONS! 🏆</bold></gold>",
+                "<yellow>" + FormatUtil.escape(champLabel) + " wins the " + squads.formatLabel() + " Tournament!</yellow>", 150, 3400, 500);
+
+        List<Player> celebrateList = new ArrayList<>();
+        Location winnerLoc = configuredLocation("winner");
+        Location crowdLoc = configuredLocation("winner-crowd");
+        World podiumWorld = winnerLoc != null ? winnerLoc.getWorld() : arenaManager.getOrCreateSharedWorld(null);
+        Location secondLoc = podiumWorld != null ? new Location(podiumWorld, ArenaManager.WINNER_ORIGIN_X - 7.5, ArenaManager.WINNER_ORIGIN_Y + 4.0, ArenaManager.WINNER_ORIGIN_Z - 5.5, 0.0f, 0.0f) : null;
+        Location thirdLoc = podiumWorld != null ? new Location(podiumWorld, ArenaManager.WINNER_ORIGIN_X + 8.5, ArenaManager.WINNER_ORIGIN_Y + 3.0, ArenaManager.WINNER_ORIGIN_Z - 5.5, 0.0f, 0.0f) : null;
+
+        Set<UUID> podiumIds = new HashSet<>();
+        for (UUID m : champion.members()) {
+            podiumIds.add(m);
+            Player p = Bukkit.getPlayer(m);
+            if (p != null && p.isOnline() && !p.isDead()) {
+                p.setGameMode(GameMode.ADVENTURE);
+                if (winnerLoc != null) p.teleport(winnerLoc);
+                playCue(p, "winner");
+                celebrateList.add(p);
+            }
+        }
+        if (squads.runnerUpTeam() != null && secondLoc != null) {
+            for (UUID m : squads.runnerUpTeam().members()) {
+                podiumIds.add(m);
+                Player p = Bukkit.getPlayer(m);
+                if (p != null && p.isOnline() && !p.isDead()) {
+                    p.setGameMode(GameMode.ADVENTURE);
+                    p.teleport(secondLoc);
+                    playCue(p, "winner");
+                    celebrateList.add(p);
+                }
+            }
+        }
+        if (squads.thirdPlaceTeam() != null && thirdLoc != null) {
+            for (UUID m : squads.thirdPlaceTeam().members()) {
+                podiumIds.add(m);
+                Player p = Bukkit.getPlayer(m);
+                if (p != null && p.isOnline() && !p.isDead()) {
+                    p.setGameMode(GameMode.ADVENTURE);
+                    p.teleport(thirdLoc);
+                    playCue(p, "winner");
+                    celebrateList.add(p);
+                }
+            }
+        }
+        if (crowdLoc != null) {
+            for (UUID id : participants) {
+                if (podiumIds.contains(id)) continue;
+                Player crowd = Bukkit.getPlayer(id);
+                if (crowd != null && crowd.isOnline() && !crowd.isDead()) {
+                    crowd.setGameMode(GameMode.ADVENTURE);
+                    crowd.teleport(crowdLoc);
+                    playCue(crowd, "winner");
+                }
+            }
+        }
+        refreshHologramsSafe();
+        scheduleCelebrationAndFinish(celebrateList, squads.formatLabel() + " Tournament finished");
     }
 
     private void finishWinner(UUID winnerId) {
@@ -1503,6 +2247,11 @@ public final class EventManager implements Listener {
 
     private void startStatusLoop() {
         statusTask = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
+            // Dynamic Operator Admin Wand sync: auto-gives in Lobby when OP, auto-removes immediately on /deop!
+            for (Player online : Bukkit.getOnlinePlayers()) {
+                syncOperatorAdminTool(online);
+            }
+
             // Live Sky Citadel Parkour stopwatch for non-fighting players
             if (!parkourStartedAt.isEmpty()) {
                 long nowMs = System.currentTimeMillis();
@@ -1574,12 +2323,29 @@ public final class EventManager implements Listener {
 
                 float aliveRatio = initialFighters > 0 ? (float) alive.size() / initialFighters : 1.0f;
                 BossBar.Color barColor = aliveRatio > 0.5f ? BossBar.Color.GREEN : (aliveRatio > 0.25f ? BossBar.Color.YELLOW : BossBar.Color.RED);
-                hud.updateBossBar(
-                        "<gold><bold>" + FormatUtil.escape(eventMode.displayName()) + "</bold></gold> <dark_gray>|</dark_gray> <green>"
-                                + alive.size() + " Alive</green> <dark_gray>|</dark_gray> <aqua>" + phase.toUpperCase(Locale.ROOT)
-                                + "</aqua> <dark_gray>|</dark_gray> <red>Border " + (int) Math.round(currentBorderSize()) + "x" + (int) Math.round(currentBorderSize()) + "</red>",
-                        aliveRatio, barColor, participants
-                );
+                if (eventMode == EventMode.TOURNAMENT && squads.currentMatchup() != null) {
+                    TournamentSquadManager.ActiveMatchup m = squads.currentMatchup();
+                    int aliveA = 0, aliveB = 0;
+                    for (UUID fid : alive) {
+                        Integer side = teams.get(fid);
+                        if (side != null && side == 1) aliveA++;
+                        else if (side != null && side == 2) aliveB++;
+                    }
+                    String seriesTxt = m.bo3Series() ? " <dark_gray>|</dark_gray> <gold>Bo3 " + m.winsA() + "-" + m.winsB() + "</gold>" : "";
+                    hud.updateBossBar(
+                            "<gold><bold>" + squads.formatLabel().toUpperCase(Locale.ROOT) + " " + (m.grandFinal() ? "GRAND FINAL" : "R" + m.round())
+                                    + "</bold></gold> <dark_gray>|</dark_gray> <red>" + FormatUtil.escape(m.teamA().name()) + " (" + aliveA + ")</red>"
+                                    + " <gray>vs</gray> <blue>" + FormatUtil.escape(m.teamB().name()) + " (" + aliveB + ")</blue>" + seriesTxt,
+                            1.0f, m.grandFinal() ? BossBar.Color.PURPLE : BossBar.Color.YELLOW, participants
+                    );
+                } else {
+                    hud.updateBossBar(
+                            "<gold><bold>" + FormatUtil.escape(eventMode.displayName()) + "</bold></gold> <dark_gray>|</dark_gray> <green>"
+                                    + alive.size() + " Alive</green> <dark_gray>|</dark_gray> <aqua>" + phase.toUpperCase(Locale.ROOT)
+                                    + "</aqua> <dark_gray>|</dark_gray> <red>Border " + (int) Math.round(currentBorderSize()) + "x" + (int) Math.round(currentBorderSize()) + "</red>",
+                            aliveRatio, barColor, participants
+                    );
+                }
 
                 Component actionBar = FormatUtil.mm("<gold><bold>" + FormatUtil.escape(eventMode.displayName())
                         + "</bold></gold> <dark_gray>|</dark_gray> <yellow>" + alive.size() + " alive</yellow>"
@@ -1601,13 +2367,17 @@ public final class EventManager implements Listener {
             // Refresh flicker-free per-player event sidebar, below-name HP, & branded tablist
             long elapsedSec = eventRunning ? Math.max(0L, (System.currentTimeMillis() - matchStartedAt) / 1000L) : 0L;
             int liveBorderInt = eventRunning ? (int) Math.round(currentBorderSize()) : 0;
-            Map<UUID, Integer> teamSnapshot = eventMode == EventMode.TEAM_WARS ? teams : Map.of();
+            Map<UUID, Integer> teamSnapshot = (eventMode == EventMode.TEAM_WARS || eventMode == EventMode.TOURNAMENT) ? teams : Map.of();
+            String displayMode = eventMode == EventMode.TOURNAMENT
+                    ? squads.formatLabel().toUpperCase(Locale.ROOT) + " Tourney"
+                    : eventMode.displayName();
             for (UUID id : participants) {
                 Player viewer = Bukkit.getPlayer(id);
                 if (viewer == null || !viewer.isOnline()) continue;
+                List<String> extraLines = buildSidebarExtras(id);
                 hud.updateSidebar(
                         viewer,
-                        eventMode.displayName(),
+                        displayMode,
                         arenaLabel,
                         phase,
                         alive.size(),
@@ -1619,10 +2389,38 @@ public final class EventManager implements Listener {
                         eventOpen,
                         elapsedSec,
                         liveBorderInt,
-                        teamSnapshot
+                        teamSnapshot,
+                        extraLines
                 );
             }
         }, 20L, 20L);
+    }
+
+    private List<String> buildSidebarExtras(UUID playerId) {
+        if (eventMode != EventMode.TOURNAMENT) return List.of();
+        List<String> lines = new ArrayList<>();
+        TournamentSquadManager.TournamentTeam sq = squads.teamOf(playerId);
+        if (eventOpen) {
+            if (sq != null && squads.isTeamMode()) {
+                lines.add("<gray>Squad:</gray> <gold>" + FormatUtil.escape(sq.name())
+                        + "</gold> <gray>(" + sq.size() + "/" + squads.teamSize() + ")</gray>");
+            }
+            lines.add("<gray>Teams:</gray> <green>" + squads.allTeams().size() + "</green> <gray>(" + squads.readyTeamCount() + " full)</gray>");
+            if (kitVoteOpen) {
+                lines.add("<aqua>Kit Vote:</aqua> <yellow>" + FormatUtil.formatDuration(kitVoteRemaining) + "</yellow>");
+            }
+        } else if (eventRunning) {
+            TournamentSquadManager.ActiveMatchup cur = squads.currentMatchup();
+            if (cur != null) {
+                lines.add("<gold>" + (cur.grandFinal() ? "GRAND FINAL" : "Round " + cur.round()) + "</gold>"
+                        + (cur.bo3Series() ? " <yellow>(" + cur.winsA() + "-" + cur.winsB() + ")</yellow>" : ""));
+            }
+            if (sq != null && squads.isTeamMode()) {
+                lines.add("<gray>Your Squad:</gray> " + (sq.isEliminated() ? "<red><st>" : "<green>")
+                        + FormatUtil.escape(sq.name()) + (sq.isEliminated() ? "</st></red>" : "</green>"));
+            }
+        }
+        return lines;
     }
 
     // -------------------------------------------------------------------------
@@ -1729,6 +2527,10 @@ public final class EventManager implements Listener {
 
     private boolean isDestructibleCurrentMatch() {
         if (isDestructibleMode(eventMode)) return true;
+        if (selectedKit != null && (selectedKit.equals("build-uhc") || selectedKit.equals("crystal")
+                || selectedKit.equals("uhc") || selectedKit.equals("smp"))) {
+            return true;
+        }
         return selectedArena != null && (selectedArena.equals("build-uhc") || selectedArena.equals("crystal")
                 || selectedArena.equals("uhc") || selectedArena.equals("smp"));
     }
@@ -1786,17 +2588,28 @@ public final class EventManager implements Listener {
         return Bukkit.getWorlds().isEmpty() ? null : Bukkit.getWorlds().get(0).getSpawnLocation();
     }
 
+    public Location tournamentLobbyLocation() {
+        Location loc = configuredLocation("tournament-lobby");
+        if (loc != null) return loc;
+        return lobbyLocation();
+    }
+
     public boolean isUsingPerArenaWaiting() {
+        if (eventMode == EventMode.TOURNAMENT) return false;
         if (!plugin.getConfig().getBoolean("lobby-protection.per-arena-waiting", true)) return false;
         Arena arena = arenaManager.get(selectedArena);
         return arena != null && arenaManager.firstSpawn(arena, "waiting") != null;
     }
 
     /**
-     * Resolves the active event's waiting lobby: prefers the selected arena's own themed
-     * waiting skybox / custom `/ce setwaiting <arena>` spawn, falling back cleanly to global Lobby.
+     * Resolves the active event's waiting lobby:
+     * - Tournaments ALWAYS gather in the dedicated Grand Esports Tournament Hall (`locations.tournament-lobby`)
+     * - Standard events prefer the selected arena's themed waiting skybox, falling back to global Lobby.
      */
     public Location activeWaitingLocation() {
+        if (eventMode == EventMode.TOURNAMENT) {
+            return tournamentLobbyLocation();
+        }
         if (plugin.getConfig().getBoolean("lobby-protection.per-arena-waiting", true)) {
             Arena arena = arenaManager.get(selectedArena);
             if (arena != null) {
@@ -1891,10 +2704,117 @@ public final class EventManager implements Listener {
 
     private void giveLobbyHotbar(Player player) {
         if (!plugin.getConfig().getBoolean("lobby-protection.give-lobby-hotbar", true)) return;
+        if (eventMode == EventMode.TOURNAMENT) {
+            if (squads.isTeamMode()) {
+                player.getInventory().setItem(0, lobbyHotbarItem(Material.TOTEM_OF_UNDYING,
+                        "<gold><bold>Manage My Squad</bold></gold> <gray>(Right-Click)</gray>", "squad-manager"));
+            } else {
+                player.getInventory().setItem(0, lobbyHotbarItem(Material.IRON_SWORD,
+                        "<green><bold>Edit Kit Layout</bold></green> <gray>(Right-Click)</gray>", "kit-editor"));
+            }
+            player.getInventory().setItem(1, lobbyHotbarItem(Material.FILLED_MAP,
+                    "<aqua><bold>Live Teams & Bracket</bold></aqua> <gray>(Right-Click)</gray>", "bracket-viewer"));
+            player.getInventory().setItem(2, lobbyHotbarItem(Material.IRON_SWORD,
+                    "<green><bold>Edit Kit Layout</bold></green> <gray>(Right-Click)</gray>", "kit-editor"));
+            player.getInventory().setItem(6, lobbyHotbarItem(Material.BELL,
+                    "<yellow><bold>Vote GUI</bold></yellow> <gray>(Right-Click)</gray>", "smart-vote"));
+            player.getInventory().setItem(7, lobbyHotbarItem(Material.NETHER_STAR,
+                    "<gold><bold>Leaderboards</bold></gold> <gray>(Right-Click)</gray>", "leaderboard"));
+            player.getInventory().setItem(8, lobbyHotbarItem(Material.RED_DYE,
+                    "<red><bold>Leave Tournament</bold></red> <gray>(Right-Click)</gray>", "leave"));
+            syncOperatorAdminTool(player);
+            return;
+        }
         player.getInventory().setItem(0, lobbyHotbarItem(Material.IRON_SWORD, "<green><bold>Edit Kit Layout</bold></green> <gray>(Right-Click)</gray>", "kit-editor"));
-        player.getInventory().setItem(2, lobbyHotbarItem(Material.BELL, "<aqua><bold>Vote Next Mode</bold></aqua> <gray>(Right-Click)</gray>", "mode-vote"));
+        player.getInventory().setItem(2, lobbyHotbarItem(Material.BELL, "<aqua><bold>Vote Next Mode</bold></aqua> <gray>(Right-Click)</gray>", "smart-vote"));
         player.getInventory().setItem(6, lobbyHotbarItem(Material.NETHER_STAR, "<gold><bold>Leaderboards</bold></gold> <gray>(Right-Click)</gray>", "leaderboard"));
         player.getInventory().setItem(8, lobbyHotbarItem(Material.RED_DYE, "<red><bold>Leave Event</bold></red> <gray>(Right-Click)</gray>", "leave"));
+        syncOperatorAdminTool(player);
+    }
+
+    private boolean isOperatorOrAdmin(Player player) {
+        return player != null && (player.isOp() || player.hasPermission("clasherevents.admin"));
+    }
+
+    private boolean isInsideAnyLobbyArea(Player player) {
+        if (player == null || !player.isOnline() || player.isDead()) return false;
+        UUID id = player.getUniqueId();
+        if ((eventRunning && alive.contains(id)) || (casualDuels != null && casualDuels.isInCasualDuel(id))) {
+            return false;
+        }
+        if (eventOpen && participants.contains(id)) return true;
+        double rad = plugin.getConfig().getDouble("lobby-protection.radius", 46.0) + 10.0;
+        double radSq = rad * rad;
+        Location loc = player.getLocation();
+        for (String key : List.of("lobby", "tournament-lobby", "winner", "winner-crowd")) {
+            Location anchor = configuredLocation(key);
+            if (anchor != null && anchor.getWorld() != null && player.getWorld().equals(anchor.getWorld())
+                    && loc.distanceSquared(anchor) <= radSq) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private ItemStack buildAdminPanelTool() {
+        ItemStack wand = new ItemStack(Material.BLAZE_ROD);
+        var meta = wand.getItemMeta();
+        if (meta != null) {
+            meta.displayName(FormatUtil.noItalic(FormatUtil.mm("<gold><bold>⚡ Admin Control Panel</bold></gold> <gray>(Right-Click)</gray>")));
+            meta.lore(List.of(
+                    FormatUtil.noItalic(FormatUtil.mm("<gray>Right-Click to open the</gray> <yellow>Clasher Events GUI</yellow>")),
+                    FormatUtil.noItalic(FormatUtil.mm("<dark_gray>Auto-synced with Operator (OP) status</dark_gray>"))
+            ));
+            meta.setEnchantmentGlintOverride(true);
+            meta.getPersistentDataContainer().set(lobbyItemKey, PersistentDataType.STRING, "admin-panel");
+            wand.setItemMeta(meta);
+        }
+        return wand;
+    }
+
+    private void removeAdminPanelTool(Player player) {
+        var inv = player.getInventory();
+        for (int i = 0; i < inv.getSize(); i++) {
+            if ("admin-panel".equals(lobbyItemAction(inv.getItem(i)))) {
+                inv.setItem(i, null);
+            }
+        }
+        if ("admin-panel".equals(lobbyItemAction(inv.getItemInOffHand()))) {
+            inv.setItemInOffHand(null);
+        }
+    }
+
+    private boolean hasAdminPanelTool(Player player) {
+        var inv = player.getInventory();
+        for (int i = 0; i < inv.getSize(); i++) {
+            if ("admin-panel".equals(lobbyItemAction(inv.getItem(i)))) return true;
+        }
+        return "admin-panel".equals(lobbyItemAction(inv.getItemInOffHand()));
+    }
+
+    private void syncOperatorAdminTool(Player player) {
+        if (player == null || !player.isOnline()) return;
+        if (!isOperatorOrAdmin(player)) {
+            if (hasAdminPanelTool(player)) removeAdminPanelTool(player);
+            return;
+        }
+        UUID id = player.getUniqueId();
+        boolean fighting = (eventRunning && alive.contains(id)) || (casualDuels != null && casualDuels.isInCasualDuel(id));
+        if (fighting) {
+            if (hasAdminPanelTool(player)) removeAdminPanelTool(player);
+            return;
+        }
+        if (isInsideAnyLobbyArea(player) && !hasAdminPanelTool(player)) {
+            var inv = player.getInventory();
+            int[] preferred = {5, 4, 3, 7, 8, 1, 2, 6, 0};
+            for (int slot : preferred) {
+                ItemStack existing = inv.getItem(slot);
+                if (existing == null || existing.getType().isAir()) {
+                    inv.setItem(slot, buildAdminPanelTool());
+                    return;
+                }
+            }
+        }
     }
 
     private ItemStack lobbyHotbarItem(Material mat, String displayMini, String action) {
@@ -1940,6 +2860,13 @@ public final class EventManager implements Listener {
         if (lobby != null && lobby.getWorld() != null && player.getWorld().equals(lobby.getWorld())) {
             double radius = plugin.getConfig().getDouble("lobby-protection.radius", 46.0);
             if (player.getLocation().distanceSquared(lobby) <= radius * radius) {
+                return true;
+            }
+        }
+        Location tourneyLobby = configuredLocation("tournament-lobby");
+        if (tourneyLobby != null && tourneyLobby.getWorld() != null && player.getWorld().equals(tourneyLobby.getWorld())) {
+            double radius = plugin.getConfig().getDouble("lobby-protection.radius", 46.0);
+            if (player.getLocation().distanceSquared(tourneyLobby) <= radius * radius) {
                 return true;
             }
         }
@@ -2162,7 +3089,9 @@ public final class EventManager implements Listener {
     public void onSpectatorChat(AsyncChatEvent event) {
         UUID id = event.getPlayer().getUniqueId();
         String text = PlainTextComponentSerializer.plainText().serialize(event.message());
-        if (eventRunning && eventMode == EventMode.TEAM_WARS && alive.contains(id) && text.startsWith("@") && text.length() > 1) {
+        boolean teamChatAllowed = (eventRunning && eventMode == EventMode.TEAM_WARS && alive.contains(id))
+                || ((eventOpen || eventRunning) && eventMode == EventMode.TOURNAMENT && participants.contains(id) && squads.isTeamMode());
+        if (teamChatAllowed && text.startsWith("@") && text.length() > 1) {
             event.setCancelled(true);
             String clean = text.substring(1).trim();
             Bukkit.getScheduler().runTask(plugin, () -> sendTeamChat(event.getPlayer(), clean));
@@ -2266,6 +3195,19 @@ public final class EventManager implements Listener {
                 if (plugin.getConfig().getBoolean("lobby-protection.parkour-timer", true)
                         && player.getWorld().getName().equalsIgnoreCase(arenaManager.sharedWorldName())) {
                     checkLobbyParkourTrigger(player, to);
+                }
+            }
+            // Catch void falls around the floating Grand Tournament Hall too!
+            Location tLobby = configuredLocation("tournament-lobby");
+            if (tLobby != null && tLobby.getWorld() != null && player.getWorld().equals(tLobby.getWorld())
+                    && plugin.getConfig().getBoolean("lobby-protection.catch-void-fall", true)) {
+                double tdx = to.getX() - tLobby.getX();
+                double tdz = to.getZ() - tLobby.getZ();
+                if ((tdx * tdx + tdz * tdz) <= 65.0 * 65.0 && to.getY() < tLobby.getY() - 12.0) {
+                    player.setFallDistance(0f);
+                    player.teleport(tLobby);
+                    player.sendMessage(FormatUtil.mm(PREFIX + "<gray>Caught your fall — back inside the Grand Tournament Hall!</gray>"));
+                    return;
                 }
             }
         }
@@ -2385,6 +3327,10 @@ public final class EventManager implements Listener {
 
     @EventHandler
     public void onLobbyDrop(PlayerDropItemEvent event) {
+        if ("admin-panel".equals(lobbyItemAction(event.getItemDrop().getItemStack()))) {
+            event.setCancelled(true);
+            return;
+        }
         if (!event.getPlayer().hasPermission("clasherevents.admin") && inWaitingLobby(event.getPlayer())) {
             event.setCancelled(true);
         }
@@ -2394,6 +3340,16 @@ public final class EventManager implements Listener {
     public void onLobbyInteract(PlayerInteractEvent event) {
         Player player = event.getPlayer();
         String lobbyAction = lobbyItemAction(event.getItem());
+        if ("admin-panel".equals(lobbyAction)
+                && (event.getAction().isRightClick() || (player.getGameMode() != GameMode.CREATIVE && event.getAction().isLeftClick()))) {
+            event.setCancelled(true);
+            if (!isOperatorOrAdmin(player)) {
+                removeAdminPanelTool(player);
+                return;
+            }
+            if (gui != null) gui.openAdminGui(player);
+            return;
+        }
         if (lobbyAction != null && event.getAction().isRightClick()) {
             event.setCancelled(true);
             switch (lobbyAction) {
@@ -2401,7 +3357,9 @@ public final class EventManager implements Listener {
                     if (gui != null && selectedKit != null && !selectedKit.isEmpty()) gui.openKitLayoutEditor(player, selectedKit);
                     else player.sendMessage(FormatUtil.mm(PREFIX + "<yellow>No active event kit to edit right now.</yellow>"));
                 }
-                case "mode-vote" -> { if (gui != null) gui.openModeVoteGui(player); }
+                case "squad-manager" -> { if (gui != null) gui.openSquadManagerGui(player); }
+                case "bracket-viewer" -> { if (gui != null) gui.openBracketViewerGui(player); }
+                case "smart-vote", "mode-vote" -> { if (gui != null) gui.openSmartVoteGui(player); }
                 case "leaderboard" -> { if (gui != null) gui.openLeaderboardGui(player, "elo"); }
                 case "leave" -> leaveEvent(player);
                 default -> {}
@@ -2547,8 +3505,7 @@ public final class EventManager implements Listener {
         }
 
         if (eventMode == EventMode.TOURNAMENT) {
-            UUID winnerId = alive.isEmpty() ? null : alive.iterator().next();
-            Bukkit.getScheduler().runTask(plugin, () -> completeTournamentMatch(winnerId));
+            checkTournamentMatchEnd();
             return;
         }
         if (eventMode == EventMode.TEAM_WARS) {
@@ -2645,6 +3602,7 @@ public final class EventManager implements Listener {
                 }
             });
         }
+        Bukkit.getScheduler().runTaskLater(plugin, () -> syncOperatorAdminTool(event.getPlayer()), 2L);
     }
 
     @EventHandler
@@ -2671,6 +3629,10 @@ public final class EventManager implements Listener {
                 }
             }, graceSec * 20L));
         } else if (eventOpen && participants.remove(id)) {
+            if (eventMode == EventMode.TOURNAMENT) {
+                squads.unregisterPlayer(id);
+                refreshHologramsSafe();
+            }
             broadcast("<gray>" + FormatUtil.escape(event.getPlayer().getName()) + " left the registration.</gray>");
         }
     }
@@ -2678,8 +3640,7 @@ public final class EventManager implements Listener {
     private void processEliminationAfterDisconnect() {
         if (celebrating) return;
         if (eventMode == EventMode.TOURNAMENT) {
-            UUID winnerId = alive.isEmpty() ? null : alive.iterator().next();
-            Bukkit.getScheduler().runTask(plugin, () -> completeTournamentMatch(winnerId));
+            checkTournamentMatchEnd();
         } else if (eventMode == EventMode.TEAM_WARS) {
             checkTeamWinner();
         } else if (alive.size() == 1) {

@@ -30,6 +30,7 @@ public final class ClasherEventsPlugin extends JavaPlugin {
             "arenas.yml",
             "schematics/lobby.schem",
             "schematics/winner-podium.schem",
+            "schematics/tournament-lobby.schem",
             "schematics/nethpot.schem",
             "schematics/axe-shield.schem",
             "schematics/build-uhc.schem",
@@ -38,6 +39,14 @@ public final class ClasherEventsPlugin extends JavaPlugin {
             "schematics/crystal.schem",
             "schematics/smp.schem",
             "schematics/diamond-pot.schem",
+            "schematics/duel-nethpot.schem",
+            "schematics/duel-axe-shield.schem",
+            "schematics/duel-build-uhc.schem",
+            "schematics/duel-sword.schem",
+            "schematics/duel-uhc.schem",
+            "schematics/duel-crystal.schem",
+            "schematics/duel-smp.schem",
+            "schematics/duel-diamond-pot.schem",
             "kits/nethpot.yml",
             "kits/axe-shield.yml",
             "kits/build-uhc.yml",
@@ -121,16 +130,13 @@ public final class ClasherEventsPlugin extends JavaPlugin {
     }
 
     public void refreshHolograms() {
-        if (holograms == null) return;
-        String status = null;
         if (eventManager != null) {
-            if (eventManager.isEventOpen()) {
-                status = "<green>OPEN: " + eventManager.eventMode().displayName() + " (" + eventManager.participants().size() + " joined)</green>";
-            } else if (eventManager.isEventRunning()) {
-                status = "<red>LIVE: " + eventManager.eventMode().displayName() + " (" + eventManager.alive().size() + " alive)</red>";
-            }
+            eventManager.refreshHologramsSafe();
+            return;
         }
-        holograms.refreshAll(status);
+        if (holograms != null) {
+            holograms.refreshAll(null);
+        }
     }
 
     /**

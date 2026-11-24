@@ -41,10 +41,15 @@ public final class HologramManager {
         return plugin.getConfig().getBoolean("holograms.enabled", true);
     }
 
-    /**
-     * Deduplicates and refreshes all plugin-owned 3D floating holograms in the shared arena world.
-     */
     public void refreshAll(String activeModeSummary) {
+        refreshAll(activeModeSummary, null, null, null);
+    }
+
+    /**
+     * Deduplicates and refreshes all plugin-owned 3D floating holograms in the shared arena world:
+     * Sky Citadel Lobby, Champions Winner Podium, AND the Grand Esports Tournament Hall!
+     */
+    public void refreshAll(String activeModeSummary, String tourneyBannerMini, String tourneySquadsMini, String tourneyBracketMini) {
         World world = Bukkit.getWorld(arenas.sharedWorldName());
         if (world == null) return;
         removeAllInWorld(world);
@@ -101,6 +106,35 @@ public final class HologramManager {
             String thirdTxt = "<gold><bold>🥉 #3 THIRD PLACE</bold></gold>\n"
                     + "<gray>" + FormatUtil.escape(podium.third()) + "</gray>";
             spawnText(world, new Location(world, wx + 8.5, wy + 5.4, wz - 5.5), "podium_third", thirdTxt, 190);
+        }
+
+        // Only spawn Grand Esports Tournament Hall holograms if Tournament Hall exists
+        int tx = ArenaManager.TOURNAMENT_LOBBY_ORIGIN_X;
+        int ty = ArenaManager.TOURNAMENT_LOBBY_ORIGIN_Y;
+        int tz = ArenaManager.TOURNAMENT_LOBBY_ORIGIN_Z;
+        if (!world.getBlockAt(tx, ty + 1, tz).getType().isAir()) {
+            String banner = tourneyBannerMini != null ? tourneyBannerMini
+                    : "<gold><bold>⚔ GRAND TOURNAMENT HALL ⚔</bold></gold>\n"
+                    + "<gray>Official 1v1 • 2v2 • 3v3 • 4v4 Esports Arena</gray>\n\n"
+                    + "<yellow>Status:</yellow> <gray>Awaiting next tournament</gray>\n"
+                    + "<aqua>" + FormatUtil.escape(ip) + "</aqua>";
+            spawnText(world, new Location(world, tx + 0.5, ty + 7.2, tz - 6.5), "tourney_banner", banner, 260);
+
+            String squads = tourneySquadsMini != null ? tourneySquadsMini
+                    : "<aqua><bold>👥 REGISTERED SQUADS</bold></aqua>\n"
+                    + "<dark_gray><st>------------------</st></dark_gray>\n"
+                    + "<gray>No tournament squads registered yet!</gray>\n"
+                    + "<yellow>Join with <green>/event join</green></yellow>";
+            spawnText(world, new Location(world, tx - 10.5, ty + 5.6, tz - 4.5), "tourney_squads", squads, 250);
+
+            String bracket = tourneyBracketMini != null ? tourneyBracketMini
+                    : "<gold><bold>🏆 SQUAD & BRACKET GUIDE</bold></gold>\n"
+                    + "<dark_gray><st>------------------</st></dark_gray>\n"
+                    + "<yellow>/event squad invite <player></yellow> <gray>— Invite mate</gray>\n"
+                    + "<yellow>/event squad name <name></yellow> <gray>— Rename squad</gray>\n"
+                    + "<yellow>/event bracket</yellow> <gray>— Live Teams & Bracket</gray>\n"
+                    + "<gray>Right-click your hotbar items!</gray>";
+            spawnText(world, new Location(world, tx + 11.5, ty + 5.6, tz - 4.5), "tourney_bracket", bracket, 250);
         }
     }
 

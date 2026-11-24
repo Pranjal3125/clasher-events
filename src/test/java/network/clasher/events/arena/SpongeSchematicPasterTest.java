@@ -55,9 +55,10 @@ final class SpongeSchematicPasterTest {
         YamlConfiguration yml = YamlConfiguration.loadConfiguration(arenasFile);
         ConfigurationSection arenas = yml.getConfigurationSection("arenas");
         assertNotNull(arenas);
-        assertEquals(8, arenas.getKeys(false).size(), "All 8 arenas must be configured");
+        assertEquals(16, arenas.getKeys(false).size(), "All 16 arenas (8 grand + 8 dedicated 1v1 duel) must be configured");
 
         for (String arenaId : arenas.getKeys(false)) {
+            boolean isDuelArena = arenaId.startsWith("duel-");
             ConfigurationSection sec = arenas.getConfigurationSection(arenaId);
             assertNotNull(sec);
             String schemName = sec.getString("schematic");
@@ -65,10 +66,17 @@ final class SpongeSchematicPasterTest {
             assertTrue(schemFile.isFile(), "Missing bundled schematic: " + schemName);
 
             SpongeSchematicPaster.ParsedSchematic parsed = SpongeSchematicPaster.parse(schemFile);
-            assertTrue(parsed.width() >= 108, arenaId + " width should be >= 108");
-            assertTrue(parsed.height() >= 52, arenaId + " height should be >= 52 (includes sealed waiting skybox)");
-            assertTrue(parsed.length() >= 108, arenaId + " length should be >= 108");
-            assertTrue(parsed.nonAirBlockCount() > 50_000, arenaId + " must have rich architectural detail");
+            if (isDuelArena) {
+                assertTrue(parsed.width() >= 64, arenaId + " duel width should be >= 64");
+                assertTrue(parsed.height() >= 36, arenaId + " duel height should be >= 36");
+                assertTrue(parsed.length() >= 64, arenaId + " duel length should be >= 64");
+                assertTrue(parsed.nonAirBlockCount() > 10_000, arenaId + " duel arena must have rich architectural detail");
+            } else {
+                assertTrue(parsed.width() >= 108, arenaId + " width should be >= 108");
+                assertTrue(parsed.height() >= 52, arenaId + " height should be >= 52 (includes sealed waiting skybox)");
+                assertTrue(parsed.length() >= 108, arenaId + " length should be >= 108");
+                assertTrue(parsed.nonAirBlockCount() > 50_000, arenaId + " must have rich architectural detail");
+            }
             assertAllPaletteMaterialsValid(arenaId, parsed);
 
             int pasteX = sec.getInt("paste.x");
@@ -76,33 +84,41 @@ final class SpongeSchematicPasterTest {
             int pasteZ = sec.getInt("paste.z");
             Arena arena = new Arena(arenaId, sec.getString("display-name", arenaId), schemName, pasteX, pasteY, pasteZ, sec);
 
-            // Gameplay guarantees for Crystal & Diamond Pot
-            if (arenaId.equals("crystal")) {
+            // Gameplay guarantees for Crystal & Diamond Pot (both grand and dedicated duel arenas!)
+            if (arenaId.equals("crystal") || arenaId.equals("duel-crystal")) {
                 assertEquals("minecraft:bedrock", parsed.blockAt(-parsed.offsetX(), -parsed.offsetY(), -parsed.offsetZ()),
-                        "Crystal arena must have blast-proof bedrock subfloor");
+                        arenaId + " must have blast-proof bedrock subfloor");
             }
-            if (arenaId.equals("diamond-pot")) {
-                String centerFloor = parsed.blockAt(-parsed.offsetX() + 10, 1 - parsed.offsetY(), -parsed.offsetZ());
-                assertFalse(centerFloor.contains("ice"), "Diamond Pot combat floor must NOT be slippery ice: " + centerFloor);
+            if (arenaId.equals("diamond-pot") || arenaId.equals("duel-diamond-pot")) {
+                String centerFloor = parsed.blockAt(-parsed.offsetX() + 6, 1 - parsed.offsetY(), -parsed.offsetZ());
+                assertFalse(centerFloor.contains("ice"), arenaId + " combat floor must NOT be slippery ice: " + centerFloor);
             }
 
             // Anti-escape & build bounds guarantees
-            assertTrue(arena.playableRadius() >= 36.0 && arena.playableRadius() <= 54.0, arenaId + " playableRadius sanity");
-            assertTrue(arena.combatMaxY() < pasteY + 42, arenaId + " combat ceiling must stay strictly below waiting skybox floor");
+            if (isDuelArena) {
+                assertTrue(arena.playableRadius() >= 18.0 && arena.playableRadius() <= 26.0, arenaId + " duel playableRadius sanity");
+                assertTrue(arena.combatMaxY() >= pasteY + 20, arenaId + " duel combat ceiling sanity");
+            } else {
+                assertTrue(arena.playableRadius() >= 36.0 && arena.playableRadius() <= 54.0, arenaId + " playableRadius sanity");
+                assertTrue(arena.combatMaxY() < pasteY + 42, arenaId + " combat ceiling must stay strictly below waiting skybox floor");
+                assertFalse(arena.isInsideCombatBounds(arena.centerX(), pasteY + 43.0, arena.centerZ()),
+                        arenaId + " waiting skybox height must be outside combat bounds (blocks pearl/tower into skybox)");
+                assertFalse(arena.isInsideBuildBounds(pasteX, pasteY + 42, pasteZ),
+                        arenaId + " waiting skybox must be outside fighter build bounds");
+                assertTrue(arena.isInsideSpectatorBounds(arena.centerX(), pasteY + 43.0, arena.centerZ()),
+                        arenaId + " spectator bounds should allow viewing around arena & skybox");
+            }
             assertFalse(arena.isInsideBuildBounds(pasteX, pasteY, pasteZ), arenaId + " subfloor must NOT be breakable");
             assertFalse(arena.isInsideCombatBounds(arena.centerX() + arena.playableRadius() + 2.0, pasteY + 2.0, arena.centerZ()),
                     arenaId + " outside playable radius must be rejected");
-            assertFalse(arena.isInsideCombatBounds(arena.centerX(), pasteY + 43.0, arena.centerZ()),
-                    arenaId + " waiting skybox height must be outside combat bounds (blocks pearl/tower into skybox)");
-            assertFalse(arena.isInsideBuildBounds(pasteX, pasteY + 42, pasteZ),
-                    arenaId + " waiting skybox must be outside fighter build bounds");
-            assertTrue(arena.isInsideSpectatorBounds(arena.centerX(), pasteY + 43.0, arena.centerZ()),
-                    arenaId + " spectator bounds should allow viewing around arena & skybox");
             assertFalse(arena.isInsideSpectatorBounds(arena.centerX() + 140.0, pasteY + 10.0, arena.centerZ()),
                     arenaId + " spectators must NOT fly away to neighboring arenas");
 
-            // Mathematically verify EVERY single spawn (wave1, wave2, final, audience, waiting)
-            for (String phase : List.of("wave1", "wave2", "final", "audience", "waiting")) {
+            // Mathematically verify EVERY single spawn (wave1, wave2, final, audience, plus waiting for grand arenas)
+            List<String> phases = isDuelArena
+                    ? List.of("wave1", "wave2", "final", "audience")
+                    : List.of("wave1", "wave2", "final", "audience", "waiting");
+            for (String phase : phases) {
                 List<Map<?, ?>> spawns = sec.getMapList("spawns." + phase);
                 assertFalse(spawns.isEmpty(), arenaId + " missing spawns for " + phase);
                 for (Map<?, ?> sp : spawns) {
@@ -117,7 +133,7 @@ final class SpongeSchematicPasterTest {
                 }
             }
 
-            // Verify 100%-sealed floor across the entire playable radius (ZERO void holes inside any arena!)
+            // Verify 100%-sealed floor across the entire playable radius (ZERO void holes inside ANY grand or duel arena!)
             int cx = -parsed.offsetX();
             int cz = -parsed.offsetZ();
             int checkR = (int) Math.floor(arena.playableRadius());
@@ -135,19 +151,21 @@ final class SpongeSchematicPasterTest {
                 }
             }
 
-            // Verify 100%-sealed 19x9x19 waiting skybox shell (floor y=42, walls y=43..48, roof y=49)
-            int yFloor = 42 - parsed.offsetY();
-            int yRoof = 49 - parsed.offsetY();
-            for (int dx = -9; dx <= 9; dx++) {
-                for (int dz = -9; dz <= 9; dz++) {
-                    assertNotEquals("minecraft:air", parsed.blockAt(cx + dx, yFloor, cz + dz),
-                            arenaId + " waiting skybox floor hole at dx=" + dx + ", dz=" + dz);
-                    assertNotEquals("minecraft:air", parsed.blockAt(cx + dx, yRoof, cz + dz),
-                            arenaId + " waiting skybox roof hole at dx=" + dx + ", dz=" + dz);
-                    if (Math.max(Math.abs(dx), Math.abs(dz)) == 9) {
-                        for (int y = yFloor + 1; y < yRoof; y++) {
-                            assertNotEquals("minecraft:air", parsed.blockAt(cx + dx, y, cz + dz),
-                                    arenaId + " waiting skybox wall hole at dx=" + dx + ", y=" + y + ", dz=" + dz);
+            // Verify 100%-sealed 19x9x19 waiting skybox shell on grand arenas
+            if (!isDuelArena) {
+                int yFloor = 42 - parsed.offsetY();
+                int yRoof = 49 - parsed.offsetY();
+                for (int dx = -9; dx <= 9; dx++) {
+                    for (int dz = -9; dz <= 9; dz++) {
+                        assertNotEquals("minecraft:air", parsed.blockAt(cx + dx, yFloor, cz + dz),
+                                arenaId + " waiting skybox floor hole at dx=" + dx + ", dz=" + dz);
+                        assertNotEquals("minecraft:air", parsed.blockAt(cx + dx, yRoof, cz + dz),
+                                arenaId + " waiting skybox roof hole at dx=" + dx + ", dz=" + dz);
+                        if (Math.max(Math.abs(dx), Math.abs(dz)) == 9) {
+                            for (int y = yFloor + 1; y < yRoof; y++) {
+                                assertNotEquals("minecraft:air", parsed.blockAt(cx + dx, y, cz + dz),
+                                        arenaId + " waiting skybox wall hole at dx=" + dx + ", y=" + y + ", dz=" + dz);
+                            }
                         }
                     }
                 }
@@ -156,16 +174,17 @@ final class SpongeSchematicPasterTest {
     }
 
     @Test
-    void parsesLobbyAndWinnerPodiumSchematicsAndVerifiesConfigSpawnClearance() throws Exception {
+    void parsesLobbyWinnerPodiumAndTournamentHallSchematicsAndVerifiesSpawnClearances() throws Exception {
         File resourcesDir = new File("src/main/resources");
         YamlConfiguration cfg = YamlConfiguration.loadConfiguration(new File(resourcesDir, "config.yml"));
 
+        // 1. Flagship Imperial Sky Citadel Main Lobby (116x58x116)
         File lobbyFile = new File(new File(resourcesDir, "schematics"), "lobby.schem");
         assertTrue(lobbyFile.isFile(), "lobby.schem must exist");
         SpongeSchematicPaster.ParsedSchematic lobby = SpongeSchematicPaster.parse(lobbyFile);
-        assertTrue(lobby.width() >= 96 && lobby.height() >= 44 && lobby.length() >= 96, "Lobby dimensions");
-        assertTrue(lobby.offsetY() < 0, "Sky Citadel Lobby must include floating island rock underside");
-        assertTrue(lobby.nonAirBlockCount() > 20_000, "Lobby must have rich floating island architecture");
+        assertTrue(lobby.width() >= 116 && lobby.height() >= 58 && lobby.length() >= 116, "Flagship Lobby dimensions");
+        assertTrue(lobby.offsetY() < 0, "Imperial Sky Citadel Lobby must include floating island rock underside");
+        assertTrue(lobby.nonAirBlockCount() > 35_000, "Flagship Lobby must have rich multi-layer architecture");
         assertAllPaletteMaterialsValid("lobby", lobby);
 
         assertSpawnClearance(
@@ -177,6 +196,7 @@ final class SpongeSchematicPasterTest {
                 cfg.getDouble("locations.lobby.z")
         );
 
+        // 2. Royal Champions Winner Podium
         File winnerFile = new File(new File(resourcesDir, "schematics"), "winner-podium.schem");
         assertTrue(winnerFile.isFile(), "winner-podium.schem must exist");
         SpongeSchematicPaster.ParsedSchematic winner = SpongeSchematicPaster.parse(winnerFile);
@@ -193,7 +213,6 @@ final class SpongeSchematicPasterTest {
                 cfg.getDouble("locations.winner.y"),
                 cfg.getDouble("locations.winner.z")
         );
-        // Verify 2nd Place Iron Podium & 3rd Place Copper Podium clearances too!
         assertSpawnClearance(
                 "winner-podium.second",
                 winner,
@@ -213,6 +232,24 @@ final class SpongeSchematicPasterTest {
                 cfg.getDouble("locations.winner-crowd.x"),
                 cfg.getDouble("locations.winner-crowd.y"),
                 cfg.getDouble("locations.winner-crowd.z")
+        );
+
+        // 3. Grand Esports Tournament Hall (104x44x104)
+        File tourneyFile = new File(new File(resourcesDir, "schematics"), "tournament-lobby.schem");
+        assertTrue(tourneyFile.isFile(), "tournament-lobby.schem must exist");
+        SpongeSchematicPaster.ParsedSchematic tourney = SpongeSchematicPaster.parse(tourneyFile);
+        assertTrue(tourney.width() >= 104 && tourney.height() >= 44 && tourney.length() >= 104, "Tournament Hall dimensions");
+        assertTrue(tourney.offsetY() < 0, "Tournament Hall must include floating island underside");
+        assertTrue(tourney.nonAirBlockCount() > 20_000, "Tournament Hall must have rich esports stadium architecture");
+        assertAllPaletteMaterialsValid("tournament-lobby", tourney);
+
+        assertSpawnClearance(
+                "config.locations.tournament-lobby",
+                tourney,
+                ArenaManager.TOURNAMENT_LOBBY_ORIGIN_X, ArenaManager.TOURNAMENT_LOBBY_ORIGIN_Y, ArenaManager.TOURNAMENT_LOBBY_ORIGIN_Z,
+                cfg.getDouble("locations.tournament-lobby.x"),
+                cfg.getDouble("locations.tournament-lobby.y"),
+                cfg.getDouble("locations.tournament-lobby.z")
         );
     }
 }

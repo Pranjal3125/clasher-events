@@ -89,6 +89,27 @@ public final class EventHudManager {
             int borderSize,
             Map<UUID, Integer> allTeams
     ) {
+        updateSidebar(player, modeName, arenaName, phase, aliveCount, totalParticipants, matchKills,
+                stats, team, countdownSec, isOpen, elapsedSec, borderSize, allTeams, List.of());
+    }
+
+    public void updateSidebar(
+            Player player,
+            String modeName,
+            String arenaName,
+            String phase,
+            int aliveCount,
+            int totalParticipants,
+            int matchKills,
+            DataStore.PlayerStats stats,
+            Integer team,
+            int countdownSec,
+            boolean isOpen,
+            long elapsedSec,
+            int borderSize,
+            Map<UUID, Integer> allTeams,
+            List<String> extraLines
+    ) {
         if (player == null || !player.isOnline()) return;
         String serverIp = plugin.getConfig().getString("branding.server-ip", "play.clashernetwork.fun");
 
@@ -159,7 +180,12 @@ public final class EventHudManager {
                 lines.add("<gray>Border:</gray> <red>" + borderSize + "x" + borderSize + "</red>");
             }
             if (team != null) {
-                lines.add("<gray>Squad:</gray> " + (team == 1 ? "<red><bold>RED TEAM</bold></red>" : "<blue><bold>BLUE TEAM</bold></blue>"));
+                lines.add("<gray>Side:</gray> " + (team == 1 ? "<red><bold>RED TEAM</bold></red>" : "<blue><bold>BLUE TEAM</bold></blue>"));
+            }
+        }
+        if (extraLines != null && !extraLines.isEmpty()) {
+            for (String extra : extraLines) {
+                if (lines.size() < MAX_LINES - 4) lines.add(extra);
             }
         }
         lines.add("");

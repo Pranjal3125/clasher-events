@@ -1,20 +1,39 @@
 <div align="center">
 
-# Clasher Events `v2.4.0`
+# Clasher Events `v2.5.0`
 
 ### Zero-Dependency Pro Competitive PvP Tournament & Events Engine for Paper 26.2+
 
-A modular, tier-1 Minecraft PvP events engine built for **Clasher Network** — featuring **authentic MCTiers / Stray.gg / PvP Legacy synced kits** (zero free pre-applied potion effects!), **REAL WorldBorder damage + dynamic alive-player border shrinking**, **multi-kit selection for 1v1 Duels, Team Wars & Tournaments** (CLI + GUI), **player-initiated `/event duel <player>` with automatic Admin Event Priority Override**, **8 architectural-grade PvP arenas with sealed themed Waiting Skyboxes**, **5-layer Anti-Escape Containment**, **Personal Kit Layout Editor** (+ admin `/ce kit save`), **flicker-free Adventure HUD with Below-Name HP, Ranked Elo Tiers & Branded Tablist**, **native Paper 3D `TextDisplay` Holograms**, **1st/2nd/3rd Royal Winner Podium Ceremony**, **pure-Java Sponge `.schem` auto-pasting**, and **tick-batched rollback**.
+A modular, tier-1 Minecraft PvP events engine built for **Clasher Network** — featuring **Esports Team Tournaments (`1v1 / 2v2 / 3v3 / 4v4`)** with a dedicated **Grand Esports Tournament Hall**, timed squad invites, auto-fill & **Best-of-3 Grand Finals**, **8 Dedicated 1v1 Duel Arenas (`duel-*`)**, a **Flagship Imperial Sky Citadel Main Lobby (`116×58×116`)**, **Interactive Voting GUIs** (Mode Vote, Tournament Kit Vote & Winner Prediction), a **Dynamic OP Admin Control Panel Wand**, **authentic MCTiers / Stray.gg / PvP Legacy synced kits**, **REAL WorldBorder damage + dynamic shrinking**, **5-layer Anti-Escape Containment**, **Personal Kit Layout Editor**, **flicker-free Adventure HUD**, **native Paper 3D `TextDisplay` Holograms**, **pure-Java Sponge `.schem` auto-pasting**, and **tick-batched rollback**.
 
 ![Java](https://img.shields.io/badge/Java-25-ED8B00?logo=openjdk&logoColor=white)
 ![Paper](https://img.shields.io/badge/Paper-26.2%2B-38bdf8)
 ![Dependencies](https://img.shields.io/badge/Required%20Deps-Zero-10b981)
-![Tests](https://img.shields.io/badge/JUnit%205-15%20Passing-brightgreen)
-![Release](https://img.shields.io/badge/Version-2.4.0-a855f7)
+![Tests](https://img.shields.io/badge/JUnit%205-19%20Passing-brightgreen)
+![Release](https://img.shields.io/badge/Version-2.5.0-a855f7)
 
 [Source](https://github.com/Pranjal3125/clasher-events) · [Releases](https://github.com/Pranjal3125/clasher-events/releases) · [Issues](https://github.com/Pranjal3125/clasher-events/issues)
 
 </div>
+
+---
+
+## What's New in v2.5.0 — Esports Team Tournaments, Dedicated 1v1 Duel Arenas, Voting GUIs & Imperial Lobby
+
+### 🏆 Multi-Format Esports Team Tournaments (`1v1 / 2v2 / 3v3 / 4v4`) + Grand Tournament Hall
+- **Dedicated Grand Esports Tournament Hall (`tournament-lobby.schem`, `104×44×104`)**: Tournament entrants automatically teleport into a separate championship stadium lobby with RED vs BLUE wings, 4 illuminated team staging alcoves, golden crown stage, and **3 live 3D Floating Holograms** (Format/Status Banner, Live Registered Squads Roster, and Live Bracket/Commands).
+- **Timed Squad Formation & 1-Click Squad Manager GUI**: Players form squads during registration using **`/event squad`** (1-click invite heads), **`/event squad invite <player>`** (clickable `[✔ Accept]` / `[✖ Decline]`), **`/event squad name <TeamName>`**, **`kick`**, **`leave`**, private **`@msg` / `/event tc`** squad chat, and **Live Bracket & Teams Viewer GUI (`/event bracket`)**.
+- **Smart Auto-Fill & Best-of-3 Grand Finals**: Solo and incomplete squads automatically match into balanced full teams at start without splitting friends (`tournament.auto-fill-solos: true`), with optional **Best-of-3 Grand Finals** (`tournament.bo3-finals: true`) and full winning squad celebration on the Royal Gold Podium!
+- **Admin Tournament Controls (`/ce tournament`)**: Interactive Admin Tournament Control GUI + `shuffle`, `pair <p1> <p2>`, `disband <id>`, `lock`, `unlock`, `bo3 <on|off>`, and `kitvote [sec]`. Launch via `/ce gui` → Tournament → `1v1 / 2v2 / 3v3 / 4v4` → Kit Picker, or `/ce create tournament <kit> <2v2|3v3|4v4|1v1>`.
+
+### ⚔️ 8 Separate Dedicated 1v1 Duel Arenas (`duel-*`)
+- Auto-generated & auto-configured in `arenas.yml` (`duel-nethpot`, `duel-axe-shield`, `duel-build-uhc`, `duel-sword`, `duel-uhc`, `duel-crystal`, `duel-smp`, `duel-diamond-pot` — crisp `64×36×64`, `playable-radius: 22`, zero void holes, mode-accurate builds like blast-proof bedrock Crystal pit & non-slippery Diamond Pot marble!).
+- Automatically used by **Casual Player Duels (`/event duel`)**, **Admin 1v1 Duels (`/ce create duel`)**, and **`1v1` Tournaments**, keeping the 8 large grand arenas clean for FFA, Team Wars & `2v2/3v3/4v4` Team Tournaments!
+
+### 🗳️ Interactive Voting GUIs + ⚡ Dynamic OP Admin Panel Wand + 🏰 Flagship Imperial Main Lobby
+- **3 Interactive Voting GUIs**: `/event vote` & `/event modevote` open live GUIs with vote counts, `%` progress bars, and glowing `✔ YOUR VOTE` badges across **Mode Voting**, **Tournament Kit Voting (`/ce tournament kitvote`)**, and **Spectator Winner Predictions**!
+- **Dynamic Operator Admin Wand**: Operators (`OP` / `clasherevents.admin`) automatically receive a glowing **`⚡ Admin Control Panel`** wand in Lobby / Tournament Hall (right-click opens `/ce gui`) — auto-appears within 1s on `/op`, auto-vanishes within 1s on `/deop`, and auto-strips during PvP combat!
+- **Flagship Imperial Sky Citadel Main Lobby (`lobby.schem`, `116×58×116`)**: Rebuilt from the ground up with Twin Citadel Gate Towers, a 34-block Enchanted Diamond & Gold Sword Monument, lush Cherry Blossom & Oak Gardens, 4 Koi Ponds, 4 Void Waterfalls, Golden Crown Rotunda with Celestial Crystal, South Royal Observatory, East/West Hero Arches, 4 Floating Orbiting Sky Islets, and our mathematically verified 44-jump Sky Parkour!
 
 ---
 
@@ -76,26 +95,29 @@ A modular, tier-1 Minecraft PvP events engine built for **Clasher Network** — 
 
 ## Quick Start
 
-1. Download **`clasher-events-2.3.0.jar`** from [Releases](https://github.com/Pranjal3125/clasher-events/releases).
+1. Download **`clasher-events-2.5.0.jar`** from [Releases](https://github.com/Pranjal3125/clasher-events/releases).
 2. Drop it into your Paper `26.2+` server's `plugins/` folder *(WorldEdit, WorldGuard, Hologram plugins, and PlaceholderAPI are all optional!)*.
 3. Start the server and run:
-   - **`/ce setup refresh`** — pastes Lobby, Winner Podium, 3D Holograms & all 8 arenas with sealed Waiting Skyboxes!
-   - **`/ce kit refresh-defaults`** — extracts the upgraded `v2.3` competitive kits (with offhand shields/totems & full splash healing)!
-4. Inspect with **`/ce tp lobby`**, **`/ce tp winner`**, **`/ce tp nethpot waiting`**, **`/ce tp sword`**, etc.
+   - **`/ce setup refresh`** — pastes the Flagship Imperial Lobby, Grand Tournament Hall, Winner Podium, 3D Holograms, all 8 Grand Arenas, and all 8 Dedicated 1v1 Duel Arenas!
+   - **`/ce kit refresh-defaults`** — extracts the authentic competitive PvP kits (zero pre-applied potion effects, offhand shields/totems & full splash healing)!
+4. Inspect with **`/ce tp lobby`**, **`/ce tp tournament-lobby`**, **`/ce tp duel-nethpot`**, **`/ce tp winner`**, or right-click your **`⚡ Admin Control Panel`** wand in Lobby!
 
 ## Commands
 
 | Command | Description |
 |---|---|
-| `/ce setup [refresh]` | One-command setup: paste Lobby, Winner Podium, 3D Holograms & 8 arenas + skyboxes |
-| `/ce kit save <kit>` / `refresh-defaults` / `preview` / `give` | Save inventory as kit in-game, refresh pro kits, preview, or give |
-| `/ce setwaiting <arena>` / `/ce clearwaiting <arena>` | Set custom per-arena waiting lobby anywhere (or fall back to global Lobby) |
-| `/ce tp <lobby\|winner\|crowd\|arena> [waiting\|audience\|wave1\|final]` | Teleport to Lobby, Winner Podium, Crowd, Arena, or Waiting Skybox |
-| `/ce skip [sec\|now]` / `/ce holograms` / `/ce gui` / `/ce create <mode>` | Timer skip, refresh 3D holograms, admin panel, create event |
+| `/ce setup [refresh]` | One-command setup: paste Imperial Lobby, Tournament Hall, Podium, 3D Holograms, 8 Grand & 8 Dedicated 1v1 Duel Arenas |
+| `/ce create tournament <kit> [1v1\|2v2\|3v3\|4v4]` | Open a 1v1/2v2/3v3/4v4 Tournament in the Grand Tournament Hall |
+| `/ce tournament [gui\|teams\|shuffle\|pair\|disband\|lock\|unlock\|bo3\|kitvote]` | Full admin tournament squad control panel & Tournament Kit Vote GUI |
+| `/ce voteopen [sec]` / `/ce gui` / `/ce skip [sec\|now]` | Open Mode Voting GUI, Admin Control Panel, or skip timers |
+| `/ce tp <lobby\|tournament-lobby\|winner\|crowd\|arena\|duel-arena> [phase]` | Teleport to any Lobby, Podium, Grand Arena, or 1v1 Duel Arena |
+| `/event squad [invite\|accept\|decline\|leave\|kick\|name\|list]` | Form & manage your Tournament Squad (or open 1-click Squad Manager GUI) |
+| `/event bracket` | Open the Live Tournament Bracket & Registered Squads Viewer GUI |
+| `/event duel <player> [kit]` / `accept` / `decline` | Challenge anyone to a 1v1 in the 8 dedicated Duel Arenas |
+| `/event vote` / `/event modevote` | Open interactive Voting GUI (Mode Vote, Tournament Kit Vote, or Winner Prediction) |
 | `/event join` / `/event leave` / `/event kiteditor [kit]` | Join/leave events & customize personal kit layout GUI |
-| `/event tc <msg>` *(or `@msg`)* / `/event team` | Private Team Wars chat & squad info |
+| `/event tc <msg>` *(or `@msg`)* / `/event team` | Private Team Wars / Tournament Squad chat & roster info |
 | `/event stats [player]` / `/event top [elo\|wins\|kills\|points]` | Player profile lookup & interactive Leaderboard GUI |
-| `/event modevote` / `/event vote` / `/event cheer` / `/event spectate` | Mode voting, winner prediction, cheering & spectator selector |
 
 ## Build & Test
 
@@ -103,4 +125,4 @@ A modular, tier-1 Minecraft PvP events engine built for **Clasher Network** — 
 mvn clean package
 ```
 
-Runs all **14 JUnit 5 tests** (parsing all 10 `.schem` files, validating 128 Paper 26.2 block materials, asserting 100%-sealed skybox shells, verifying all 8 arena spawns + 1st/2nd/3rd Podium + Lobby clearances, validating all 8 competitive kits & zero-dupe custom layout permutation, Elo rank tiers, anti-escape bounds, and async persistence) and produces `target/clasher-events-2.3.0.jar`.
+Runs all **19 JUnit 5 tests** (parsing all 19 `.schem` files — 8 Grand Arenas, 8 Dedicated 1v1 Duel Arenas with zero void holes, Flagship Imperial Sky Citadel Lobby, Grand Esports Tournament Hall & Winner Podium — validating every Paper 26.2 block material, verifying all spawns & skyboxes, testing `TournamentSquadManager` invites/auto-fill/Bo3 Grand Finals, kits, Elo tiers, anti-escape bounds, and async persistence) and produces `target/clasher-events-2.5.0.jar`.

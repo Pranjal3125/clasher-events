@@ -687,3 +687,467 @@ arenas:
         y: 123
         z: 0.5
         yaw: 0.0
+  duel-nethpot:
+    display-name: NethPot 1v1 - Nether Sanctum
+    schematic: duel-nethpot.schem
+    paste:
+      x: 0
+      y: 80
+      z: 400
+    bounds:
+      min-x: -34
+      min-y: 79
+      min-z: 366
+      max-x: 34
+      max-y: 118
+      max-z: 434
+      combat-max-y: 106
+      playable-radius: 22
+    spawns:
+      wave1:
+      - x: 14.5
+        y: 82
+        z: 400.5
+        yaw: -90.0
+      - x: 0.5
+        y: 82
+        z: 414.5
+        yaw: 180.0
+      - x: -13.5
+        y: 82
+        z: 400.5
+        yaw: 90.0
+      - x: 0.5
+        y: 82
+        z: 386.5
+        yaw: 0.0
+      wave2:
+      - x: -12.5
+        y: 82
+        z: 400.5
+        yaw: -90.0
+      - x: 13.5
+        y: 82
+        z: 400.5
+        yaw: 90.0
+      final:
+      - x: -12.5
+        y: 82
+        z: 400.5
+        yaw: -90.0
+      - x: 13.5
+        y: 82
+        z: 400.5
+        yaw: 90.0
+      audience:
+      - x: 0.5
+        y: 90
+        z: 380.5
+        yaw: 0.0
+      waiting: []
+  duel-axe-shield:
+    display-name: Axe & Shield 1v1 - Ironkeep Pit
+    schematic: duel-axe-shield.schem
+    paste:
+      x: 300
+      y: 80
+      z: 400
+    bounds:
+      min-x: 266
+      min-y: 79
+      min-z: 366
+      max-x: 334
+      max-y: 118
+      max-z: 434
+      combat-max-y: 106
+      playable-radius: 22
+    spawns:
+      wave1:
+      - x: 314.5
+        y: 82
+        z: 400.5
+        yaw: -90.0
+      - x: 300.5
+        y: 82
+        z: 414.5
+        yaw: 180.0
+      - x: 286.5
+        y: 82
+        z: 400.5
+        yaw: 90.0
+      - x: 300.5
+        y: 82
+        z: 386.5
+        yaw: 0.0
+      wave2:
+      - x: 287.5
+        y: 82
+        z: 400.5
+        yaw: -90.0
+      - x: 313.5
+        y: 82
+        z: 400.5
+        yaw: 90.0
+      final:
+      - x: 287.5
+        y: 82
+        z: 400.5
+        yaw: -90.0
+      - x: 313.5
+        y: 82
+        z: 400.5
+        yaw: 90.0
+      audience:
+      - x: 300.5
+        y: 90
+        z: 380.5
+        yaw: 0.0
+      waiting: []
+  duel-build-uhc:
+    display-name: Build UHC 1v1 - Brook Valley
+    schematic: duel-build-uhc.schem
+    paste:
+      x: 600
+      y: 80
+      z: 400
+    bounds:
+      min-x: 566
+      min-y: 79
+      min-z: 366
+      max-x: 634
+      max-y: 118
+      max-z: 434
+      combat-max-y: 106
+      playable-radius: 22
+    spawns:
+      wave1:
+      - x: 614.5
+        y: 82
+        z: 400.5
+        yaw: -90.0
+      - x: 600.5
+        y: 82
+        z: 414.5
+        yaw: 180.0
+      - x: 586.5
+        y: 82
+        z: 400.5
+        yaw: 90.0
+      - x: 600.5
+        y: 82
+        z: 386.5
+        yaw: 0.0
+      wave2:
+      - x: 587.5
+        y: 82
+        z: 400.5
+        yaw: -90.0
+      - x: 613.5
+        y: 82
+        z: 400.5
+        yaw: 90.0
+      final:
+      - x: 587.5
+        y: 82
+        z: 400.5
+        yaw: -90.0
+      - x: 613.5
+        y: 82
+        z: 400.5
+        yaw: 90.0
+      audience:
+      - x: 600.5
+        y: 90
+        z: 380.5
+        yaw: 0.0
+      waiting: []
+  duel-sword:
+    display-name: Sword 1v1 - Gladiator Ring
+    schematic: duel-sword.schem
+    paste:
+      x: 900
+      y: 80
+      z: 400
+    bounds:
+      min-x: 866
+      min-y: 79
+      min-z: 366
+      max-x: 934
+      max-y: 118
+      max-z: 434
+      combat-max-y: 106
+      playable-radius: 22
+    spawns:
+      wave1:
+      - x: 914.5
+        y: 82
+        z: 400.5
+        yaw: -90.0
+      - x: 900.5
+        y: 82
+        z: 414.5
+        yaw: 180.0
+      - x: 886.5
+        y: 82
+        z: 400.5
+        yaw: 90.0
+      - x: 900.5
+        y: 82
+        z: 386.5
+        yaw: 0.0
+      wave2:
+      - x: 887.5
+        y: 82
+        z: 400.5
+        yaw: -90.0
+      - x: 913.5
+        y: 82
+        z: 400.5
+        yaw: 90.0
+      final:
+      - x: 887.5
+        y: 82
+        z: 400.5
+        yaw: -90.0
+      - x: 913.5
+        y: 82
+        z: 400.5
+        yaw: 90.0
+      audience:
+      - x: 900.5
+        y: 90
+        z: 380.5
+        yaw: 0.0
+      waiting: []
+  duel-uhc:
+    display-name: UHC 1v1 - Alpine Clearing
+    schematic: duel-uhc.schem
+    paste:
+      x: 1200
+      y: 80
+      z: 400
+    bounds:
+      min-x: 1166
+      min-y: 79
+      min-z: 366
+      max-x: 1234
+      max-y: 118
+      max-z: 434
+      combat-max-y: 106
+      playable-radius: 22
+    spawns:
+      wave1:
+      - x: 1214.5
+        y: 82
+        z: 400.5
+        yaw: -90.0
+      - x: 1200.5
+        y: 82
+        z: 414.5
+        yaw: 180.0
+      - x: 1186.5
+        y: 82
+        z: 400.5
+        yaw: 90.0
+      - x: 1200.5
+        y: 82
+        z: 386.5
+        yaw: 0.0
+      wave2:
+      - x: 1187.5
+        y: 82
+        z: 400.5
+        yaw: -90.0
+      - x: 1213.5
+        y: 82
+        z: 400.5
+        yaw: 90.0
+      final:
+      - x: 1187.5
+        y: 82
+        z: 400.5
+        yaw: -90.0
+      - x: 1213.5
+        y: 82
+        z: 400.5
+        yaw: 90.0
+      audience:
+      - x: 1200.5
+        y: 90
+        z: 380.5
+        yaw: 0.0
+      waiting: []
+  duel-crystal:
+    display-name: Crystal 1v1 - End Pit
+    schematic: duel-crystal.schem
+    paste:
+      x: 1600
+      y: 80
+      z: 400
+    bounds:
+      min-x: 1566
+      min-y: 79
+      min-z: 366
+      max-x: 1634
+      max-y: 118
+      max-z: 434
+      combat-max-y: 106
+      playable-radius: 22
+    spawns:
+      wave1:
+      - x: 1614.5
+        y: 82
+        z: 400.5
+        yaw: -90.0
+      - x: 1600.5
+        y: 82
+        z: 414.5
+        yaw: 180.0
+      - x: 1586.5
+        y: 82
+        z: 400.5
+        yaw: 90.0
+      - x: 1600.5
+        y: 82
+        z: 386.5
+        yaw: 0.0
+      wave2:
+      - x: 1587.5
+        y: 82
+        z: 400.5
+        yaw: -90.0
+      - x: 1613.5
+        y: 82
+        z: 400.5
+        yaw: 90.0
+      final:
+      - x: 1587.5
+        y: 82
+        z: 400.5
+        yaw: -90.0
+      - x: 1613.5
+        y: 82
+        z: 400.5
+        yaw: 90.0
+      audience:
+      - x: 1600.5
+        y: 90
+        z: 380.5
+        yaw: 0.0
+      waiting: []
+  duel-smp:
+    display-name: SMP 1v1 - Ruined Chapel
+    schematic: duel-smp.schem
+    paste:
+      x: 1900
+      y: 80
+      z: 400
+    bounds:
+      min-x: 1866
+      min-y: 79
+      min-z: 366
+      max-x: 1934
+      max-y: 118
+      max-z: 434
+      combat-max-y: 106
+      playable-radius: 22
+    spawns:
+      wave1:
+      - x: 1914.5
+        y: 82
+        z: 400.5
+        yaw: -90.0
+      - x: 1900.5
+        y: 82
+        z: 414.5
+        yaw: 180.0
+      - x: 1886.5
+        y: 82
+        z: 400.5
+        yaw: 90.0
+      - x: 1900.5
+        y: 82
+        z: 386.5
+        yaw: 0.0
+      wave2:
+      - x: 1887.5
+        y: 82
+        z: 400.5
+        yaw: -90.0
+      - x: 1913.5
+        y: 82
+        z: 400.5
+        yaw: 90.0
+      final:
+      - x: 1887.5
+        y: 82
+        z: 400.5
+        yaw: -90.0
+      - x: 1913.5
+        y: 82
+        z: 400.5
+        yaw: 90.0
+      audience:
+      - x: 1900.5
+        y: 90
+        z: 380.5
+        yaw: 0.0
+      waiting: []
+  duel-diamond-pot:
+    display-name: Diamond Pot 1v1 - Frost Chamber
+    schematic: duel-diamond-pot.schem
+    paste:
+      x: 2200
+      y: 80
+      z: 400
+    bounds:
+      min-x: 2166
+      min-y: 79
+      min-z: 366
+      max-x: 2234
+      max-y: 118
+      max-z: 434
+      combat-max-y: 106
+      playable-radius: 22
+    spawns:
+      wave1:
+      - x: 2214.5
+        y: 82
+        z: 400.5
+        yaw: -90.0
+      - x: 2200.5
+        y: 82
+        z: 414.5
+        yaw: 180.0
+      - x: 2186.5
+        y: 82
+        z: 400.5
+        yaw: 90.0
+      - x: 2200.5
+        y: 82
+        z: 386.5
+        yaw: 0.0
+      wave2:
+      - x: 2187.5
+        y: 82
+        z: 400.5
+        yaw: -90.0
+      - x: 2213.5
+        y: 82
+        z: 400.5
+        yaw: 90.0
+      final:
+      - x: 2187.5
+        y: 82
+        z: 400.5
+        yaw: -90.0
+      - x: 2213.5
+        y: 82
+        z: 400.5
+        yaw: 90.0
+      audience:
+      - x: 2200.5
+        y: 90
+        z: 380.5
+        yaw: 0.0
+      waiting: []
