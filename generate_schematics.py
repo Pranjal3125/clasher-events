@@ -1150,21 +1150,48 @@ def build_spawn_lobby() -> VoxelCanvas:
             bx, bz = (side, gz + (2 if gz < 0 else -2)) if is_ns else (gx + (2 if gx < 0 else -2), side)
             c.add_brazier(bx, 2, bz, m2, "campfire[lit=true]")
 
-    # Floating Illuminated Spiral Sky-Parkour circling the Lobby (20 jumps up to a Golden Trophy Pad!)
+    # Floating Illuminated Spiral Sky-Parkour circling the Lobby (42 mathematically verified playable jumps!)
     parkour_colors = ["lime_concrete", "cyan_concrete", "light_blue_concrete", "yellow_concrete", "orange_concrete", "magenta_concrete"]
     c.fill_box(20, 2, -20, 24, 2, -17, "gold_block")
-    for step in range(20):
-        ang = math.radians(-38 + step * 17)
-        px = round(38 * math.cos(ang))
-        pz = round(38 * math.sin(ang))
-        py = 3 + int(step * 0.85)
+    # Lead-out stepping stone from Start Gold Pad onto the outer spiral ring
+    parkour_pads = [(22, 2, -18, 2), (26, 3, -21, 1)]
+    c.fill_box(25, 3, -22, 27, 3, -20, "lime_concrete")
+    c.rel_put(26, 2, -21, "sea_lantern")
+
+    total_steps = 42
+    for step in range(total_steps):
+        t = step / (total_steps - 1)
+        ang = math.radians(-37.0 + t * 322.0)  # -37 deg -> +285 deg (lands squarely at 10, 19, -37!)
+        rad = 36.0 + t * 1.4
+        px = round(rad * math.cos(ang))
+        pz = round(rad * math.sin(ang))
+        py = 3 + round(t * 16.0)
         blk = parkour_colors[step % len(parkour_colors)]
-        c.fill_box(px - 1, py, pz - 1, px + 1, py, pz + 1, blk)
-        c.rel_put(px, py - 1, pz, "sea_lantern")
-        if step == 19:
+        if step == total_steps - 1:
+            px, py, pz = 10, 19, -37
             c.fill_box(px - 2, py, pz - 2, px + 2, py, pz + 2, "gold_block")
             c.rel_put(px, py + 1, pz, "diamond_block")
             c.rel_put(px, py + 2, pz, "sea_lantern")
+            parkour_pads.append((px, py, pz, 2))
+        else:
+            c.fill_box(px - 1, py, pz - 1, px + 1, py, pz + 1, blk)
+            c.rel_put(px, py - 1, pz, "sea_lantern")
+            parkour_pads.append((px, py, pz, 1))
+
+    # Mathematically verify EVERY SINGLE parkour jump is 100% playable in normal Minecraft sprint-jump physics!
+    for i in range(1, len(parkour_pads)):
+        x0, y0, z0, r0 = parkour_pads[i - 1]
+        x1, y1, z1, r1 = parkour_pads[i]
+        dy = y1 - y0
+        if dy > 1:
+            raise AssertionError(f"Parkour step {i} rises +{dy} blocks (max playable is +1)")
+        # Closest horizontal edge-to-edge gap between axis-aligned square pads
+        gap_x = max(0, abs(x1 - x0) - (r0 + r1) - 1)
+        gap_z = max(0, abs(z1 - z0) - (r0 + r1) - 1)
+        edge_gap = math.hypot(gap_x, gap_z)
+        max_gap = 3.0 if dy == 1 else 3.6
+        if edge_gap > max_gap:
+            raise AssertionError(f"Parkour step {i} edge gap {edge_gap:.2f} > {max_gap} (from ({x0},{y0},{z0}) to ({x1},{y1},{z1}))")
 
     c.clear_cylinder(0, 0, 2, 10, 5.5)
     return c
