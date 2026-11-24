@@ -177,6 +177,19 @@ final class SpongeSchematicPasterTest {
                 cfg.getDouble("locations.winner.y"),
                 cfg.getDouble("locations.winner.z")
         );
+        // Verify 2nd Place Iron Podium & 3rd Place Copper Podium clearances too!
+        assertSpawnClearance(
+                "winner-podium.second",
+                winner,
+                ArenaManager.WINNER_ORIGIN_X, ArenaManager.WINNER_ORIGIN_Y, ArenaManager.WINNER_ORIGIN_Z,
+                ArenaManager.WINNER_ORIGIN_X - 7.5, ArenaManager.WINNER_ORIGIN_Y + 4.0, ArenaManager.WINNER_ORIGIN_Z - 5.5
+        );
+        assertSpawnClearance(
+                "winner-podium.third",
+                winner,
+                ArenaManager.WINNER_ORIGIN_X, ArenaManager.WINNER_ORIGIN_Y, ArenaManager.WINNER_ORIGIN_Z,
+                ArenaManager.WINNER_ORIGIN_X + 8.5, ArenaManager.WINNER_ORIGIN_Y + 3.0, ArenaManager.WINNER_ORIGIN_Z - 5.5
+        );
         assertSpawnClearance(
                 "config.locations.winner-crowd",
                 winner,

@@ -8,7 +8,10 @@ import org.bukkit.configuration.file.YamlConfiguration;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
@@ -18,7 +21,8 @@ import java.util.logging.Logger;
 
 /**
  * Thread-safe, async-persisted atomic YAML store for PvP stats, Elo ratings, win streaks,
- * audience points, crash-recovery snapshots, and match history.
+ * audience points, crash-recovery snapshots, per-player kit layouts, parkour records,
+ * last-podium placements, and match history.
  * Zero disk I/O runs on the Minecraft main server tick thread!
  */
 public final class DataStore {
@@ -32,21 +36,37 @@ public final class DataStore {
         public String kdFormatted() {
             return EloCalculator.formatKd(kills, deaths);
         }
+
+        public String rankName() {
+            return EloCalculator.rankName(elo);
+        }
+
+        public String rankBadgeMini() {
+            return EloCalculator.rankBadgeMini(elo);
+        }
     }
 
+    public record NamedStats(UUID uuid, String name, PlayerStats stats, int audiencePoints, long parkourBestMs) {}
+
     public record MatchSummary(int id, String mode, String arena, String winner, String mvp, int mvpKills, long durationSeconds) {}
+
+    public record PodiumRecord(String mode, String first, String second, String third, String mvp, int mvpKills) {}
+
+    public record ParkourResult(boolean personalBest, boolean serverRecord, long bestMs, long serverBestMs, String serverHolder) {}
 
     private final Logger logger;
     private final File audiencePointsFile;
     private final File recoveryFile;
     private final File playerStatsFile;
     private final File matchHistoryFile;
+    private final File kitLayoutsFile;
     private final ExecutorService ioExecutor;
 
     private YamlConfiguration audiencePoints;
     private YamlConfiguration recoveryData;
     private YamlConfiguration playerStats;
     private YamlConfiguration matchHistory;
+    private YamlConfiguration kitLayouts;
 
     public DataStore(File dataFolder, Logger logger) {
         this.logger = logger;
@@ -55,6 +75,7 @@ public final class DataStore {
         this.recoveryFile = new File(dataFolder, "player-recovery.yml");
         this.playerStatsFile = new File(dataFolder, "player-stats.yml");
         this.matchHistoryFile = new File(dataFolder, "match-history.yml");
+        this.kitLayoutsFile = new File(dataFolder, "kit-layouts.yml");
         this.ioExecutor = Executors.newSingleThreadExecutor(r -> {
             Thread t = new Thread(r, "clasher-events-io");
             t.setDaemon(true);
@@ -68,6 +89,7 @@ public final class DataStore {
         this.recoveryData = YamlConfiguration.loadConfiguration(recoveryFile);
         this.playerStats = YamlConfiguration.loadConfiguration(playerStatsFile);
         this.matchHistory = YamlConfiguration.loadConfiguration(matchHistoryFile);
+        this.kitLayouts = YamlConfiguration.loadConfiguration(kitLayoutsFile);
     }
 
     /**
@@ -164,7 +186,44 @@ public final class DataStore {
     }
 
     // -------------------------------------------------------------------------
-    // Player PvP stats, Elo ratings & Win Streaks
+    // Per-Player Kit Layouts (Personal Hotbar Editor)
+    // -------------------------------------------------------------------------
+
+    public synchronized Map<Integer, Integer> kitLayout(UUID playerId, String kitId) {
+        if (playerId == null || kitId == null) return Map.of();
+        ConfigurationSection sec = kitLayouts.getConfigurationSection("layouts." + playerId + "." + kitId.toLowerCase(Locale.ROOT));
+        if (sec == null) return Map.of();
+        Map<Integer, Integer> map = new LinkedHashMap<>();
+        for (String key : sec.getKeys(false)) {
+            try {
+                map.put(Integer.parseInt(key), sec.getInt(key));
+            } catch (NumberFormatException ignored) {}
+        }
+        return map;
+    }
+
+    public synchronized void saveKitLayout(UUID playerId, String kitId, Map<Integer, Integer> slotMap) {
+        if (playerId == null || kitId == null) return;
+        String path = "layouts." + playerId + "." + kitId.toLowerCase(Locale.ROOT);
+        kitLayouts.set(path, null);
+        if (slotMap != null) {
+            for (Map.Entry<Integer, Integer> e : slotMap.entrySet()) {
+                kitLayouts.set(path + "." + e.getKey(), e.getValue());
+            }
+        }
+        enqueueSave(kitLayouts, kitLayoutsFile, "Could not safely save kit-layouts.yml");
+    }
+
+    public synchronized void clearKitLayout(UUID playerId, String kitId) {
+        if (playerId == null || kitId == null) return;
+        String path = "layouts." + playerId + "." + kitId.toLowerCase(Locale.ROOT);
+        if (!kitLayouts.contains(path)) return;
+        kitLayouts.set(path, null);
+        enqueueSave(kitLayouts, kitLayoutsFile, "Could not safely update kit-layouts.yml");
+    }
+
+    // -------------------------------------------------------------------------
+    // Player PvP stats, Elo ratings, Bounty Bonus, Win Streaks & Parkour
     // -------------------------------------------------------------------------
 
     public synchronized PlayerStats stats(UUID playerId) {
@@ -177,6 +236,31 @@ public final class DataStore {
                 playerStats.getInt(base + ".win-streak", 0),
                 playerStats.getInt(base + ".best-streak", 0)
         );
+    }
+
+    public synchronized NamedStats findStatsByName(String playerName) {
+        if (playerName == null || playerName.isBlank()) return null;
+        ConfigurationSection players = playerStats.getConfigurationSection("players");
+        if (players == null) return null;
+        for (String key : players.getKeys(false)) {
+            String stored = players.getString(key + ".name", "");
+            if (stored.equalsIgnoreCase(playerName)) {
+                try {
+                    UUID id = UUID.fromString(key);
+                    return new NamedStats(id, stored, stats(id), audiencePoints(id), parkourBestMs(id));
+                } catch (IllegalArgumentException ignored) {}
+            }
+        }
+        return null;
+    }
+
+    public synchronized void awardBonusElo(UUID playerId, String playerName, int bonus) {
+        if (bonus <= 0) return;
+        String base = "players." + playerId;
+        int cur = playerStats.getInt(base + ".elo", EloCalculator.DEFAULT_ELO);
+        playerStats.set(base + ".name", playerName);
+        playerStats.set(base + ".elo", cur + bonus);
+        enqueueSave(playerStats, playerStatsFile, "Could not safely save player-stats.yml");
     }
 
     public synchronized void recordWin(UUID winnerId, String winnerName) {
@@ -222,6 +306,48 @@ public final class DataStore {
         enqueueSave(playerStats, playerStatsFile, "Could not safely save player-stats.yml");
     }
 
+    public synchronized long parkourBestMs(UUID playerId) {
+        return playerStats.getLong("players." + playerId + ".parkour-best-ms", 0L);
+    }
+
+    public synchronized ParkourResult recordParkourTime(UUID playerId, String playerName, long elapsedMs) {
+        long safeMs = Math.max(500L, elapsedMs);
+        String base = "players." + playerId;
+        long prevBest = playerStats.getLong(base + ".parkour-best-ms", 0L);
+        boolean pb = (prevBest == 0L || safeMs < prevBest);
+        long newBest = pb ? safeMs : prevBest;
+
+        long serverBest = playerStats.getLong("parkour-record.ms", 0L);
+        String serverHolder = playerStats.getString("parkour-record.name", "None");
+        boolean wr = (serverBest == 0L || safeMs < serverBest);
+        if (pb) {
+            playerStats.set(base + ".name", playerName);
+            playerStats.set(base + ".parkour-best-ms", newBest);
+        }
+        if (wr) {
+            serverBest = safeMs;
+            serverHolder = playerName;
+            playerStats.set("parkour-record.ms", serverBest);
+            playerStats.set("parkour-record.name", serverHolder);
+        }
+        if (pb || wr) {
+            enqueueSave(playerStats, playerStatsFile, "Could not safely save player-stats.yml");
+        }
+        return new ParkourResult(pb, wr, newBest, serverBest, serverHolder);
+    }
+
+    public synchronized String parkourServerRecordFormatted() {
+        long ms = playerStats.getLong("parkour-record.ms", 0L);
+        if (ms <= 0L) return "None";
+        String name = playerStats.getString("parkour-record.name", "Unknown");
+        return name + " (" + formatParkourTime(ms) + ")";
+    }
+
+    public static String formatParkourTime(long ms) {
+        if (ms <= 0L) return "--";
+        return String.format(Locale.ROOT, "%.2fs", ms / 1000.0);
+    }
+
     public synchronized List<LeaderboardEntry> topWins(int limit) {
         return queryStatsLeaderboard("wins", "elo", EloCalculator.DEFAULT_ELO, limit);
     }
@@ -251,8 +377,31 @@ public final class DataStore {
     }
 
     // -------------------------------------------------------------------------
-    // Match history
+    // Match history & Last Podium Ceremony Record (powers 3D Winner Holograms!)
     // -------------------------------------------------------------------------
+
+    public synchronized void recordPodium(String mode, String first, String second, String third, String mvp, int mvpKills) {
+        matchHistory.set("last-podium.mode", mode == null ? "Event" : mode);
+        matchHistory.set("last-podium.first", first == null ? "None" : first);
+        matchHistory.set("last-podium.second", second == null ? "---" : second);
+        matchHistory.set("last-podium.third", third == null ? "---" : third);
+        matchHistory.set("last-podium.mvp", mvp == null ? "None" : mvp);
+        matchHistory.set("last-podium.mvp-kills", mvpKills);
+        enqueueSave(matchHistory, matchHistoryFile, "Could not safely save match-history.yml");
+    }
+
+    public synchronized PodiumRecord lastPodium() {
+        ConfigurationSection s = matchHistory.getConfigurationSection("last-podium");
+        if (s == null) return new PodiumRecord("None", "No Champion Yet", "---", "---", "None", 0);
+        return new PodiumRecord(
+                s.getString("mode", "Event"),
+                s.getString("first", "No Champion Yet"),
+                s.getString("second", "---"),
+                s.getString("third", "---"),
+                s.getString("mvp", "None"),
+                s.getInt("mvp-kills", 0)
+        );
+    }
 
     public synchronized void recordMatch(
             String arena,

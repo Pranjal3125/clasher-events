@@ -1,10 +1,13 @@
 # ==============================================================================
-# Clasher Events v2.2.0 Configuration
+# Clasher Events v2.3.0 Configuration
 # ==============================================================================
 # Zero-dependency plug-and-play PvP tournament & events engine.
-# WorldEdit, WorldGuard, and PlaceholderAPI are 100% optional!
+# WorldEdit, WorldGuard, Hologram plugins, and PlaceholderAPI are 100% optional!
 # Reload live with /ce reload.
 # ==============================================================================
+
+branding:
+  server-ip: play.clashernetwork.fun
 
 shared-world: clasher_events
 use-void-world: true
@@ -18,6 +21,12 @@ kit-delivery-seconds-before-start: 60
 disconnect-grace-seconds: 60
 celebration-seconds: 6
 
+# Smart registration sizing (speeds up countdown when full!).
+registration:
+  min-players: 2
+  max-players: 32
+  fast-start-seconds: 10
+
 # Audience points awarded to spectators who correctly predict the event winner.
 audience-correct-prediction-points: 10
 
@@ -28,11 +37,18 @@ arenas:
   paste-blocks-per-tick: 2500
   rollback-blocks-per-tick: 300
 
-# Live HUD (Adventure BossBar, Sidebar Scoreboard, Countdown/Victory Titles).
+# Live HUD (Adventure BossBar, Flicker-Free Scoreboard, Below-Name HP, Tablist, Hit ActionBar, Titles).
 hud:
   bossbar: true
   scoreboard: true
+  below-name-health: true
+  tablist: true
+  hit-actionbar: true
   titles: true
+
+# Native Paper 3D TextDisplay Floating Holograms in Lobby & Winner Podium (zero external plugin needed!).
+holograms:
+  enabled: true
 
 # Pre-event mode voting (/ce voteopen & /event modevote).
 mode-vote:
@@ -143,6 +159,7 @@ lobby-protection:
   radius: 46
   catch-void-fall: true
   give-lobby-hotbar: true
+  parkour-timer: true
   # Use each arena's built-in themed waiting skybox (or custom /ce setwaiting <arena>) during registration.
   # Set to false to always gather waiting players in the global Sky Citadel Lobby (locations.lobby).
   per-arena-waiting: true
@@ -153,8 +170,12 @@ lobby-protection:
 anti-escape:
   enabled: true
 
-# Cinematic PvP effects (visual lightning on kill, First Blood, Kill Streak broadcasts, auto-respawn).
+# Cinematic PvP effects (grace freeze, kill heal, bounties, final-duel glow, lightning, streaks, auto-respawn).
 effects:
+  grace-seconds: 3
+  kill-heal: true
+  kill-bounty: true
+  final-duel-glow: true
   kill-lightning: true
   first-blood: true
   kill-streaks: true

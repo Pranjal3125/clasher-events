@@ -32,6 +32,14 @@ final class EloAndSecurityTest {
         assertEquals(1020, EloCalculator.applyWinBonus(1000));
         assertEquals("2.50", EloCalculator.formatKd(5, 2));
         assertEquals("3.00", EloCalculator.formatKd(3, 0));
+
+        // Rank tiers
+        assertEquals("Bronze", EloCalculator.rankName(900));
+        assertEquals("Silver", EloCalculator.rankName(1000));
+        assertEquals("Gold", EloCalculator.rankName(1150));
+        assertEquals("Diamond", EloCalculator.rankName(1300));
+        assertEquals("Master", EloCalculator.rankName(1450));
+        assertEquals("Clasher", EloCalculator.rankName(1650));
     }
 
     @Test

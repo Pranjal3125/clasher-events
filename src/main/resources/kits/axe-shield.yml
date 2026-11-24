@@ -1,9 +1,16 @@
 name: Axe & Shield
-armor: {helmet: DIAMOND_HELMET, chestplate: DIAMOND_CHESTPLATE, leggings: DIAMOND_LEGGINGS, boots: DIAMOND_BOOTS}
+armor:
+  helmet: DIAMOND_HELMET
+  chestplate: DIAMOND_CHESTPLATE
+  leggings: DIAMOND_LEGGINGS
+  boots: DIAMOND_BOOTS
 enchantments: {protection: 4, unbreaking: 3}
 offhand: SHIELD
+offhand-enchants: {unbreaking: 3}
 items:
   - {slot: 0, material: NETHERITE_AXE, amount: 1, enchants: {sharpness: 5, efficiency: 5, unbreaking: 3}}
-  - {slot: 1, material: DIAMOND_SWORD, amount: 1, enchants: {sharpness: 5}}
-  - {slot: 2, material: GOLDEN_APPLE, amount: 16}
-  - {slot: 3, material: COOKED_BEEF, amount: 16}
+  - {slot: 1, material: DIAMOND_SWORD, amount: 1, enchants: {sharpness: 5, unbreaking: 3}}
+  - {slot: 2, material: BOW, amount: 1, enchants: {power: 3, unbreaking: 3}}
+  - {slot: 3, material: GOLDEN_APPLE, amount: 16}
+  - {slot: 4, material: COOKED_BEEF, amount: 32}
+  - {slot: 8, material: ARROW, amount: 16}

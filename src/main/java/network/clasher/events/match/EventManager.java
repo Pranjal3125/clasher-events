@@ -9,6 +9,7 @@ import network.clasher.events.arena.ArenaManager;
 import network.clasher.events.gui.EventGui;
 import network.clasher.events.gui.EventMenuHolder;
 import network.clasher.events.hud.EventHudManager;
+import network.clasher.events.hud.HologramManager;
 import network.clasher.events.kit.KitManager;
 import network.clasher.events.model.Arena;
 import network.clasher.events.model.EventMode;
@@ -69,6 +70,8 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.BookMeta;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.potion.PotionEffect;
+import org.bukkit.potion.PotionEffectType;
 import org.bukkit.scheduler.BukkitTask;
 
 import java.util.ArrayDeque;
@@ -118,6 +121,7 @@ public final class EventManager implements Listener {
     private final NamespacedKey lobbyItemKey;
     private final Random random = new Random();
     private EventGui gui;
+    private HologramManager holograms;
 
     private final Set<UUID> participants = new LinkedHashSet<>();
     private final Set<UUID> alive = new LinkedHashSet<>();
@@ -146,6 +150,9 @@ public final class EventManager implements Listener {
 
     private final Map<UUID, Long> lastBoundaryWarnAt = new HashMap<>();
     private final Map<UUID, Integer> matchKills = new HashMap<>();
+    private final Map<UUID, Double> matchDamageDealt = new HashMap<>();
+    private final List<UUID> eliminationOrder = new ArrayList<>();
+    private final Map<UUID, Long> parkourStartedAt = new HashMap<>();
 
     private String selectedArena = "nethpot";
     private String selectedKit = "nethpot";
@@ -154,6 +161,7 @@ public final class EventManager implements Listener {
     private boolean eventRunning;
     private boolean celebrating;
     private boolean paused;
+    private boolean gracePeriodActive;
     private String phase = "idle";
     private int countdownRemaining;
     private int countdownInitial = 120;
@@ -179,6 +187,7 @@ public final class EventManager implements Listener {
     private BukkitTask countdownTask;
     private BukkitTask statusTask;
     private BukkitTask celebrationTask;
+    private BukkitTask graceTask;
 
     public EventManager(
             JavaPlugin plugin,
@@ -205,10 +214,26 @@ public final class EventManager implements Listener {
         this.gui = gui;
     }
 
+    public void setHolograms(HologramManager holograms) {
+        this.holograms = holograms;
+    }
+
+    public void refreshHologramsSafe() {
+        if (holograms == null) return;
+        String summary = null;
+        if (eventOpen) {
+            summary = "<green>OPEN: " + eventMode.displayName() + " (" + participants.size() + " joined)</green>";
+        } else if (eventRunning) {
+            summary = "<red>LIVE: " + eventMode.displayName() + " (" + alive.size() + " alive)</red>";
+        }
+        holograms.refreshAll(summary);
+    }
+
     public void shutdown() {
         cancelCountdown();
         cancelModeVote();
         cancelCelebration();
+        cancelGrace();
         if (statusTask != null) {
             statusTask.cancel();
             statusTask = null;
@@ -383,8 +408,11 @@ public final class EventManager implements Listener {
         eventCompleted = false;
         firstBloodClaimed = false;
         celebrating = false;
+        gracePeriodActive = false;
         eventWinner = null;
         matchKills.clear();
+        matchDamageDealt.clear();
+        eliminationOrder.clear();
         matchStartedAt = System.currentTimeMillis();
         eventOpen = true;
         eventRunning = false;
@@ -401,6 +429,7 @@ public final class EventManager implements Listener {
                 + FormatUtil.formatDuration(countdownRemaining) + "</yellow><gray>! Use</gray> "
                 + "<green><click:run_command:'/event join'><hover:show_text:'<green>Click to join!</green>'>[/event join]</hover></click></green>");
         discord.notifyEventOpen(eventMode.displayName(), arenaLabel, countdownRemaining);
+        refreshHologramsSafe();
         startCountdown();
     }
 
@@ -460,6 +489,10 @@ public final class EventManager implements Listener {
         }
     }
 
+    private void giveKitWithPlayerLayout(Player player, String kitId) {
+        kitManager.giveKit(player, kitId, data.kitLayout(player.getUniqueId(), kitId));
+    }
+
     private void deliverPendingKits() {
         boolean deliveredAny = false;
         for (UUID id : participants) {
@@ -468,7 +501,7 @@ public final class EventManager implements Listener {
             if (p != null) {
                 snapshotIfNeeded(p);
                 removeRulesBooks(p);
-                kitManager.giveKit(p, selectedKit);
+                giveKitWithPlayerLayout(p, selectedKit);
                 kitDelivered.add(id);
                 playCue(p, "kit");
                 p.sendMessage(FormatUtil.mm(PREFIX + "<green>Your event kit has been delivered! Combat begins when the countdown ends.</green>"));
@@ -486,20 +519,17 @@ public final class EventManager implements Listener {
             if (!eventOpen || paused) return;
             int kitAt = plugin.getConfig().getInt("kit-delivery-seconds-before-start", 60);
             if (countdownRemaining == kitAt && !participants.isEmpty()) {
-                for (UUID id : participants) {
-                    Player p = Bukkit.getPlayer(id);
-                    if (p != null) {
-                        snapshotIfNeeded(p);
-                        removeRulesBooks(p);
-                        kitManager.giveKit(p, selectedKit);
-                        kitDelivered.add(id);
-                        playCue(p, "kit");
-                        p.sendMessage(FormatUtil.mm(PREFIX + "<green>Your event kit has been delivered! Combat begins when the countdown ends.</green>"));
-                    }
-                }
-                broadcast("<green>Fighter kits delivered!</green>");
+                deliverPendingKits();
             }
             if (countdownRemaining <= 0) {
+                int minPlayers = Math.max(1, plugin.getConfig().getInt("registration.min-players", 2));
+                if (participants.size() < minPlayers && eventMode != EventMode.DUEL) {
+                    countdownRemaining = 30;
+                    countdownInitial = 30;
+                    broadcast("<yellow>Waiting for at least <gold>" + minPlayers + "</gold> fighters (" + participants.size()
+                            + "/" + minPlayers + ") — registration extended by 30s! Use <green>/event join</green>.</yellow>");
+                    return;
+                }
                 cancelCountdown();
                 startEvent();
                 return;
@@ -534,6 +564,56 @@ public final class EventManager implements Listener {
         if (celebrationTask != null) {
             celebrationTask.cancel();
             celebrationTask = null;
+        }
+    }
+
+    private void cancelGrace() {
+        gracePeriodActive = false;
+        if (graceTask != null) {
+            graceTask.cancel();
+            graceTask = null;
+        }
+    }
+
+    private void startGracePeriod(Set<UUID> targets, String subtitleText) {
+        cancelGrace();
+        int graceSec = Math.max(0, Math.min(10, plugin.getConfig().getInt("effects.grace-seconds", 3)));
+        if (graceSec <= 0) {
+            hud.broadcastTitle(targets, "<green><bold>FIGHT!</bold></green>", "<yellow>" + FormatUtil.escape(subtitleText) + "</yellow>", 100, 1000, 300);
+            return;
+        }
+        gracePeriodActive = true;
+        int[] remain = {graceSec};
+        graceTask = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
+            if (!eventRunning || celebrating) {
+                cancelGrace();
+                return;
+            }
+            if (remain[0] <= 0) {
+                cancelGrace();
+                hud.broadcastTitle(targets, "<green><bold>FIGHT!</bold></green>", "<yellow>" + FormatUtil.escape(subtitleText) + "</yellow>", 50, 900, 250);
+                for (UUID id : targets) {
+                    Player p = Bukkit.getPlayer(id);
+                    if (p != null) playCue(p, "start");
+                }
+                return;
+            }
+            hud.broadcastTitle(targets, "<gold><bold>" + remain[0] + "</bold></gold>", "<gray>Grace period — prepare to fight!</gray>", 50, 750, 150);
+            for (UUID id : targets) {
+                Player p = Bukkit.getPlayer(id);
+                if (p != null) playCue(p, "join");
+            }
+            remain[0]--;
+        }, 0L, 20L);
+    }
+
+    private void applyFinalDuelGlowIfEnabled() {
+        if (!plugin.getConfig().getBoolean("effects.final-duel-glow", true)) return;
+        for (UUID id : alive) {
+            Player p = Bukkit.getPlayer(id);
+            if (p != null) {
+                p.addPotionEffect(new PotionEffect(PotionEffectType.GLOWING, 20 * 300, 0, false, false, false));
+            }
         }
     }
 
@@ -597,14 +677,15 @@ public final class EventManager implements Listener {
             lastMovementAt.put(id, System.currentTimeMillis());
             removeRulesBooks(fighter);
             if (!kitDelivered.contains(id)) {
-                kitManager.giveKit(fighter, selectedKit);
+                giveKitWithPlayerLayout(fighter, selectedKit);
                 kitDelivered.add(id);
             }
-            playCue(fighter, "start");
         }
         if (eventMode == EventMode.TEAM_WARS) assignTeams();
         applyPhaseBorder(phase);
-        hud.broadcastTitle(alive, "<green><bold>FIGHT!</bold></green>", "<yellow>" + FormatUtil.escape(arena.displayName()) + "</yellow>", 100, 1200, 300);
+        if (phase.equals("final")) applyFinalDuelGlowIfEnabled();
+        startGracePeriod(alive, arena.displayName());
+        refreshHologramsSafe();
         broadcast("<green>" + FormatUtil.escape(arena.displayName()) + " has started!</green> <yellow>Fighters: " + alive.size() + "</yellow>");
 
         if (eventMode == EventMode.TEAM_WARS) checkTeamWinner();
@@ -618,6 +699,7 @@ public final class EventManager implements Listener {
     private void stopEventInternal(String reason, boolean immediateShutdown) {
         cancelCountdown();
         cancelCelebration();
+        cancelGrace();
         if (!eventOpen && !eventRunning && !celebrating && participants.isEmpty() && snapshots.isEmpty()) return;
 
         String arenaToClean = selectedArena;
@@ -629,6 +711,7 @@ public final class EventManager implements Listener {
         eventRunning = false;
         celebrating = false;
         paused = false;
+        gracePeriodActive = false;
         phase = "idle";
         eventWinner = null;
 
@@ -655,6 +738,7 @@ public final class EventManager implements Listener {
         if (!Bukkit.getOnlinePlayers().isEmpty() && !"Server shutting down".equals(reason)) {
             broadcast("<gray>" + FormatUtil.escape(reason) + ".</gray>");
         }
+        if (!immediateShutdown) refreshHologramsSafe();
     }
 
     private void clearCollections() {
@@ -667,6 +751,8 @@ public final class EventManager implements Listener {
         lastCombatAt.clear();
         lastMovementAt.clear();
         lastBoundaryWarnAt.clear();
+        matchDamageDealt.clear();
+        eliminationOrder.clear();
         afkWarned.clear();
         tournamentQueue.clear();
         tournamentWinners.clear();
@@ -691,10 +777,17 @@ public final class EventManager implements Listener {
             player.sendMessage(FormatUtil.mm(PREFIX + "<red>No event is accepting registrations right now.</red>"));
             return;
         }
+        int maxPlayers = Math.max(2, plugin.getConfig().getInt("registration.max-players", 32));
+        if (eventMode == EventMode.DUEL) maxPlayers = 2;
+        if (!participants.contains(player.getUniqueId()) && participants.size() >= maxPlayers) {
+            player.sendMessage(FormatUtil.mm(PREFIX + "<red>This event is currently full (" + maxPlayers + "/" + maxPlayers + ")!</red>"));
+            return;
+        }
         if (!participants.add(player.getUniqueId())) {
             player.sendMessage(FormatUtil.mm(PREFIX + "<yellow>You are already registered for this event!</yellow>"));
             return;
         }
+        parkourStartedAt.remove(player.getUniqueId());
         snapshotIfNeeded(player);
         if (isDestructibleMode(eventMode)) {
             arenaManager.addArenaBuilder(selectedArena, player.getUniqueId());
@@ -722,7 +815,15 @@ public final class EventManager implements Listener {
             }
         }, 40L);
         playCue(player, "join");
-        broadcast("<yellow>" + FormatUtil.escape(player.getName()) + "</yellow> <gray>joined the event!</gray> <dark_gray>(</dark_gray><green>" + participants.size() + "</green><dark_gray>)</dark_gray>");
+        broadcast("<yellow>" + FormatUtil.escape(player.getName()) + "</yellow> <gray>joined the event!</gray> <dark_gray>(</dark_gray><green>"
+                + participants.size() + "/" + maxPlayers + "</green><dark_gray>)</dark_gray>");
+
+        int fastStart = Math.max(5, plugin.getConfig().getInt("registration.fast-start-seconds", 10));
+        if (participants.size() >= maxPlayers && countdownRemaining > fastStart) {
+            countdownRemaining = fastStart;
+            deliverPendingKits();
+            broadcast("<gold><bold>EVENT FULL!</bold></gold> <yellow>Starting in <gold>" + fastStart + "s</gold>!</yellow>");
+        }
     }
 
     public void leaveEvent(Player player) {
@@ -796,7 +897,7 @@ public final class EventManager implements Listener {
         resetVitals(target);
         target.teleport(points.get(random.nextInt(points.size())));
         removeRulesBooks(target);
-        kitManager.giveKit(target, selectedKit);
+        giveKitWithPlayerLayout(target, selectedKit);
         kitDelivered.add(id);
         applyCurrentBorderToPlayer(target); // Preserves everyone else's active shrink!
         playCue(target, "kit");
@@ -885,9 +986,28 @@ public final class EventManager implements Listener {
             lastMovementAt.put(id, System.currentTimeMillis());
         }
         applyPhaseBorder(phase);
+        if (nextPhase.equals("final")) applyFinalDuelGlowIfEnabled();
         String label = nextPhase.equals("wave2") ? "WAVE 2" : "FINAL DUEL";
         hud.broadcastTitle(participants, "<gold><bold>" + label + "</bold></gold>", "<green>" + alive.size() + " fighters remain!</green>", 100, 1400, 300);
         broadcast("<yellow><bold>" + label + "</bold> phase started!</yellow> <green>" + alive.size() + " fighters remain.</green>");
+    }
+
+    public void sendTeamChat(Player sender, String message) {
+        if (!eventRunning || eventMode != EventMode.TEAM_WARS || !participants.contains(sender.getUniqueId())) {
+            sender.sendMessage(FormatUtil.mm(PREFIX + "<red>Team chat is only available during Team Wars.</red>"));
+            return;
+        }
+        Integer team = teams.get(sender.getUniqueId());
+        if (team == null) return;
+        String badge = team == 1 ? "<red><bold>[RED TEAM]</bold></red>" : "<blue><bold>[BLUE TEAM]</bold></blue>";
+        Component msg = FormatUtil.mm(badge + " <yellow>" + FormatUtil.escape(sender.getName())
+                + "</yellow><dark_gray>:</dark_gray> <white>" + FormatUtil.escape(message) + "</white>");
+        for (Map.Entry<UUID, Integer> e : teams.entrySet()) {
+            if (Objects.equals(e.getValue(), team)) {
+                Player member = Bukkit.getPlayer(e.getKey());
+                if (member != null) member.sendMessage(msg);
+            }
+        }
     }
 
     private void advancePhaseIfNeeded() {
@@ -1004,11 +1124,13 @@ public final class EventManager implements Listener {
             return;
         }
         spectators.clear();
+        Location audLoc = arena != null ? arenaManager.firstSpawn(arena, "audience") : null;
         for (UUID id : entrants) {
             Player p = Bukkit.getPlayer(id);
             if (p != null) {
                 snapshotIfNeeded(p);
                 p.setGameMode(GameMode.SPECTATOR);
+                if (audLoc != null) p.teleport(audLoc);
                 spectators.add(id);
             }
         }
@@ -1021,6 +1143,7 @@ public final class EventManager implements Listener {
             tournamentQueue.addLast(entrants.get(i + 1));
         }
         broadcast("<yellow>Tournament Round 1 begins with " + entrants.size() + " fighters!</yellow>");
+        refreshHologramsSafe();
         startNextTournamentMatch();
     }
 
@@ -1081,18 +1204,26 @@ public final class EventManager implements Listener {
         b.teleport(points.get(1));
         removeRulesBooks(a);
         removeRulesBooks(b);
-        kitManager.giveKit(a, selectedKit);
-        kitManager.giveKit(b, selectedKit);
+        giveKitWithPlayerLayout(a, selectedKit);
+        giveKitWithPlayerLayout(b, selectedKit);
 
+        Location audLoc = arena != null ? arenaManager.firstSpawn(arena, "audience") : null;
         for (UUID id : participants) {
             if (!alive.contains(id)) {
                 spectators.add(id);
                 Player spec = Bukkit.getPlayer(id);
-                if (spec != null) spec.setGameMode(GameMode.SPECTATOR);
+                if (spec != null) {
+                    spec.setGameMode(GameMode.SPECTATOR);
+                    if (audLoc != null && !spec.getWorld().equals(audLoc.getWorld())) {
+                        spec.teleport(audLoc);
+                    }
+                }
             }
         }
         applyPhaseBorder("final");
-        hud.broadcastTitle(participants, "<gold><bold>ROUND " + tournamentRound + "</bold></gold>",
+        applyFinalDuelGlowIfEnabled();
+        startGracePeriod(alive, a.getName() + " vs " + b.getName());
+        hud.broadcastTitle(spectators, "<gold><bold>ROUND " + tournamentRound + "</bold></gold>",
                 "<green>" + FormatUtil.escape(a.getName()) + "</green> <gray>vs</gray> <red>" + FormatUtil.escape(b.getName()) + "</red>", 100, 1500, 300);
         broadcast("<yellow>Round " + tournamentRound + ":</yellow> <green>" + FormatUtil.escape(a.getName())
                 + "</green> <gray>vs</gray> <red>" + FormatUtil.escape(b.getName()) + "</red>");
@@ -1100,26 +1231,46 @@ public final class EventManager implements Listener {
 
     private void completeTournamentMatch(UUID winnerId) {
         if (!eventRunning || eventMode != EventMode.TOURNAMENT) return;
+        cancelGrace();
         if (winnerId != null) {
             tournamentWinners.add(winnerId);
             Player winner = Bukkit.getPlayer(winnerId);
             broadcast("<yellow>" + FormatUtil.escape(winner == null ? "A player" : winner.getName())
                     + "</yellow> <gray>advances to the next round!</gray>");
         }
+        Arena arena = arenaManager.get(selectedArena);
+        Location audLoc = arena != null ? arenaManager.firstSpawn(arena, "audience") : null;
         if (tournamentPlayerA != null) {
             Player a = Bukkit.getPlayer(tournamentPlayerA);
-            if (a != null) clearPlayerBorder(a);
+            if (a != null) {
+                clearPlayerBorder(a);
+                a.setGameMode(GameMode.SPECTATOR);
+                if (audLoc != null) a.teleport(audLoc);
+            }
             spectators.add(tournamentPlayerA);
         }
         if (tournamentPlayerB != null) {
             Player b = Bukkit.getPlayer(tournamentPlayerB);
-            if (b != null) clearPlayerBorder(b);
+            if (b != null) {
+                clearPlayerBorder(b);
+                b.setGameMode(GameMode.SPECTATOR);
+                if (audLoc != null) b.teleport(audLoc);
+            }
             spectators.add(tournamentPlayerB);
         }
         alive.clear();
         tournamentPlayerA = null;
         tournamentPlayerB = null;
-        Bukkit.getScheduler().runTaskLater(plugin, this::startNextTournamentMatch, 100L);
+
+        // Roll back arena edits & wipe drops/crystals cleanly between tournament rounds!
+        int batch = Math.max(100, plugin.getConfig().getInt("arenas.rollback-blocks-per-tick", 300));
+        blockTracker.rollbackBatched(plugin, batch, () -> {
+            arenaManager.clearArenaEntities(selectedArena);
+            if (arena != null && eventRunning) {
+                blockTracker.startTracking(arenaManager.sharedWorldName(), arena);
+            }
+            Bukkit.getScheduler().runTaskLater(plugin, this::startNextTournamentMatch, 60L);
+        });
     }
 
     private void finishWinner(UUID winnerId) {
@@ -1141,8 +1292,23 @@ public final class EventManager implements Listener {
                 }
             }
         }
+        // Resolve 2nd Place (last eliminated) and 3rd Place (second-to-last eliminated) for the 3-step Royal Podium!
+        UUID secondId = null;
+        UUID thirdId = null;
+        for (int i = eliminationOrder.size() - 1; i >= 0; i--) {
+            UUID cand = eliminationOrder.get(i);
+            if (winnerId.equals(cand)) continue;
+            if (secondId == null) secondId = cand;
+            else if (thirdId == null && !secondId.equals(cand)) {
+                thirdId = cand;
+                break;
+            }
+        }
+        String secondName = secondId != null ? safePlayerName(secondId) : "---";
+        String thirdName = thirdId != null ? safePlayerName(thirdId) : "---";
+
         data.recordWin(winnerId, winnerName);
-        recordMatchSummaryAndNotify(winnerName, winnerId.toString());
+        recordMatchSummaryAndNotify(winnerName, winnerId.toString(), secondName, thirdName);
         broadcast("<yellow><bold>" + FormatUtil.escape(winnerName) + "</bold></yellow> <green>won the event! (+20 Elo)</green>");
         hud.broadcastTitle(participants, "<gold><bold>VICTORY!</bold></gold>", "<yellow>" + FormatUtil.escape(winnerName) + " is the champion!</yellow>", 150, 3200, 500);
         runRewardCommands("winner", winnerId, winnerName);
@@ -1151,16 +1317,38 @@ public final class EventManager implements Listener {
         Player onlineWinner = Bukkit.getPlayer(winnerId);
         Location winnerLoc = configuredLocation("winner");
         Location crowdLoc = configuredLocation("winner-crowd");
+        World podiumWorld = winnerLoc != null ? winnerLoc.getWorld() : arenaManager.getOrCreateSharedWorld(null);
+        Location secondLoc = podiumWorld != null ? new Location(podiumWorld, ArenaManager.WINNER_ORIGIN_X - 7.5, ArenaManager.WINNER_ORIGIN_Y + 4.0, ArenaManager.WINNER_ORIGIN_Z - 5.5, 0.0f, 0.0f) : null;
+        Location thirdLoc = podiumWorld != null ? new Location(podiumWorld, ArenaManager.WINNER_ORIGIN_X + 8.5, ArenaManager.WINNER_ORIGIN_Y + 3.0, ArenaManager.WINNER_ORIGIN_Z - 5.5, 0.0f, 0.0f) : null;
+
         if (onlineWinner != null) {
             onlineWinner.setGameMode(GameMode.ADVENTURE);
             if (winnerLoc != null) onlineWinner.teleport(winnerLoc);
             playCue(onlineWinner, "winner");
             celebrateList.add(onlineWinner);
         }
+        if (secondId != null && secondLoc != null) {
+            Player p2 = Bukkit.getPlayer(secondId);
+            if (p2 != null && p2.isOnline() && !p2.isDead()) {
+                p2.setGameMode(GameMode.ADVENTURE);
+                p2.teleport(secondLoc);
+                playCue(p2, "winner");
+                celebrateList.add(p2);
+            }
+        }
+        if (thirdId != null && thirdLoc != null) {
+            Player p3 = Bukkit.getPlayer(thirdId);
+            if (p3 != null && p3.isOnline() && !p3.isDead()) {
+                p3.setGameMode(GameMode.ADVENTURE);
+                p3.teleport(thirdLoc);
+                playCue(p3, "winner");
+                celebrateList.add(p3);
+            }
+        }
         // Bring all other online participants/spectators to the Winner Hall crowd gallery!
         if (crowdLoc != null) {
             for (UUID id : participants) {
-                if (winnerId.equals(id)) continue;
+                if (winnerId.equals(id) || Objects.equals(secondId, id) || Objects.equals(thirdId, id)) continue;
                 Player crowd = Bukkit.getPlayer(id);
                 if (crowd != null && crowd.isOnline() && !crowd.isDead()) {
                     crowd.setGameMode(GameMode.ADVENTURE);
@@ -1169,7 +1357,15 @@ public final class EventManager implements Listener {
                 }
             }
         }
+        refreshHologramsSafe();
         scheduleCelebrationAndFinish(celebrateList, "Event finished");
+    }
+
+    private String safePlayerName(UUID id) {
+        Player p = Bukkit.getPlayer(id);
+        if (p != null) return p.getName();
+        String n = Bukkit.getOfflinePlayer(id).getName();
+        return n != null ? n : "Player";
     }
 
     private void scheduleCelebrationAndFinish(List<Player> celebratePlayers, String stopReason) {
@@ -1201,6 +1397,10 @@ public final class EventManager implements Listener {
     }
 
     private void recordMatchSummaryAndNotify(String winnerName, String winnerId) {
+        recordMatchSummaryAndNotify(winnerName, winnerId, "---", "---");
+    }
+
+    private void recordMatchSummaryAndNotify(String winnerName, String winnerId, String secondName, String thirdName) {
         UUID mvpId = matchKills.entrySet().stream()
                 .max(Map.Entry.comparingByValue())
                 .map(Map.Entry::getKey)
@@ -1208,17 +1408,34 @@ public final class EventManager implements Listener {
         String mvpName = "None";
         int mvpKills = 0;
         if (mvpId != null) {
-            Player onlineMvp = Bukkit.getPlayer(mvpId);
-            mvpName = onlineMvp != null ? onlineMvp.getName() : Bukkit.getOfflinePlayer(mvpId).getName();
-            if (mvpName == null) mvpName = "Unknown";
+            mvpName = safePlayerName(mvpId);
             mvpKills = matchKills.getOrDefault(mvpId, 0);
         }
+        UUID topDmgId = matchDamageDealt.entrySet().stream()
+                .max(Map.Entry.comparingByValue())
+                .map(Map.Entry::getKey)
+                .orElse(null);
         long durationSec = Math.max(0L, (System.currentTimeMillis() - matchStartedAt) / 1000L);
         data.recordMatch(selectedArena, eventMode.id(), winnerName, winnerId, matchStartedAt, participants, mvpName, mvpKills);
-        if (mvpKills > 0) {
-            Bukkit.broadcast(FormatUtil.mm("<gold>[MVP]</gold> <yellow>" + FormatUtil.escape(mvpName)
-                    + "</yellow> <gray>was match MVP with</gray> <yellow>" + mvpKills + "</yellow> <gray>kill(s)!</gray>"));
+        data.recordPodium(eventMode.displayName(), winnerName, secondName, thirdName, mvpName, mvpKills);
+
+        // Crisp Pro Post-Match Combat Recap Card
+        Bukkit.broadcast(FormatUtil.mm("<dark_gray><st>-----------------------------------------</st></dark_gray>"));
+        Bukkit.broadcast(FormatUtil.mm("  <gold><bold>★ MATCH RECAP — " + FormatUtil.escape(eventMode.displayName().toUpperCase(Locale.ROOT)) + " ★</bold></gold>"));
+        Bukkit.broadcast(FormatUtil.mm("  <gold>🥇 #1 Champion:</gold> <yellow><bold>" + FormatUtil.escape(winnerName) + "</bold></yellow>"));
+        if (!"---".equals(secondName)) {
+            Bukkit.broadcast(FormatUtil.mm("  <white>🥈 #2 Runner-Up:</white> <gray>" + FormatUtil.escape(secondName) + "</gray>"
+                    + (!"---".equals(thirdName) ? "  <dark_gray>|</dark_gray>  <gold>🥉 #3:</gold> <gray>" + FormatUtil.escape(thirdName) + "</gray>" : "")));
         }
+        if (mvpKills > 0) {
+            Bukkit.broadcast(FormatUtil.mm("  <aqua>⚔ Match MVP:</aqua> <yellow>" + FormatUtil.escape(mvpName) + "</yellow> <gray>(" + mvpKills + " kills)</gray>"
+                    + (topDmgId != null ? " <dark_gray>|</dark_gray> <red>Top Damage:</red> <white>" + FormatUtil.escape(safePlayerName(topDmgId))
+                    + " (" + String.format(Locale.ROOT, "%.0f", matchDamageDealt.getOrDefault(topDmgId, 0.0)) + ")</white>" : "")));
+        }
+        Bukkit.broadcast(FormatUtil.mm("  <gray>Duration:</gray> <white>" + FormatUtil.formatDuration(durationSec)
+                + "</white>  <dark_gray>|</dark_gray>  <green><click:run_command:'/event top'><hover:show_text:'<green>Open Leaderboards</green>'>[Leaderboards]</hover></click></green>"));
+        Bukkit.broadcast(FormatUtil.mm("<dark_gray><st>-----------------------------------------</st></dark_gray>"));
+
         Arena arena = arenaManager.get(selectedArena);
         discord.notifyMatchFinished(
                 eventMode.displayName(),
@@ -1247,6 +1464,20 @@ public final class EventManager implements Listener {
 
     private void startStatusLoop() {
         statusTask = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
+            // Live Sky Citadel Parkour stopwatch for non-fighting players
+            if (!parkourStartedAt.isEmpty()) {
+                long nowMs = System.currentTimeMillis();
+                for (Map.Entry<UUID, Long> entry : new ArrayList<>(parkourStartedAt.entrySet())) {
+                    Player runner = Bukkit.getPlayer(entry.getKey());
+                    if (runner == null || !runner.isOnline() || alive.contains(entry.getKey())) {
+                        parkourStartedAt.remove(entry.getKey());
+                        continue;
+                    }
+                    runner.sendActionBar(FormatUtil.mm("<green><bold>🏃 PARKOUR</bold></green> <dark_gray>|</dark_gray> <yellow>"
+                            + DataStore.formatParkourTime(nowMs - entry.getValue()) + "</yellow>"));
+                }
+            }
+
             if (!eventOpen && !eventRunning) return;
             Arena arena = arenaManager.get(selectedArena);
             String arenaLabel = arena != null ? arena.displayName() : selectedArena;
@@ -1265,10 +1496,13 @@ public final class EventManager implements Listener {
                         long lastActive = Math.max(lastMove, lastCombat);
                         if (now - lastActive >= afkLimit) {
                             alive.remove(fighterId);
+                            eliminationOrder.add(fighterId);
                             spectators.add(fighterId);
                             fighter.getInventory().clear();
                             fighter.setGameMode(GameMode.SPECTATOR);
-                            teleportToConfigured(fighter, "spectator");
+                            Location audLoc = arena != null ? arenaManager.firstSpawn(arena, "audience") : null;
+                            if (audLoc != null) fighter.teleport(audLoc);
+                            else teleportToConfigured(fighter, "spectator");
                             fighter.sendMessage(FormatUtil.mm(PREFIX + "<red>You were eliminated for being AFK.</red>"));
                             broadcast("<gray>" + FormatUtil.escape(fighter.getName()) + " was eliminated for being AFK.</gray>");
                             afkWarned.remove(fighterId);
@@ -1296,7 +1530,9 @@ public final class EventManager implements Listener {
                 }
             }
 
-            // Refresh clean per-player event sidebar
+            // Refresh flicker-free per-player event sidebar, below-name HP, & branded tablist
+            long elapsedSec = eventRunning ? Math.max(0L, (System.currentTimeMillis() - matchStartedAt) / 1000L) : 0L;
+            Map<UUID, Integer> teamSnapshot = eventMode == EventMode.TEAM_WARS ? teams : Map.of();
             for (UUID id : participants) {
                 Player viewer = Bukkit.getPlayer(id);
                 if (viewer == null || !viewer.isOnline()) continue;
@@ -1311,10 +1547,12 @@ public final class EventManager implements Listener {
                         data.stats(id),
                         teams.get(id),
                         countdownRemaining,
-                        eventOpen
+                        eventOpen,
+                        elapsedSec,
+                        teamSnapshot
                 );
             }
-        }, 40L, 40L);
+        }, 20L, 20L);
     }
 
     // -------------------------------------------------------------------------
@@ -1535,7 +1773,7 @@ public final class EventManager implements Listener {
 
     private void giveLobbyHotbar(Player player) {
         if (!plugin.getConfig().getBoolean("lobby-protection.give-lobby-hotbar", true)) return;
-        player.getInventory().setItem(0, lobbyHotbarItem(Material.IRON_SWORD, "<green><bold>Preview Event Kit</bold></green> <gray>(Right-Click)</gray>", "kit-preview"));
+        player.getInventory().setItem(0, lobbyHotbarItem(Material.IRON_SWORD, "<green><bold>Edit Kit Layout</bold></green> <gray>(Right-Click)</gray>", "kit-editor"));
         player.getInventory().setItem(2, lobbyHotbarItem(Material.BELL, "<aqua><bold>Vote Next Mode</bold></aqua> <gray>(Right-Click)</gray>", "mode-vote"));
         player.getInventory().setItem(6, lobbyHotbarItem(Material.NETHER_STAR, "<gold><bold>Leaderboards</bold></gold> <gray>(Right-Click)</gray>", "leaderboard"));
         player.getInventory().setItem(8, lobbyHotbarItem(Material.RED_DYE, "<red><bold>Leave Event</bold></red> <gray>(Right-Click)</gray>", "leave"));
@@ -1723,8 +1961,13 @@ public final class EventManager implements Listener {
         if (arena == null) return;
         String arenaWorld = arenaManager.sharedWorldName();
 
-        // 2. Active fighters cannot ender-pearl/chorus over arena walls, up into skybox, or into void!
+        // 2. Active fighters cannot ender-pearl/chorus during grace freeze OR outside arena bounds!
         if (eventRunning && alive.contains(id)) {
+            if (gracePeriodActive) {
+                event.setCancelled(true);
+                warnBoundary(player, "<yellow>Wait for the grace countdown before pearling!</yellow>");
+                return;
+            }
             boolean sameWorld = to.getWorld() != null && to.getWorld().getName().equalsIgnoreCase(arenaWorld);
             if (!sameWorld || !arena.isInsideCombatBounds(to.getX(), to.getY(), to.getZ())) {
                 event.setCancelled(true);
@@ -1795,10 +2038,16 @@ public final class EventManager implements Listener {
     @EventHandler(priority = EventPriority.HIGH)
     public void onSpectatorChat(AsyncChatEvent event) {
         UUID id = event.getPlayer().getUniqueId();
+        String text = PlainTextComponentSerializer.plainText().serialize(event.message());
+        if (eventRunning && eventMode == EventMode.TEAM_WARS && alive.contains(id) && text.startsWith("@") && text.length() > 1) {
+            event.setCancelled(true);
+            String clean = text.substring(1).trim();
+            Bukkit.getScheduler().runTask(plugin, () -> sendTeamChat(event.getPlayer(), clean));
+            return;
+        }
         if (!spectators.contains(id)) return;
         event.setCancelled(true);
         String name = event.getPlayer().getName();
-        String text = PlainTextComponentSerializer.plainText().serialize(event.message());
         Component formatted = FormatUtil.mm("<dark_gray>[SPECTATOR]</dark_gray> <gray>"
                 + FormatUtil.escape(name) + "</gray><dark_gray>:</dark_gray> <white>" + FormatUtil.escape(text) + "</white>");
         Bukkit.getScheduler().runTask(plugin, () -> {
@@ -1813,7 +2062,7 @@ public final class EventManager implements Listener {
     public void onTeamFriendlyFire(EntityDamageByEntityEvent event) {
         if (!eventRunning || !(event.getEntity() instanceof Player victim)) return;
         if (!alive.contains(victim.getUniqueId())) return;
-        if (celebrating) {
+        if (celebrating || gracePeriodActive) {
             event.setCancelled(true);
             return;
         }
@@ -1830,12 +2079,20 @@ public final class EventManager implements Listener {
         }
 
         lastDamager.put(victim.getUniqueId(), attacker.getUniqueId());
+        matchDamageDealt.merge(attacker.getUniqueId(), event.getFinalDamage(), Double::sum);
         long now = System.currentTimeMillis();
         lastCombatAt.put(victim.getUniqueId(), now);
         lastMovementAt.put(attacker.getUniqueId(), now);
         lastMovementAt.put(victim.getUniqueId(), now);
         afkWarned.remove(victim.getUniqueId());
         afkWarned.remove(attacker.getUniqueId());
+
+        if (!event.isCancelled()) {
+            AttributeInstance maxAttr = victim.getAttribute(Attribute.MAX_HEALTH);
+            double maxHp = maxAttr != null ? maxAttr.getValue() : 20.0;
+            double remaining = Math.max(0.0, victim.getHealth() - event.getFinalDamage());
+            hud.sendHitHealth(attacker, victim, remaining, maxHp);
+        }
     }
 
     @EventHandler
@@ -1866,17 +2123,26 @@ public final class EventManager implements Listener {
             }
         }
 
-        // 2. Catch void falls around the floating Spawn Lobby / Parkour (for non-fighting players)!
-        if (!alive.contains(id) && plugin.getConfig().getBoolean("lobby-protection.catch-void-fall", true)) {
+        // 2. Catch void falls around the floating Spawn Lobby / Parkour + handle Sky Parkour Timer!
+        if (!alive.contains(id)) {
             Location lobby = configuredLocation("lobby");
             if (lobby != null && lobby.getWorld() != null && player.getWorld().equals(lobby.getWorld())) {
                 double dx = to.getX() - lobby.getX();
                 double dz = to.getZ() - lobby.getZ();
-                if ((dx * dx + dz * dz) <= 65.0 * 65.0 && to.getY() < lobby.getY() - 12.0) {
+                if (plugin.getConfig().getBoolean("lobby-protection.catch-void-fall", true)
+                        && (dx * dx + dz * dz) <= 65.0 * 65.0 && to.getY() < lobby.getY() - 12.0) {
                     player.setFallDistance(0f);
                     player.teleport(lobby);
-                    player.sendMessage(FormatUtil.mm(PREFIX + "<gray>Caught your fall — back at the Event Spawn Lobby!</gray>"));
+                    if (parkourStartedAt.remove(id) != null) {
+                        player.sendMessage(FormatUtil.mm(PREFIX + "<yellow>Parkour run reset — back at the Event Spawn Lobby!</yellow>"));
+                    } else {
+                        player.sendMessage(FormatUtil.mm(PREFIX + "<gray>Caught your fall — back at the Event Spawn Lobby!</gray>"));
+                    }
                     return;
+                }
+                if (plugin.getConfig().getBoolean("lobby-protection.parkour-timer", true)
+                        && player.getWorld().getName().equalsIgnoreCase(arenaManager.sharedWorldName())) {
+                    checkLobbyParkourTrigger(player, to);
                 }
             }
         }
@@ -1941,6 +2207,40 @@ public final class EventManager implements Listener {
         lastMovementAt.put(id, System.currentTimeMillis());
     }
 
+    private void checkLobbyParkourTrigger(Player player, Location to) {
+        UUID id = player.getUniqueId();
+        int relX = to.getBlockX() - ArenaManager.LOBBY_ORIGIN_X;
+        int relY = to.getBlockY() - ArenaManager.LOBBY_ORIGIN_Y;
+        int relZ = to.getBlockZ() - ArenaManager.LOBBY_ORIGIN_Z;
+
+        // Start Gold Pad: dx in 20..24, dz in -20..-17, standing at dy = 3
+        if (relX >= 20 && relX <= 24 && relZ >= -20 && relZ <= -17 && relY >= 2 && relY <= 4) {
+            if (!parkourStartedAt.containsKey(id)) {
+                parkourStartedAt.put(id, System.currentTimeMillis());
+                playCue(player, "join");
+                player.sendMessage(FormatUtil.mm(PREFIX + "<green><bold>🏃 SKY PARKOUR STARTED!</bold></green> <gray>Reach the golden crown at the top!</gray>"));
+            }
+            return;
+        }
+        // Finish Golden Crown Pad: around (10, 19, -37), standing at dy = 20..22
+        Long started = parkourStartedAt.get(id);
+        if (started != null && Math.abs(relX - 10) <= 3 && Math.abs(relZ + 37) <= 3 && relY >= 19 && relY <= 23) {
+            parkourStartedAt.remove(id);
+            long elapsed = System.currentTimeMillis() - started;
+            DataStore.ParkourResult res = data.recordParkourTime(id, player.getName(), elapsed);
+            playCue(player, "winner");
+            spawnCelebrationFirework(player);
+            player.sendMessage(FormatUtil.mm(PREFIX + "<gold><bold>🏆 PARKOUR COMPLETE!</bold></gold> <yellow>Time:</yellow> <green><bold>"
+                    + DataStore.formatParkourTime(elapsed) + "</bold></green>"
+                    + (res.personalBest() ? " <aqua>(NEW PERSONAL BEST!)</aqua>" : " <gray>(Best: " + DataStore.formatParkourTime(res.bestMs()) + ")</gray>")));
+            if (res.serverRecord()) {
+                broadcast("<gold><bold>🏆 NEW LOBBY PARKOUR RECORD!</bold></gold> <yellow>" + FormatUtil.escape(player.getName())
+                        + "</yellow> <gray>finished in</gray> <green><bold>" + DataStore.formatParkourTime(elapsed) + "</bold></green><gray>!</gray>");
+                refreshHologramsSafe();
+            }
+        }
+    }
+
     @EventHandler
     public void onLobbyDamage(EntityDamageEvent event) {
         if (!(event.getEntity() instanceof Player player)) return;
@@ -1974,9 +2274,9 @@ public final class EventManager implements Listener {
         if (lobbyAction != null && event.getAction().isRightClick()) {
             event.setCancelled(true);
             switch (lobbyAction) {
-                case "kit-preview" -> {
-                    if (gui != null && selectedKit != null && !selectedKit.isEmpty()) gui.openKitPreview(player, selectedKit);
-                    else player.sendMessage(FormatUtil.mm(PREFIX + "<yellow>No active event kit to preview right now.</yellow>"));
+                case "kit-editor", "kit-preview" -> {
+                    if (gui != null && selectedKit != null && !selectedKit.isEmpty()) gui.openKitLayoutEditor(player, selectedKit);
+                    else player.sendMessage(FormatUtil.mm(PREFIX + "<yellow>No active event kit to edit right now.</yellow>"));
                 }
                 case "mode-vote" -> { if (gui != null) gui.openModeVoteGui(player); }
                 case "leaderboard" -> { if (gui != null) gui.openLeaderboardGui(player, "elo"); }
@@ -2021,7 +2321,7 @@ public final class EventManager implements Listener {
 
     @EventHandler
     public void onPausedDamage(EntityDamageEvent event) {
-        if (paused && event.getEntity() instanceof Player player && participants.contains(player.getUniqueId())) {
+        if ((paused || gracePeriodActive) && event.getEntity() instanceof Player player && participants.contains(player.getUniqueId())) {
             event.setCancelled(true);
         }
     }
@@ -2041,12 +2341,14 @@ public final class EventManager implements Listener {
         Player victim = event.getEntity();
         UUID id = victim.getUniqueId();
         if (!alive.remove(id)) return;
+        eliminationOrder.add(id);
         spectators.add(id);
 
         if (plugin.getConfig().getBoolean("effects.kill-lightning", true)) {
             victim.getWorld().strikeLightningEffect(victim.getLocation());
         }
 
+        int victimStreak = matchKills.getOrDefault(id, 0);
         UUID killerId = lastDamager.remove(id);
         lastCombatAt.remove(id);
         if (killerId != null) {
@@ -2059,15 +2361,35 @@ public final class EventManager implements Listener {
                         + FormatUtil.escape(victim.getName()) + "</yellow> <dark_gray>(</dark_gray><green>+"
                         + eloDelta.gained() + " Elo</green><dark_gray>)</dark_gray>"));
 
+                // Anti-cleanup Kill Heal (+4 hearts + 4s Absorption I) in melee/UHC modes
+                if (plugin.getConfig().getBoolean("effects.kill-heal", true)
+                        && alive.contains(killer.getUniqueId())
+                        && eventMode != EventMode.NETHPOT && eventMode != EventMode.DIAMOND_POT && eventMode != EventMode.CRYSTAL) {
+                    AttributeInstance maxAttr = killer.getAttribute(Attribute.MAX_HEALTH);
+                    double maxHp = maxAttr != null ? maxAttr.getValue() : 20.0;
+                    killer.setHealth(Math.min(maxHp, killer.getHealth() + 8.0));
+                    killer.addPotionEffect(new PotionEffect(PotionEffectType.ABSORPTION, 80, 0, false, true, true));
+                    killer.sendMessage(FormatUtil.mm(PREFIX + "<green>+4 ❤ Kill Heal & 4s Absorption!</green>"));
+                }
+
+                // Kill Streak Bounty Shutdown (+10 Bonus Elo!)
+                if (victimStreak >= 3 && plugin.getConfig().getBoolean("effects.kill-bounty", true)) {
+                    data.awardBonusElo(killer.getUniqueId(), killer.getName(), EloCalculator.BOUNTY_BONUS);
+                    Bukkit.broadcast(FormatUtil.mm("<gold><bold>💰 BOUNTY CLAIMED!</bold></gold> <yellow>"
+                            + FormatUtil.escape(killer.getName()) + "</yellow> <gray>ended</gray> <red>"
+                            + FormatUtil.escape(victim.getName()) + "'s</red> <gray>" + victimStreak
+                            + "-kill streak for</gray> <green><bold>+" + EloCalculator.BOUNTY_BONUS + " Bonus Elo</bold></green><gray>!</gray>"));
+                }
+
                 if (!firstBloodClaimed && plugin.getConfig().getBoolean("effects.first-blood", true)) {
                     firstBloodClaimed = true;
                     Bukkit.broadcast(FormatUtil.mm("<dark_red><bold>🩸 FIRST BLOOD!</bold></dark_red> <yellow>"
                             + FormatUtil.escape(killer.getName()) + "</yellow> <gray>drew first blood!</gray>"));
                 }
                 if (plugin.getConfig().getBoolean("effects.kill-streaks", true)) {
-                    String streakTag = newMatchKills == 3 ? "<gold><bold>🔥 RAMPAGE!</bold></gold>"
-                            : newMatchKills == 5 ? "<red><bold>🔥 UNSTOPPABLE!</bold></red>"
-                            : newMatchKills >= 7 && newMatchKills % 2 == 1 ? "<light_purple><bold>⚡ GODLIKE!</bold></light_purple>"
+                    String streakTag = newMatchKills == 3 ? "<gold><bold>🔥 RAMPAGE! [BOUNTY]</bold></gold>"
+                            : newMatchKills == 5 ? "<red><bold>🔥 UNSTOPPABLE! [BOUNTY]</bold></red>"
+                            : newMatchKills >= 7 && newMatchKills % 2 == 1 ? "<light_purple><bold>⚡ GODLIKE! [BOUNTY]</bold></light_purple>"
                             : null;
                     if (streakTag != null) {
                         Bukkit.broadcast(FormatUtil.mm(streakTag + " <yellow>" + FormatUtil.escape(killer.getName())
@@ -2086,6 +2408,12 @@ public final class EventManager implements Listener {
         event.setKeepInventory(true);
         event.setKeepLevel(true);
         broadcast("<gray>" + FormatUtil.escape(victim.getName()) + " has been eliminated!</gray> <yellow>" + alive.size() + " fighters remain.</yellow>");
+
+        // Instant clickable Spectator Quick-Action bar!
+        victim.sendMessage(FormatUtil.mm(PREFIX + "<gray>Spectator Tools:</gray> "
+                + "<aqua><click:run_command:'/event spectate'><hover:show_text:'<aqua>Teleport to any alive fighter</aqua>'>[👁 Spectate]</hover></click></aqua> "
+                + "<gold><click:run_command:'/event vote'><hover:show_text:'<gold>Predict winner for Audience Points</gold>'>[🎯 Predict Winner]</hover></click></gold> "
+                + "<yellow><click:run_command:'/event top'><hover:show_text:'<yellow>Open Leaderboards</yellow>'>[🏆 Top]</hover></click></yellow>"));
 
         if (plugin.getConfig().getBoolean("effects.auto-respawn", true)) {
             Bukkit.getScheduler().runTaskLater(plugin, () -> {
@@ -2199,6 +2527,7 @@ public final class EventManager implements Listener {
     @EventHandler
     public void onQuit(PlayerQuitEvent event) {
         UUID id = event.getPlayer().getUniqueId();
+        parkourStartedAt.remove(id);
         clearPlayerBorder(event.getPlayer());
         hud.clearForPlayer(event.getPlayer());
         if (eventRunning && !celebrating && alive.contains(id)) {
@@ -2213,6 +2542,7 @@ public final class EventManager implements Listener {
                 participants.remove(id);
                 spectators.remove(id);
                 if (alive.remove(id)) {
+                    eliminationOrder.add(id);
                     broadcast("<red>" + FormatUtil.escape(event.getPlayer().getName()) + " failed to reconnect and was eliminated.</red>");
                     processEliminationAfterDisconnect();
                 }

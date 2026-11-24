@@ -452,6 +452,9 @@ public final class ArenaManager {
         }
         pasteStructureAsync(sender, "lobby.schem", "Grand Event Spawn Lobby", LOBBY_ORIGIN_X, LOBBY_ORIGIN_Y, LOBBY_ORIGIN_Z, () ->
                 pasteStructureAsync(sender, "winner-podium.schem", "Champions Winner Podium", WINNER_ORIGIN_X, WINNER_ORIGIN_Y, WINNER_ORIGIN_Z, () -> {
+                    if (plugin instanceof ClasherEventsPlugin cep) {
+                        cep.refreshHolograms();
+                    }
                     pasteAllArenas(sender, inUseCheck);
                     if (sender instanceof Player admin && admin.isOnline()) {
                         admin.teleport(new Location(world, LOBBY_ORIGIN_X + 0.5, LOBBY_ORIGIN_Y + 2.0, LOBBY_ORIGIN_Z + 0.5, 180.0f, 0.0f));

@@ -36,6 +36,12 @@ final class DataStoreTest {
             assertTrue(delta.gained() > 0);
             store.recordWin(alice, "Alice");
             store.recordWin(alice, "Alice");
+            store.awardBonusElo(alice, "Alice", EloCalculator.BOUNTY_BONUS);
+            store.saveKitLayout(alice, "nethpot", java.util.Map.of(0, 4, 1, 8, 40, 2));
+            DataStore.ParkourResult pk = store.recordParkourTime(alice, "Alice", 14_250L);
+            assertTrue(pk.personalBest());
+            assertTrue(pk.serverRecord());
+            store.recordPodium("NethPot", "Alice", "Bob", "---", "Alice", 3);
             store.recordMatch("nethpot", "nethpot", "Alice", alice.toString(), System.currentTimeMillis() - 90_000L, Set.of(alice, bob), "Alice", 1);
 
             store.flush();
@@ -49,6 +55,11 @@ final class DataStoreTest {
                 assertEquals(2, aliceStats.winStreak());
                 assertEquals(2, aliceStats.bestStreak());
                 assertTrue(aliceStats.elo() > EloCalculator.DEFAULT_ELO);
+                assertEquals(14_250L, reloaded.parkourBestMs(alice));
+                assertEquals(java.util.Map.of(0, 4, 1, 8, 40, 2), reloaded.kitLayout(alice, "nethpot"));
+                assertEquals("Alice", reloaded.lastPodium().first());
+                assertEquals("Bob", reloaded.lastPodium().second());
+                assertNotNull(reloaded.findStatsByName("alice"));
 
                 DataStore.PlayerStats bobStats = reloaded.stats(bob);
                 assertEquals(0, bobStats.wins());

@@ -57,6 +57,8 @@ public final class ClasherEventsExpansion extends PlaceholderExpansion {
             case "alive" -> { return String.valueOf(events.alive().size()); }
             case "participants" -> { return String.valueOf(events.participants().size()); }
             case "countdown" -> { return String.valueOf(events.countdownRemaining()); }
+            case "last_winner" -> { return data.lastPodium().first(); }
+            case "parkour_record" -> { return data.parkourServerRecordFormatted(); }
             default -> {}
         }
 
@@ -74,9 +76,11 @@ public final class ClasherEventsExpansion extends PlaceholderExpansion {
             case "deaths" -> String.valueOf(s.deaths());
             case "kd" -> s.kdFormatted();
             case "elo" -> String.valueOf(s.elo());
+            case "rank" -> s.rankName();
             case "streak" -> String.valueOf(s.winStreak());
             case "best_streak" -> String.valueOf(s.bestStreak());
             case "points" -> String.valueOf(data.audiencePoints(player.getUniqueId()));
+            case "parkour_best" -> DataStore.formatParkourTime(data.parkourBestMs(player.getUniqueId()));
             default -> null;
         };
     }

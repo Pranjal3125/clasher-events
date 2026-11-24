@@ -17,6 +17,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.inventory.InventoryClickEvent;
+import org.bukkit.event.inventory.InventoryCloseEvent;
 import org.bukkit.event.inventory.InventoryDragEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemFlag;
@@ -27,6 +28,8 @@ import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -35,15 +38,23 @@ import java.util.UUID;
 /**
  * Secure InventoryHolder-based GUIs for admin controls, countdown selection,
  * pre-event mode voting, multi-tab Elo/Wins/Kills leaderboards, kit previews,
- * winner predictions, and spectator target selection.
+ * personal kit layout editor, winner predictions, and spectator target selection.
  */
 public final class EventGui implements Listener {
+    private static final class EditorSession {
+        final String kitId;
+        int selectedGuiSlot = -1;
+        EditorSession(String kitId) { this.kitId = kitId; }
+    }
+
     private final JavaPlugin plugin;
     private final ArenaManager arenas;
     private final EventManager events;
     private final KitManager kits;
     private final NamespacedKey actionKey;
     private final NamespacedKey valueKey;
+    private final NamespacedKey origSlotKey;
+    private final Map<UUID, EditorSession> editorSessions = new HashMap<>();
 
     public EventGui(JavaPlugin plugin, ArenaManager arenas, EventManager events, KitManager kits) {
         this.plugin = plugin;
@@ -52,6 +63,7 @@ public final class EventGui implements Listener {
         this.kits = kits;
         this.actionKey = new NamespacedKey(plugin, "ce-gui-action");
         this.valueKey = new NamespacedKey(plugin, "ce-gui-value");
+        this.origSlotKey = new NamespacedKey(plugin, "ce-kit-orig-slot");
     }
 
     // -------------------------------------------------------------------------
@@ -283,14 +295,88 @@ public final class EventGui implements Listener {
         for (int i = 0; i < 4; i++) {
             if (armor[i] != null) inv.setItem(i, armor[i]);
         }
+        ItemStack offhand = kits.buildOffhand(kit);
+        if (offhand != null) inv.setItem(4, offhand);
         ItemStack divider = pane(Material.GRAY_STAINED_GLASS_PANE);
-        for (int s = 4; s < 9; s++) inv.setItem(s, divider);
+        for (int s = (offhand != null ? 5 : 4); s < 9; s++) inv.setItem(s, divider);
 
         for (var entry : kits.buildItems(kit).entrySet()) {
             int slot = Math.min(53, 9 + Math.max(0, Math.min(35, entry.getKey())));
             inv.setItem(slot, entry.getValue());
         }
         viewer.openInventory(inv);
+    }
+
+    // -------------------------------------------------------------------------
+    // Personal Kit Layout Editor GUI (54 slots — click-to-swap, zero dupe risk!)
+    // -------------------------------------------------------------------------
+
+    public void openKitLayoutEditor(Player viewer, String kitId) {
+        YamlConfiguration kit = kits.get(kitId);
+        if (kit == null) {
+            viewer.sendMessage(FormatUtil.mm("<red>Unknown kit: " + FormatUtil.escape(kitId) + "</red>"));
+            return;
+        }
+        EventMenuHolder holder = new EventMenuHolder(EventMenuHolder.ViewType.KIT_EDITOR);
+        Inventory inv = Bukkit.createInventory(holder, 54,
+                FormatUtil.mm("<dark_gray>Kit Editor:</dark_gray> <gold><bold>" + FormatUtil.escape(kitId) + "</bold></gold>"));
+        holder.setInventory(inv);
+
+        // Top bar: Armor (0..3), Offhand (4), Instructions (5), Reset (6), Save (7), Close (8)
+        ItemStack[] armor = kits.buildArmor(kit);
+        for (int i = 0; i < 4; i++) {
+            if (armor[i] != null) inv.setItem(i, armor[i]);
+        }
+        inv.setItem(5, button(Material.BOOK, "<aqua><bold>How To Customize</bold></aqua>", List.of(
+                "<gray>1. Click any item slot to pick it up</gray>",
+                "<gray>2. Click a 2nd slot to <yellow>SWAP</yellow> them</gray>",
+                "<gray>3. Click <green>Save Layout</green> to lock it in!</gray>",
+                "",
+                "<yellow>Slot 5 (top):</yellow> <gray>Offhand</gray>",
+                "<yellow>Row 2:</yellow> <gray>Hotbar (1-9)</gray>",
+                "<yellow>Rows 3-5:</yellow> <gray>Main Inventory</gray>"
+        ), "noop", ""));
+        inv.setItem(6, button(Material.RED_DYE, "<red><bold>Reset Default</bold></red>",
+                List.of("<gray>Restore default slot order for this kit.</gray>"), "kit-reset", kitId));
+        inv.setItem(7, button(Material.LIME_WOOL, "<green><bold>Save Layout</bold></green>",
+                List.of("<gray>Save your custom hotbar & offhand order!</gray>"), "kit-save", kitId));
+        inv.setItem(8, button(Material.BARRIER, "<gray>Close</gray>", List.of(), "close", ""));
+
+        // Tag each item with its original default slot, then place using player's saved custom layout
+        Map<Integer, ItemStack> rawDefaults = kits.buildAllInventorySlots(kit);
+        Map<Integer, ItemStack> tagged = new LinkedHashMap<>();
+        for (Map.Entry<Integer, ItemStack> e : rawDefaults.entrySet()) {
+            ItemStack copy = e.getValue().clone();
+            ItemMeta meta = copy.getItemMeta();
+            if (meta != null) {
+                meta.getPersistentDataContainer().set(origSlotKey, PersistentDataType.INTEGER, e.getKey());
+                copy.setItemMeta(meta);
+            }
+            tagged.put(e.getKey(), copy);
+        }
+
+        Map<Integer, Integer> saved = events.data().kitLayout(viewer.getUniqueId(), kitId);
+        Map<Integer, ItemStack> arranged = KitManager.applyCustomLayout(tagged, saved);
+        for (Map.Entry<Integer, ItemStack> e : arranged.entrySet()) {
+            int invSlot = e.getKey();
+            int guiSlot = (invSlot == KitManager.OFFHAND_SLOT) ? 4 : (9 + invSlot);
+            if (guiSlot == 4 || (guiSlot >= 9 && guiSlot <= 44)) {
+                inv.setItem(guiSlot, e.getValue());
+            }
+        }
+        ItemStack bottomPane = pane(Material.BLACK_STAINED_GLASS_PANE);
+        for (int s = 45; s < 54; s++) inv.setItem(s, bottomPane);
+
+        editorSessions.put(viewer.getUniqueId(), new EditorSession(kitId));
+        viewer.openInventory(inv);
+    }
+
+    private static boolean isEditableKitGuiSlot(int guiSlot) {
+        return guiSlot == 4 || (guiSlot >= 9 && guiSlot <= 44);
+    }
+
+    private static int guiSlotToInvSlot(int guiSlot) {
+        return guiSlot == 4 ? KitManager.OFFHAND_SLOT : (guiSlot - 9);
     }
 
     // -------------------------------------------------------------------------
@@ -383,6 +469,10 @@ public final class EventGui implements Listener {
         if (!(event.getWhoClicked() instanceof Player player)) return;
         if (event.getClickedInventory() != event.getView().getTopInventory()) return;
         if (holder.viewType() == EventMenuHolder.ViewType.KIT_PREVIEW) return;
+        if (holder.viewType() == EventMenuHolder.ViewType.KIT_EDITOR) {
+            handleKitEditorClick(player, event.getView().getTopInventory(), event.getSlot());
+            return;
+        }
 
         ItemStack clicked = event.getCurrentItem();
         if (clicked == null || !clicked.hasItemMeta()) return;
@@ -482,6 +572,69 @@ public final class EventGui implements Listener {
     public void onDrag(InventoryDragEvent event) {
         if (event.getInventory().getHolder() instanceof EventMenuHolder) {
             event.setCancelled(true);
+        }
+    }
+
+    @EventHandler
+    public void onClose(InventoryCloseEvent event) {
+        if (event.getInventory().getHolder() instanceof EventMenuHolder holder
+                && holder.viewType() == EventMenuHolder.ViewType.KIT_EDITOR) {
+            editorSessions.remove(event.getPlayer().getUniqueId());
+        }
+    }
+
+    private void handleKitEditorClick(Player player, Inventory top, int slot) {
+        EditorSession session = editorSessions.get(player.getUniqueId());
+        if (session == null) return;
+
+        if (slot == 8) {
+            player.closeInventory();
+            return;
+        }
+        if (slot == 6) {
+            events.data().clearKitLayout(player.getUniqueId(), session.kitId);
+            player.playSound(player.getLocation(), Sound.UI_BUTTON_CLICK, 0.6f, 0.9f);
+            player.sendMessage(FormatUtil.mm("<yellow>Reset your custom layout for <gold>" + FormatUtil.escape(session.kitId) + "</gold> to defaults.</yellow>"));
+            openKitLayoutEditor(player, session.kitId);
+            return;
+        }
+        if (slot == 7) {
+            Map<Integer, Integer> layout = new LinkedHashMap<>();
+            for (int g = 4; g <= 44; g++) {
+                if (!isEditableKitGuiSlot(g)) continue;
+                ItemStack item = top.getItem(g);
+                if (item == null || !item.hasItemMeta()) continue;
+                Integer orig = item.getItemMeta().getPersistentDataContainer().get(origSlotKey, PersistentDataType.INTEGER);
+                if (orig != null) {
+                    layout.put(orig, guiSlotToInvSlot(g));
+                }
+            }
+            events.data().saveKitLayout(player.getUniqueId(), session.kitId, layout);
+            player.playSound(player.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 0.7f, 1.3f);
+            player.sendMessage(FormatUtil.mm("<green><bold>Saved!</bold></green> <gray>Your custom <gold>" + FormatUtil.escape(session.kitId)
+                    + "</gold> hotbar layout will be used automatically in events!</gray>"));
+            player.closeInventory();
+            return;
+        }
+        if (!isEditableKitGuiSlot(slot)) return;
+
+        if (session.selectedGuiSlot < 0) {
+            ItemStack picked = top.getItem(slot);
+            if (picked == null || picked.getType().isAir()) return;
+            session.selectedGuiSlot = slot;
+            player.playSound(player.getLocation(), Sound.UI_BUTTON_CLICK, 0.5f, 1.4f);
+            player.sendActionBar(FormatUtil.mm("<yellow>Selected slot — click a second slot to <green><bold>SWAP</bold></green>!</yellow>"));
+        } else {
+            int first = session.selectedGuiSlot;
+            session.selectedGuiSlot = -1;
+            if (first != slot) {
+                ItemStack a = top.getItem(first);
+                ItemStack b = top.getItem(slot);
+                top.setItem(first, b);
+                top.setItem(slot, a);
+                player.playSound(player.getLocation(), Sound.ITEM_ARMOR_EQUIP_GENERIC, 0.6f, 1.2f);
+                player.sendActionBar(FormatUtil.mm("<green>Swapped slots! Click <bold>Save Layout</bold> when done.</green>"));
+            }
         }
     }
 

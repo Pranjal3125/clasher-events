@@ -6,6 +6,7 @@ import network.clasher.events.command.EventCommands;
 import network.clasher.events.gui.EventGui;
 import network.clasher.events.hook.ClasherEventsExpansion;
 import network.clasher.events.hud.EventHudManager;
+import network.clasher.events.hud.HologramManager;
 import network.clasher.events.kit.KitManager;
 import network.clasher.events.match.EventManager;
 import network.clasher.events.notify.DiscordWebhookNotifier;
@@ -51,6 +52,7 @@ public final class ClasherEventsPlugin extends JavaPlugin {
     private KitManager kitManager;
     private EventManager eventManager;
     private EventScheduler scheduler;
+    private HologramManager holograms;
 
     @Override
     public void onEnable() {
@@ -70,9 +72,11 @@ public final class ClasherEventsPlugin extends JavaPlugin {
 
         ArenaBlockTracker blockTracker = new ArenaBlockTracker();
         EventHudManager hud = new EventHudManager(this);
+        this.holograms = new HologramManager(this, arenaManager, dataStore);
         DiscordWebhookNotifier discord = new DiscordWebhookNotifier(this);
 
         this.eventManager = new EventManager(this, arenaManager, kitManager, dataStore, blockTracker, hud, discord);
+        eventManager.setHolograms(holograms);
         EventGui eventGui = new EventGui(this, arenaManager, eventManager, kitManager);
         eventManager.setGui(eventGui);
         EventCommands commands = new EventCommands(this, arenaManager, kitManager, eventManager, eventGui);
@@ -86,6 +90,9 @@ public final class ClasherEventsPlugin extends JavaPlugin {
 
         this.scheduler = new EventScheduler(this, eventManager);
         scheduler.start();
+
+        // Spawn/refresh 3D Lobby & Winner Podium holograms cleanly on next tick once worlds settle
+        Bukkit.getScheduler().runTaskLater(this, this::refreshHolograms, 20L);
 
         if (Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI")) {
             try {
@@ -105,11 +112,24 @@ public final class ClasherEventsPlugin extends JavaPlugin {
         reloadConfig();
         if (arenaManager != null) arenaManager.load();
         if (kitManager != null) kitManager.load();
+        refreshHolograms();
+    }
+
+    public void refreshHolograms() {
+        if (holograms == null) return;
+        String status = null;
+        if (eventManager != null) {
+            if (eventManager.isEventOpen()) {
+                status = "<green>OPEN: " + eventManager.eventMode().displayName() + " (" + eventManager.participants().size() + " joined)</green>";
+            } else if (eventManager.isEventRunning()) {
+                status = "<red>LIVE: " + eventManager.eventMode().displayName() + " (" + eventManager.alive().size() + " alive)</red>";
+            }
+        }
+        holograms.refreshAll(status);
     }
 
     /**
-     * Re-extracts bundled schematics and arenas.yml from the plugin JAR (used by /ce setup refresh
-     * when upgrading from older Clasher Events versions to overwrite legacy arenas with v2.1 builds).
+     * Re-extracts bundled schematics and arenas.yml from the plugin JAR (used by /ce setup refresh).
      */
     public int refreshBundledArenasAndSchematics() {
         int count = 0;
@@ -126,6 +146,21 @@ public final class ClasherEventsPlugin extends JavaPlugin {
         return count;
     }
 
+    /**
+     * Re-extracts all 8 default competitive kits from the plugin JAR (used by /ce kit refresh-defaults).
+     */
+    public int refreshBundledKits() {
+        int count = 0;
+        for (String resource : BUNDLED_ASSETS) {
+            if (resource.startsWith("kits/")) {
+                saveResource(resource, true);
+                count++;
+            }
+        }
+        if (kitManager != null) kitManager.load();
+        return count;
+    }
+
     @Override
     public void onDisable() {
         if (scheduler != null) {
@@ -133,6 +168,9 @@ public final class ClasherEventsPlugin extends JavaPlugin {
         }
         if (eventManager != null) {
             eventManager.shutdown();
+        }
+        if (holograms != null) {
+            holograms.removeAll();
         }
         if (dataStore != null) {
             dataStore.flushAndShutdown();

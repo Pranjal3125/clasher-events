@@ -12,6 +12,7 @@ public final class EventMenuHolder implements InventoryHolder {
         ADMIN_MODES,
         COUNTDOWN,
         KIT_PREVIEW,
+        KIT_EDITOR,
         VOTE_PREDICTION,
         SPECTATE_FIGHTER,
         MODE_VOTE,

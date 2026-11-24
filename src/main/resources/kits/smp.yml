@@ -1,12 +1,20 @@
 name: SMP
-armor: {helmet: DIAMOND_HELMET, chestplate: DIAMOND_CHESTPLATE, leggings: DIAMOND_LEGGINGS, boots: DIAMOND_BOOTS}
+armor:
+  helmet: DIAMOND_HELMET
+  chestplate: DIAMOND_CHESTPLATE
+  leggings: DIAMOND_LEGGINGS
+  boots: DIAMOND_BOOTS
 enchantments: {protection: 4, unbreaking: 3}
 offhand: SHIELD
+offhand-enchants: {unbreaking: 3}
 items:
-  - {slot: 0, material: DIAMOND_SWORD, amount: 1, enchants: {sharpness: 5, fire_aspect: 2}}
-  - {slot: 1, material: DIAMOND_AXE, amount: 1, enchants: {sharpness: 4}}
-  - {slot: 2, material: BOW, amount: 1, enchants: {power: 4}}
-  - {slot: 3, material: ARROW, amount: 32}
-  - {slot: 4, material: GOLDEN_APPLE, amount: 16}
-  - {slot: 5, material: ENDER_PEARL, amount: 8}
-  - {slot: 6, material: COOKED_BEEF, amount: 32}
+  - {slot: 0, material: DIAMOND_SWORD, amount: 1, enchants: {sharpness: 5, fire_aspect: 2, unbreaking: 3}}
+  - {slot: 1, material: DIAMOND_AXE, amount: 1, enchants: {sharpness: 4, efficiency: 4, unbreaking: 3}}
+  - {slot: 2, material: BOW, amount: 1, enchants: {power: 4, unbreaking: 3}}
+  - {slot: 3, material: GOLDEN_APPLE, amount: 16}
+  - {slot: 4, material: ENDER_PEARL, amount: 12}
+  - {slot: 5, material: WATER_BUCKET, amount: 1}
+  - {slot: 6, material: COBBLESTONE, amount: 64}
+  - {slot: 7, material: DIAMOND_PICKAXE, amount: 1, enchants: {efficiency: 4, unbreaking: 3}}
+  - {slot: 8, material: COOKED_BEEF, amount: 32}
+  - {slot: 9, material: ARROW, amount: 32}
