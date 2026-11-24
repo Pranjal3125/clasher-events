@@ -90,6 +90,8 @@ public final class EventCommands implements CommandExecutor, TabCompleter {
             case "leave" -> {
                 if (events.warmupFfa() != null && events.warmupFfa().isInFfa(player.getUniqueId())) {
                     events.warmupFfa().leaveFfa(player, true);
+                } else if (events.casualDuels() != null && events.casualDuels().forfeitDuel(player)) {
+                    // Forfeited casual 1v1 or party duel cleanly
                 } else if (!events.isParticipant(player.getUniqueId())
                         && events.casualDuels() != null && events.casualDuels().queuedKitOf(player.getUniqueId()) != null) {
                     events.casualDuels().leaveQueue(player);

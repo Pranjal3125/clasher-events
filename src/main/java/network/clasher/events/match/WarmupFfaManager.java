@@ -139,7 +139,7 @@ public final class WarmupFfaManager implements Listener {
             player.sendMessage(FormatUtil.mm(PREFIX + "<red>Warmup FFA arena is not configured.</red>"));
             return;
         }
-        if (casualDuels != null) casualDuels.leaveQueue(player);
+        if (casualDuels != null) casualDuels.leaveQueueSilent(id);
 
         PlayerSnapshot snap = new PlayerSnapshot(player);
         snapshots.put(id, snap);

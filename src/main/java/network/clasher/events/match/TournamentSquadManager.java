@@ -671,6 +671,19 @@ public final class TournamentSquadManager {
     }
 
     /**
+     * Advances to the next round when the current round's queue is finished and >= 2 winners remain,
+     * so Parallel Rounds mode can also batch Round 2+ Quarterfinals cleanly (while keeping Semifinals/Grand Final Center-Stage!).
+     */
+    public boolean advanceRoundIfEmpty(Random rng) {
+        if (!bracketStarted || bo3PendingNextGame || currentTeamA != null) return false;
+        if (!matchQueue.isEmpty() || roundWinners.size() < 2) return false;
+        List<TournamentTeam> nextEntrants = new ArrayList<>(roundWinners);
+        currentRound++;
+        seedRound(nextEntrants, rng);
+        return true;
+    }
+
+    /**
      * Pops up to `maxConcurrent` early-round matchups when Parallel Rounds mode is enabled
      * and at least 2 matchups remain in the current round (Semifinals & Grand Finals stay Center-Stage!).
      */

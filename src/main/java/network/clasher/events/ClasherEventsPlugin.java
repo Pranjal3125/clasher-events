@@ -101,6 +101,7 @@ public final class ClasherEventsPlugin extends JavaPlugin {
         EventGui eventGui = new EventGui(this, arenaManager, eventManager, kitManager);
         eventManager.setGui(eventGui);
         this.lobbyNpcs = new LobbyNpcManager(this, arenaManager, eventManager, casualDuels, warmupFfa, eventGui);
+        eventManager.setLobbyNpcs(lobbyNpcs);
         EventCommands commands = new EventCommands(this, arenaManager, kitManager, eventManager, eventGui);
 
         registerCommand("ce", commands);

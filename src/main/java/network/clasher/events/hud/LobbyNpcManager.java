@@ -279,6 +279,7 @@ public final class LobbyNpcManager implements Listener {
 
     @EventHandler(priority = EventPriority.HIGH)
     public void onNpcInteract(PlayerInteractAtEntityEvent event) {
+        if (event.getHand() != EquipmentSlot.HAND) return;
         String id = event.getRightClicked().getPersistentDataContainer().get(npcKey, PersistentDataType.STRING);
         if (id == null) return;
         event.setCancelled(true);
@@ -300,6 +301,11 @@ public final class LobbyNpcManager implements Listener {
         if (event.getEntity().getPersistentDataContainer().has(npcKey, PersistentDataType.STRING)) {
             event.setCancelled(true);
         }
+    }
+
+    public boolean recentlyClickedNpc(UUID playerId) {
+        Long last = clickCooldown.get(playerId);
+        return last != null && (System.currentTimeMillis() - last) < 250L;
     }
 
     private void handleNpcClick(Player player, String npcId) {

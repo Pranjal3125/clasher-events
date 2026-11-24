@@ -359,13 +359,33 @@ public final class CasualDuelManager implements Listener {
         }
     }
 
-    private String leaveQueueSilent(UUID id) {
+    public String leaveQueueSilent(UUID id) {
         String kit = queuedKitByPlayer.remove(id);
         if (kit != null) {
             Deque<UUID> q = queueByKit.get(kit);
             if (q != null) q.remove(id);
         }
         return kit;
+    }
+
+    /**
+     * Cleanly forfeits an active casual 1v1 or Party duel when a player runs `/event leave`.
+     */
+    public boolean forfeitDuel(Player player) {
+        UUID id = player.getUniqueId();
+        ActiveDuel duel = activeByPlayer.get(id);
+        if (duel == null || duel.finishing) return false;
+        duel.aliveA.remove(id);
+        duel.aliveB.remove(id);
+        player.sendMessage(FormatUtil.mm(PREFIX + "<yellow>You forfeited the duel and returned to Lobby.</yellow>"));
+        if (!duel.aliveA.isEmpty() && !duel.aliveB.isEmpty()) {
+            // Party match still has teammates fighting: restore this leaver early
+            activeByPlayer.remove(id);
+            restoreDuelist(duel, player);
+        } else {
+            checkSideWin(duel);
+        }
+        return true;
     }
 
     private void clearAllQueues(String noticeMini) {
