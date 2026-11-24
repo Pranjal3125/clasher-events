@@ -1,20 +1,43 @@
 <div align="center">
 
-# Clasher Events `v2.5.0`
+# Clasher Events `v2.6.0`
 
 ### Zero-Dependency Pro Competitive PvP Tournament & Events Engine for Paper 26.2+
 
-A modular, tier-1 Minecraft PvP events engine built for **Clasher Network** — featuring **Esports Team Tournaments (`1v1 / 2v2 / 3v3 / 4v4`)** with a dedicated **Grand Esports Tournament Hall**, timed squad invites, auto-fill & **Best-of-3 Grand Finals**, **8 Dedicated 1v1 Duel Arenas (`duel-*`)**, a **Flagship Imperial Sky Citadel Main Lobby (`116×58×116`)**, **Interactive Voting GUIs** (Mode Vote, Tournament Kit Vote & Winner Prediction), a **Dynamic OP Admin Control Panel Wand**, **authentic MCTiers / Stray.gg / PvP Legacy synced kits**, **REAL WorldBorder damage + dynamic shrinking**, **5-layer Anti-Escape Containment**, **Personal Kit Layout Editor**, **flicker-free Adventure HUD**, **native Paper 3D `TextDisplay` Holograms**, **pure-Java Sponge `.schem` auto-pasting**, and **tick-batched rollback**.
+A modular, tier-1 Minecraft PvP events engine built for **Clasher Network** — featuring **Multi-Slot 1v1 Auto-Queue & Casual 2v2/3v3 Party Duels**, **Post-Duel Inventory & Combat Analytics Viewer**, **Always-Open Warmup FFA Pit**, **4 Live Clickable Lobby NPCs** (zero external plugin!), **Pro Spectator Hotbar + Host Auto-Cam**, **Event Modifiers / Mutators GUI**, **Anti-Stall Sudden Death & Damage Tie-Breaker**, **Esports Team Tournaments (`1v1 / 2v2 / 3v3 / 4v4`)** with Parallel Early Rounds, Discord Live Bracket Webhooks, Best-of-3 Grand Finals & a dedicated **Grand Esports Tournament Hall**, **8 Dedicated 1v1 Duel Arenas**, **Flagship Imperial Sky Citadel Main Lobby (`116×58×116`)**, **Interactive Voting GUIs**, **Dynamic OP Admin Panel Wand**, **authentic MCTiers / Stray.gg / PvP Legacy synced kits**, **REAL WorldBorder damage + dynamic shrinking**, **native Paper 3D `TextDisplay` Holograms**, **pure-Java Sponge `.schem` auto-pasting**, and **tick-batched rollback**.
 
 ![Java](https://img.shields.io/badge/Java-25-ED8B00?logo=openjdk&logoColor=white)
 ![Paper](https://img.shields.io/badge/Paper-26.2%2B-38bdf8)
 ![Dependencies](https://img.shields.io/badge/Required%20Deps-Zero-10b981)
-![Tests](https://img.shields.io/badge/JUnit%205-19%20Passing-brightgreen)
-![Release](https://img.shields.io/badge/Version-2.5.0-a855f7)
+![Tests](https://img.shields.io/badge/JUnit%205-22%20Passing-brightgreen)
+![Release](https://img.shields.io/badge/Version-2.6.0-a855f7)
 
 [Source](https://github.com/Pranjal3125/clasher-events) · [Releases](https://github.com/Pranjal3125/clasher-events/releases) · [Issues](https://github.com/Pranjal3125/clasher-events/issues)
 
 </div>
+
+---
+
+## What's New in v2.6.0 — 24/7 Practice Network, Lobby NPCs, Party Duels, Modifiers & Pro Spectating
+
+### 🎯 Multi-Slot 1v1 Auto-Queue + Casual 2v2/3v3 Party Duels + Post-Duel Inventory Viewer
+- **Multi-Slot Dynamic Duel Arena Allocation**: Up to **8 simultaneous same-kit 1v1 duels** run seamlessly across the dedicated `duel-*` arenas (zero "Arena Busy" wait!).
+- **1v1 Auto-Queue GUI (`/event queue` & Lobby NPC)**: Click any of the 8 kits to queue for instant matchmaking with live queue counts — auto-pauses cleanly whenever an Official Server Event opens.
+- **Casual Party System (`/event party`)**: Invite teammates (`/event party invite <p>`) for **2v2 / 3v3 / 4v4 Party vs Party Duels** (`/event party duel <opponent> [kit]`) or **Party Split Red vs Blue** (`/event party split [kit]`)!
+- **Post-Duel Inventory Viewer + Instant `[🔁 Rematch]` & `[⚔ Play Again]` + Live Ping HUD**:
+  - Live Duel Sidebar shows **`Your Ping vs Their Ping` (`28ms vs 41ms`)**, kit, timer & Sudden Death countdown.
+  - After every duel, click **`[🔍 Winner's Inv]`** / **`[🔍 Loser's Inv]`** to inspect remaining potions, totems, gapples, hits landed, crit %, longest combo & total damage dealt!
+
+### 🔥 Always-Open Warmup FFA Pit + 4 Native Clickable Lobby NPCs
+- **Warmup FFA Pit (`/event ffa`)**: Drop in anytime for nonstop PvP warmup — every kill gives instant **Full Heal + Fresh Kit Refill + Killstreak Hype**, and official Server Events automatically pause FFA & restore players to Lobby!
+- **4 Native Clickable Armored Lobby NPCs** (Zero Citizens/FancyNpcs required!): Standing in front of the Imperial Main Lobby spawn with live 3D status labels — **Official Event**, **1v1 Duel Queue**, **Warmup FFA Pit**, and **Leaderboards / Kit Layout Editor**!
+
+### ⚡ Event Modifiers, Pro Spectator Hotbar, Host Auto-Cam, Sudden Death & Rules Book Fix
+- **Display-Only Rules Book Fix**: Rules Book now displays virtually via `player.openBook(book)` **without ever placing an item in player inventory** — zero interference with any PvP kit or hotbar slot!
+- **Event Modifiers GUI (`/ce modifiers` & `/ce gui`)**: Stack fun competitive twists onto any event — **`Double Health (40 HP)`**, **`Vampire Lifesteal (25%)`**, **`Low Gravity`**, **`Speed Chaos`**, **`No Ender Pearls`**, and **`One-Hit Bow`**!
+- **Pro Spectator Hotbar + Host Auto-Cam (`/ce autocam`)**: Eliminated spectators get invisible flight mode + clickable hotbar (`Teleport Compass`, `Predict Winner`, `Live Bracket`, `Leaderboards`, `Leave`). Staff/streamers can toggle **`/ce autocam`** to auto-track live PvP fights every 4s!
+- **Anti-Stall Sudden Death & Damage Tie-Breaker**: Duels & Tournament matches running past `180s` automatically enter **Sudden Death** (`12×12` border + Glowing + 60s Damage Tie-Breaker)!
+- **Discord Live Tournament Bracket Webhooks + Parallel Early Rounds (`/ce tournament parallel`)**: Post live round matchups & results to Discord, and optionally run early 8–16 team rounds simultaneously across multiple arenas while keeping Semifinals & Best-of-3 Grand Finals Center-Stage!
 
 ---
 

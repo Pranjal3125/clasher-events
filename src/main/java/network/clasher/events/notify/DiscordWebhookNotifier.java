@@ -57,6 +57,30 @@ public final class DiscordWebhookNotifier {
         sendEmbedAsync(url, "🎉 Clasher Event Completed!", desc, 0x10B981);
     }
 
+    public void notifyTournamentRound(String formatLabel, String roundLabel, java.util.List<String> matchups) {
+        String url = webhookUrl();
+        if (!url.startsWith("https://")) return;
+        StringBuilder sb = new StringBuilder();
+        sb.append("**Format:** ").append(esc(formatLabel)).append(" • **").append(esc(roundLabel)).append("**\\n\\n");
+        for (int i = 0; i < Math.min(8, matchups.size()); i++) {
+            sb.append("⚔️ ").append(esc(matchups.get(i))).append("\\n");
+        }
+        if (matchups.size() > 8) {
+            sb.append("... and ").append(matchups.size() - 8).append(" more matchups!");
+        }
+        sendEmbedAsync(url, "🏆 Tournament Bracket — " + roundLabel, sb.toString(), 0xA855F7);
+    }
+
+    public void notifyTournamentMatchResult(String formatLabel, String seriesBadge, String winnerName, String loserName, String scoreNote) {
+        String url = webhookUrl();
+        if (!url.startsWith("https://")) return;
+        String desc = "🏆 **Winner:** " + esc(winnerName) + "\\n"
+                + "💀 **Defeated:** " + esc(loserName) + "\\n"
+                + "📊 **Match:** " + esc(formatLabel + " • " + seriesBadge)
+                + (scoreNote != null && !scoreNote.isBlank() ? "\\n🔥 **" + esc(scoreNote) + "**" : "");
+        sendEmbedAsync(url, "⚔️ Tournament Match Result", desc, 0x3B82F6);
+    }
+
     private void sendEmbedAsync(String url, String title, String description, int color) {
         String json = "{"
                 + "\"username\":\"Clasher Events\","
@@ -65,7 +89,7 @@ public final class DiscordWebhookNotifier {
                 + "\"description\":\"" + description + "\","
                 + "\"color\":" + color + ","
                 + "\"timestamp\":\"" + Instant.now() + "\","
-                + "\"footer\":{\"text\":\"Clasher Network • Clasher Events v2.0\"}"
+                + "\"footer\":{\"text\":\"Clasher Network • Clasher Events v2.6\"}"
                 + "}]"
                 + "}";
         try {
@@ -73,7 +97,7 @@ public final class DiscordWebhookNotifier {
                     .uri(URI.create(url))
                     .timeout(Duration.ofSeconds(8))
                     .header("Content-Type", "application/json")
-                    .header("User-Agent", "ClasherEvents/2.0")
+                    .header("User-Agent", "ClasherEvents/2.6")
                     .POST(HttpRequest.BodyPublishers.ofString(json))
                     .build();
             httpClient.sendAsync(req, HttpResponse.BodyHandlers.discarding())

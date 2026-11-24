@@ -13,6 +13,7 @@ import network.clasher.events.hud.HologramManager;
 import network.clasher.events.kit.KitManager;
 import network.clasher.events.model.Arena;
 import network.clasher.events.model.EventMode;
+import network.clasher.events.model.EventModifier;
 import network.clasher.events.model.PlayerSnapshot;
 import network.clasher.events.notify.DiscordWebhookNotifier;
 import network.clasher.events.stats.EloCalculator;
@@ -123,6 +124,34 @@ public final class EventManager implements Listener {
     private EventGui gui;
     private HologramManager holograms;
     private CasualDuelManager casualDuels;
+    private WarmupFfaManager warmupFfa;
+
+    private static final class ParallelMatch {
+        final String arenaId;
+        final TournamentSquadManager.TournamentTeam teamA;
+        final TournamentSquadManager.TournamentTeam teamB;
+        final Set<UUID> aliveA = new LinkedHashSet<>();
+        final Set<UUID> aliveB = new LinkedHashSet<>();
+        final ArenaBlockTracker tracker = new ArenaBlockTracker();
+        boolean finished;
+
+        ParallelMatch(String arenaId, TournamentSquadManager.TournamentTeam a, TournamentSquadManager.TournamentTeam b) {
+            this.arenaId = arenaId;
+            this.teamA = a;
+            this.teamB = b;
+        }
+    }
+
+    private final Set<EventModifier> activeModifiers = EnumSet.noneOf(EventModifier.class);
+    private final Set<UUID> autoCamHosts = new HashSet<>();
+    private Location lastHotFightLocation;
+    private long lastAutoCamAtMs;
+    private long tournamentMatchStartedAtMs;
+    private boolean tournamentSuddenDeathActive;
+    private long tournamentSdStartedMs;
+    private final Map<UUID, Double> tournamentMatchDamage = new HashMap<>();
+    private final List<ParallelMatch> activeParallelMatches = new ArrayList<>();
+    private final Map<UUID, ParallelMatch> parallelByPlayer = new HashMap<>();
 
     private final Set<UUID> participants = new LinkedHashSet<>();
     private final Set<UUID> alive = new LinkedHashSet<>();
@@ -226,6 +255,143 @@ public final class EventManager implements Listener {
 
     public CasualDuelManager casualDuels() {
         return casualDuels;
+    }
+
+    public void setWarmupFfa(WarmupFfaManager warmupFfa) {
+        this.warmupFfa = warmupFfa;
+    }
+
+    public WarmupFfaManager warmupFfa() {
+        return warmupFfa;
+    }
+
+    public Set<EventModifier> activeModifiers() {
+        return Collections.unmodifiableSet(activeModifiers);
+    }
+
+    public boolean hasModifier(EventModifier modifier) {
+        return activeModifiers.contains(modifier);
+    }
+
+    public boolean toggleModifier(EventModifier modifier) {
+        if (activeModifiers.contains(modifier)) {
+            activeModifiers.remove(modifier);
+            return false;
+        }
+        activeModifiers.add(modifier);
+        return true;
+    }
+
+    public void clearModifiers() {
+        activeModifiers.clear();
+    }
+
+    public String modifiersSummary() {
+        if (activeModifiers.isEmpty()) return "None";
+        List<String> names = new ArrayList<>();
+        for (EventModifier m : activeModifiers) names.add(m.displayName());
+        return String.join(", ", names);
+    }
+
+    public boolean isAutoCamEnabled(UUID id) {
+        return autoCamHosts.contains(id);
+    }
+
+    public boolean toggleAutoCam(Player host) {
+        UUID id = host.getUniqueId();
+        if (autoCamHosts.remove(id)) {
+            host.sendMessage(FormatUtil.mm(PREFIX + "<yellow>Host Auto-Cam <red>DISABLED</red>.</yellow>"));
+            return false;
+        }
+        autoCamHosts.add(id);
+        host.sendMessage(FormatUtil.mm(PREFIX + "<green><bold>🎥 HOST AUTO-CAM ENABLED!</bold></green> <gray>Your camera will automatically track the hottest live PvP fights every 4s!</gray>"));
+        return true;
+    }
+
+    public void adminSetParallelRounds(CommandSender sender, boolean enabled) {
+        squads.setParallelRounds(enabled);
+        plugin.getConfig().set("tournament.parallel-rounds", enabled);
+        plugin.saveConfig();
+        broadcast("<gold>Tournament Early Rounds Mode:</gold> "
+                + (enabled ? "<aqua><bold>PARALLEL (Fast Multi-Arena Early Rounds!)</bold></aqua>" : "<yellow><bold>CENTER-STAGE (1 Match at a Time)</bold></yellow>"));
+    }
+
+    private String arenaIdForPlayer(UUID id) {
+        ParallelMatch pm = parallelByPlayer.get(id);
+        return pm != null ? pm.arenaId : selectedArena;
+    }
+
+    private void applyModifiersToFighter(Player p) {
+        if (p == null) return;
+        AttributeInstance maxHp = p.getAttribute(Attribute.MAX_HEALTH);
+        if (maxHp != null) {
+            double target = hasModifier(EventModifier.DOUBLE_HP) ? 40.0 : 20.0;
+            maxHp.setBaseValue(target);
+            p.setHealth(target);
+        }
+        if (hasModifier(EventModifier.LOW_GRAVITY)) {
+            p.addPotionEffect(new PotionEffect(PotionEffectType.JUMP_BOOST, 20 * 600, 2, false, false, true));
+        }
+        if (hasModifier(EventModifier.SPEED_CHAOS)) {
+            p.addPotionEffect(new PotionEffect(PotionEffectType.SPEED, 20 * 600, 1, false, false, true));
+        }
+    }
+
+    private void clearModifiersOnPlayer(Player p) {
+        if (p == null) return;
+        AttributeInstance maxHp = p.getAttribute(Attribute.MAX_HEALTH);
+        if (maxHp != null && maxHp.getBaseValue() != 20.0) {
+            maxHp.setBaseValue(20.0);
+            if (!p.isDead() && p.getHealth() > 20.0) p.setHealth(20.0);
+        }
+    }
+
+    /**
+     * Pro Hypixel/Minemen Spectator Mode: invisible to alive fighters, flying Adventure mode,
+     * indestructible/non-collidable, with clickable Spectator Hotbar (Compass TP, Predict Winner, Bracket, Leave)!
+     */
+    private void enterProSpectatorMode(Player p, Location dest) {
+        if (p == null || !p.isOnline()) return;
+        clearModifiersOnPlayer(p);
+        p.setFireTicks(0);
+        p.setFallDistance(0f);
+        p.getInventory().clear();
+        p.setGameMode(GameMode.ADVENTURE);
+        p.setAllowFlight(true);
+        p.setFlying(true);
+        p.setInvulnerable(true);
+        p.setCollidable(false);
+        for (UUID fid : alive) {
+            Player fighter = Bukkit.getPlayer(fid);
+            if (fighter != null && !fighter.equals(p)) {
+                fighter.hidePlayer(plugin, p);
+            }
+        }
+        if (dest != null) p.teleport(dest);
+        giveSpectatorHotbar(p);
+    }
+
+    private void exitProSpectatorMode(Player p) {
+        if (p == null) return;
+        p.setInvulnerable(false);
+        p.setCollidable(true);
+        if (p.getGameMode() == GameMode.ADVENTURE || p.getGameMode() == GameMode.SURVIVAL) {
+            p.setFlying(false);
+            p.setAllowFlight(false);
+        }
+        for (Player online : Bukkit.getOnlinePlayers()) {
+            if (!online.equals(p)) online.showPlayer(plugin, p);
+        }
+    }
+
+    private void giveSpectatorHotbar(Player p) {
+        p.getInventory().setItem(0, lobbyHotbarItem(Material.COMPASS, "<aqua><bold>Teleport to Fighter</bold></aqua> <gray>(Right-Click)</gray>", "spec-tp"));
+        p.getInventory().setItem(4, lobbyHotbarItem(Material.GOLD_INGOT, "<gold><bold>Predict Winner</bold></gold> <gray>(Right-Click)</gray>", "spec-vote"));
+        if (eventMode == EventMode.TOURNAMENT) {
+            p.getInventory().setItem(6, lobbyHotbarItem(Material.FILLED_MAP, "<yellow><bold>Live Bracket</bold></yellow> <gray>(Right-Click)</gray>", "bracket-viewer"));
+        }
+        p.getInventory().setItem(7, lobbyHotbarItem(Material.NETHER_STAR, "<gold><bold>Leaderboards</bold></gold> <gray>(Right-Click)</gray>", "leaderboard"));
+        p.getInventory().setItem(8, lobbyHotbarItem(Material.RED_BED, "<red><bold>Leave Event</bold></red> <gray>(Right-Click)</gray>", "leave"));
     }
 
     public TournamentSquadManager squads() {
@@ -442,6 +608,7 @@ public final class EventManager implements Listener {
             return;
         }
         if (casualDuels != null) casualDuels.forceEndAllForOfficialEvent();
+        if (warmupFfa != null) warmupFfa.forceEndAllForOfficialEvent();
         cancelModeVote();
         modeVotes.clear();
         modeVoteOpen = true;
@@ -628,6 +795,7 @@ public final class EventManager implements Listener {
             return;
         }
         if (casualDuels != null) casualDuels.forceEndAllForOfficialEvent();
+        if (warmupFfa != null) warmupFfa.forceEndAllForOfficialEvent();
         cancelModeVote();
         stopEvent("Replaced by a new event");
         eventMode = parsed.get();
@@ -656,6 +824,7 @@ public final class EventManager implements Listener {
             int chosenSize = teamSizeOverride != null ? teamSizeOverride : defaultSize;
             boolean bo3 = plugin.getConfig().getBoolean("tournament.bo3-finals", true);
             squads.reset(chosenSize, bo3);
+            squads.setParallelRounds(plugin.getConfig().getBoolean("tournament.parallel-rounds", false));
             selectedArena = (squads.teamSize() == 1) ? arenaManager.duelArenaId(selectedKit) : selectedKit;
         } else if (eventMode == EventMode.DUEL) {
             selectedArena = arenaManager.duelArenaId(selectedKit);
@@ -706,6 +875,9 @@ public final class EventManager implements Listener {
         if (eventMode == EventMode.TOURNAMENT && squads.isTeamMode()) {
             broadcast("<aqua>Grand Tournament Hall is open!</aqua> <gray>Join now and form your <gold>" + squads.formatLabel()
                     + " squad</gold> with <yellow>/event squad invite <player></yellow> before the timer ends!</gray>");
+        }
+        if (!activeModifiers.isEmpty()) {
+            broadcast("<light_purple><bold>⚡ ACTIVE MODIFIERS:</bold></light_purple> <yellow>" + FormatUtil.escape(modifiersSummary()) + "</yellow>");
         }
         discord.notifyEventOpen(modeHeadline, arenaLabel, countdownRemaining);
         refreshHologramsSafe();
@@ -958,6 +1130,7 @@ public final class EventManager implements Listener {
                 arenaManager.addArenaBuilder(selectedArena, id);
             }
             fighter.setGameMode(GameMode.SURVIVAL);
+            exitProSpectatorMode(fighter);
             resetVitals(fighter);
             fighter.teleport(points.get(index++ % points.size()));
             lastMovementAt.put(id, System.currentTimeMillis());
@@ -966,6 +1139,7 @@ public final class EventManager implements Listener {
                 giveKitWithPlayerLayout(fighter, selectedKit);
                 kitDelivered.add(id);
             }
+            applyModifiersToFighter(fighter);
         }
         if (eventMode == EventMode.TEAM_WARS) assignTeams();
         applyPhaseBorder(phase);
@@ -990,6 +1164,20 @@ public final class EventManager implements Listener {
         if (!eventOpen && !eventRunning && !celebrating && participants.isEmpty() && snapshots.isEmpty()) return;
 
         String arenaToClean = selectedArena;
+        // Roll back any active parallel early-round arenas cleanly too
+        for (ParallelMatch pm : new ArrayList<>(activeParallelMatches)) {
+            arenaManager.setArenaBuildAllowed(pm.arenaId, false);
+            if (immediateShutdown) pm.tracker.rollbackImmediate();
+            else pm.tracker.rollbackBatched(plugin, Math.max(100, plugin.getConfig().getInt("arenas.rollback-blocks-per-tick", 300)),
+                    () -> arenaManager.clearArenaEntities(pm.arenaId));
+        }
+        activeParallelMatches.clear();
+        parallelByPlayer.clear();
+        autoCamHosts.clear();
+        lastHotFightLocation = null;
+        tournamentSuddenDeathActive = false;
+        tournamentMatchDamage.clear();
+
         restoreAllPlayers();
         hud.clearAll();
         arenaManager.setArenaBuildAllowed(arenaToClean, false);
@@ -1072,6 +1260,9 @@ public final class EventManager implements Listener {
             player.sendMessage(FormatUtil.mm(PREFIX + "<yellow>You are already registered for this event!</yellow>"));
             return;
         }
+        if (warmupFfa != null && warmupFfa.isInFfa(player.getUniqueId())) {
+            warmupFfa.leaveFfa(player, false);
+        }
         if (eventMode == EventMode.TOURNAMENT) {
             squads.registerPlayer(player.getUniqueId(), player.getName());
         }
@@ -1145,6 +1336,9 @@ public final class EventManager implements Listener {
         if (dc != null) dc.cancel();
 
         clearPlayerBorder(player);
+        clearModifiersOnPlayer(player);
+        exitProSpectatorMode(player);
+        autoCamHosts.remove(id);
         hud.clearForPlayer(player);
         PlayerSnapshot snapshot = snapshots.remove(id);
         if (snapshot != null) {
@@ -1203,6 +1397,7 @@ public final class EventManager implements Listener {
         removeRulesBooks(target);
         giveKitWithPlayerLayout(target, selectedKit);
         kitDelivered.add(id);
+        applyModifiersToFighter(target);
         applyCurrentBorderToPlayer(target); // Preserves everyone else's active shrink!
         playCue(target, "kit");
         sender.sendMessage(FormatUtil.mm("<green>" + FormatUtil.escape(target.getName()) + " late-joined the event.</green>"));
@@ -1756,25 +1951,52 @@ public final class EventManager implements Listener {
             if (p != null) {
                 snapshotIfNeeded(p);
                 removeRulesBooks(p);
-                p.getInventory().clear();
-                p.setGameMode(GameMode.SPECTATOR);
-                if (audLoc != null) p.teleport(audLoc);
                 spectators.add(id);
+                enterProSpectatorMode(p, audLoc);
             }
         }
 
         broadcast("<gold><bold>⚔ " + squads.formatLabel().toUpperCase(Locale.ROOT) + " TOURNAMENT BEGINS! ⚔</bold></gold> <yellow>"
-                + teamCount + " squads competing" + (squads.isBo3Finals() ? " • Best-of-3 Grand Finals!" : "") + "</yellow>");
+                + teamCount + " squads competing" + (squads.isBo3Finals() ? " • Best-of-3 Grand Finals!" : "")
+                + (squads.isParallelRounds() ? " • Fast Parallel Early Rounds!" : "") + "</yellow>");
         if (squads.lastByeTeam() != null) {
             broadcast("<aqua>Bye Round:</aqua> <gold><bold>" + FormatUtil.escape(squads.lastByeTeam().name())
                     + "</bold></gold> <gray>advances automatically to Round 2!</gray>");
         }
+        sendTournamentRoundWebhook("Round 1");
         refreshHologramsSafe();
         startNextTournamentMatch();
     }
 
+    private void sendTournamentRoundWebhook(String roundLabel) {
+        List<String> lines = new ArrayList<>();
+        for (TournamentSquadManager.MatchPair mp : squads.upcomingMatchups()) {
+            lines.add(mp.teamA().name() + " vs " + mp.teamB().name());
+        }
+        if (squads.lastByeTeam() != null) {
+            lines.add("Bye: " + squads.lastByeTeam().name());
+        }
+        if (!lines.isEmpty()) {
+            discord.notifyTournamentRound(squads.formatLabel().toUpperCase(Locale.ROOT) + " " + selectedKit, roundLabel, lines);
+        }
+    }
+
     private void startNextTournamentMatch() {
         if (!eventRunning || eventMode != EventMode.TOURNAMENT || celebrating) return;
+        if (!activeParallelMatches.isEmpty()) return; // Wait for parallel batch to finish first!
+
+        // Fast Parallel Early Rounds when enabled & 2+ matchups queued in the same round!
+        if (squads.isParallelRounds() && squads.upcomingMatchups().size() >= 2) {
+            List<String> freeArenas = collectParallelTournamentArenas();
+            if (freeArenas.size() >= 2) {
+                List<TournamentSquadManager.MatchPair> batch = squads.pollParallelBatch(Math.min(4, freeArenas.size()));
+                if (batch.size() >= 2) {
+                    launchParallelTournamentBatch(batch, freeArenas);
+                    return;
+                }
+            }
+        }
+
         int prevRound = squads.currentRound();
         TournamentSquadManager.ActiveMatchup match = squads.nextMatchup(random);
         if (match == null) {
@@ -1790,6 +2012,13 @@ public final class EventManager implements Listener {
             if (squads.lastByeTeam() != null) {
                 broadcast("<aqua>Bye:</aqua> <gold>" + FormatUtil.escape(squads.lastByeTeam().name()) + "</gold> <gray>advances!</gray>");
             }
+            List<String> roundLines = new ArrayList<>();
+            roundLines.add(match.teamA().name() + " vs " + match.teamB().name());
+            for (TournamentSquadManager.MatchPair mp : squads.upcomingMatchups()) {
+                roundLines.add(mp.teamA().name() + " vs " + mp.teamB().name());
+            }
+            discord.notifyTournamentRound(squads.formatLabel().toUpperCase(Locale.ROOT) + " " + selectedKit,
+                    match.grandFinal() ? "GRAND FINAL" : "Round " + match.round(), roundLines);
         }
 
         List<Player> teamAPlayers = onlineMembers(match.teamA());
@@ -1814,10 +2043,14 @@ public final class EventManager implements Listener {
 
         alive.clear();
         teams.clear();
+        tournamentMatchDamage.clear();
+        tournamentSuddenDeathActive = false;
+        tournamentMatchStartedAtMs = System.currentTimeMillis();
+
         Location spawnA = points.get(0);
         Location spawnB = points.get(1);
-        prepareTournamentSide(teamAPlayers, 1, spawnA, arena);
-        prepareTournamentSide(teamBPlayers, 2, spawnB, arena);
+        prepareTournamentSide(teamAPlayers, 1, spawnA, arena, selectedArena);
+        prepareTournamentSide(teamBPlayers, 2, spawnB, arena, selectedArena);
 
         Location audLoc = arena != null ? arenaManager.firstSpawn(arena, "audience") : null;
         for (UUID id : participants) {
@@ -1825,10 +2058,7 @@ public final class EventManager implements Listener {
                 spectators.add(id);
                 Player spec = Bukkit.getPlayer(id);
                 if (spec != null) {
-                    spec.setGameMode(GameMode.SPECTATOR);
-                    if (audLoc != null && !spec.getWorld().equals(audLoc.getWorld())) {
-                        spec.teleport(audLoc);
-                    }
+                    enterProSpectatorMode(spec, (audLoc != null && !spec.getWorld().equals(audLoc.getWorld())) ? audLoc : null);
                 }
             }
         }
@@ -1847,6 +2077,113 @@ public final class EventManager implements Listener {
         refreshHologramsSafe();
     }
 
+    private List<String> collectParallelTournamentArenas() {
+        List<String> pool = new ArrayList<>();
+        pool.add(selectedArena);
+        List<String> candidates = squads.isTeamMode() ? arenaManager.mainArenaIds() : arenaManager.duelArenaIds();
+        for (String id : candidates) {
+            if (!pool.contains(id)) pool.add(id);
+        }
+        return pool;
+    }
+
+    private void launchParallelTournamentBatch(List<TournamentSquadManager.MatchPair> batch, List<String> arenaPool) {
+        alive.clear();
+        teams.clear();
+        activeParallelMatches.clear();
+        parallelByPlayer.clear();
+        tournamentMatchDamage.clear();
+        tournamentSuddenDeathActive = false;
+        tournamentMatchStartedAtMs = System.currentTimeMillis();
+
+        StringBuilder summary = new StringBuilder();
+        for (int i = 0; i < batch.size() && i < arenaPool.size(); i++) {
+            TournamentSquadManager.MatchPair mp = batch.get(i);
+            String aId = arenaPool.get(i);
+            Arena a = arenaManager.get(aId);
+            if (a == null) continue;
+            List<Location> pts = arenaManager.spawns(a, "final");
+            if (pts.size() < 2) continue;
+
+            List<Player> pA = onlineMembers(mp.teamA());
+            List<Player> pB = onlineMembers(mp.teamB());
+            if (pA.isEmpty() || pB.isEmpty()) {
+                if (!pA.isEmpty()) squads.recordParallelWinner(mp.teamA(), mp.teamB());
+                else if (!pB.isEmpty()) squads.recordParallelWinner(mp.teamB(), mp.teamA());
+                continue;
+            }
+
+            ParallelMatch pm = new ParallelMatch(aId, mp.teamA(), mp.teamB());
+            pm.tracker.startTracking(arenaManager.sharedWorldName(), a);
+            arenaManager.setArenaBuildAllowed(aId, isDestructibleCurrentMatch());
+            activeParallelMatches.add(pm);
+
+            for (Player p : pA) { pm.aliveA.add(p.getUniqueId()); parallelByPlayer.put(p.getUniqueId(), pm); }
+            for (Player p : pB) { pm.aliveB.add(p.getUniqueId()); parallelByPlayer.put(p.getUniqueId(), pm); }
+
+            final List<Player> fA = pA;
+            final List<Player> fB = pB;
+            final List<Location> fPts = pts;
+            arenaManager.ensureArenaReady(aId, null, () -> {
+                if (!eventRunning || pm.finished) return;
+                prepareTournamentSide(fA, 1, fPts.get(0), a, aId);
+                prepareTournamentSide(fB, 2, fPts.get(1), a, aId);
+            });
+            if (summary.length() > 0) summary.append(" <dark_gray>|</dark_gray> ");
+            summary.append("<red>").append(FormatUtil.escape(mp.teamA().name())).append("</red> <gray>vs</gray> <blue>")
+                    .append(FormatUtil.escape(mp.teamB().name())).append("</blue>");
+        }
+
+        if (activeParallelMatches.isEmpty()) {
+            Bukkit.getScheduler().runTaskLater(plugin, this::startNextTournamentMatch, 20L);
+            return;
+        }
+        startGracePeriod(alive, "Parallel Round " + squads.currentRound());
+        broadcast("<aqua><bold>⚡ PARALLEL ROUND " + squads.currentRound() + " (" + activeParallelMatches.size() + " Matches Live!)</bold></aqua> — " + summary);
+        refreshHologramsSafe();
+    }
+
+    private void checkParallelMatchEnd(ParallelMatch pm) {
+        if (pm == null || pm.finished || !eventRunning) return;
+        if (!pm.aliveA.isEmpty() && !pm.aliveB.isEmpty()) return;
+        pm.finished = true;
+        activeParallelMatches.remove(pm);
+
+        TournamentSquadManager.TournamentTeam winner = !pm.aliveA.isEmpty() ? pm.teamA : (!pm.aliveB.isEmpty() ? pm.teamB : null);
+        TournamentSquadManager.TournamentTeam loser = (winner == pm.teamA) ? pm.teamB : pm.teamA;
+        squads.recordParallelWinner(winner, loser);
+
+        Arena mainArena = arenaManager.get(selectedArena);
+        Location audLoc = mainArena != null ? arenaManager.firstSpawn(mainArena, "audience") : null;
+        Set<UUID> all = new LinkedHashSet<>(pm.teamA.members());
+        all.addAll(pm.teamB.members());
+        for (UUID id : all) {
+            alive.remove(id);
+            teams.remove(id);
+            parallelByPlayer.remove(id);
+            spectators.add(id);
+            Player p = Bukkit.getPlayer(id);
+            if (p != null) {
+                clearPlayerBorder(p);
+                enterProSpectatorMode(p, audLoc);
+            }
+        }
+        arenaManager.setArenaBuildAllowed(pm.arenaId, false);
+        pm.tracker.rollbackBatched(plugin, Math.max(100, plugin.getConfig().getInt("arenas.rollback-blocks-per-tick", 300)),
+                () -> arenaManager.clearArenaEntities(pm.arenaId));
+
+        if (winner != null) {
+            broadcast("<yellow><bold>" + FormatUtil.escape(winner.name()) + "</bold></yellow> <green>defeated</green> <gray>"
+                    + FormatUtil.escape(loser.name()) + "</gray> <green>in Parallel Round " + squads.currentRound() + "!</green>");
+            discord.notifyTournamentMatchResult(squads.formatLabel().toUpperCase(Locale.ROOT),
+                    "Round " + squads.currentRound(), winner.name(), loser.name(), "Parallel Bracket");
+        }
+        refreshHologramsSafe();
+        if (activeParallelMatches.isEmpty()) {
+            Bukkit.getScheduler().runTaskLater(plugin, this::startNextTournamentMatch, 50L);
+        }
+    }
+
     private List<Player> onlineMembers(TournamentSquadManager.TournamentTeam team) {
         List<Player> out = new ArrayList<>();
         for (UUID m : team.members()) {
@@ -1856,7 +2193,7 @@ public final class EventManager implements Listener {
         return out;
     }
 
-    private void prepareTournamentSide(List<Player> sidePlayers, int sideNum, Location baseSpawn, Arena arena) {
+    private void prepareTournamentSide(List<Player> sidePlayers, int sideNum, Location baseSpawn, Arena arena, String targetArenaId) {
         int count = sidePlayers.size();
         for (int i = 0; i < count; i++) {
             Player p = sidePlayers.get(i);
@@ -1864,8 +2201,9 @@ public final class EventManager implements Listener {
             alive.add(id);
             teams.put(id, sideNum);
             spectators.remove(id);
+            exitProSpectatorMode(p);
             if (isDestructibleCurrentMatch()) {
-                arenaManager.addArenaBuilder(selectedArena, id);
+                arenaManager.addArenaBuilder(targetArenaId, id);
             }
             p.setGameMode(GameMode.SURVIVAL);
             resetVitals(p);
@@ -1881,11 +2219,21 @@ public final class EventManager implements Listener {
             lastMovementAt.put(id, System.currentTimeMillis());
             removeRulesBooks(p);
             giveKitWithPlayerLayout(p, selectedKit);
+            applyModifiersToFighter(p);
         }
     }
 
     private void checkTournamentMatchEnd() {
         if (!eventRunning || eventMode != EventMode.TOURNAMENT || celebrating) return;
+        // Check any active parallel matches first!
+        if (!activeParallelMatches.isEmpty()) {
+            for (ParallelMatch pm : new ArrayList<>(activeParallelMatches)) {
+                pm.aliveA.removeIf(uid -> !alive.contains(uid));
+                pm.aliveB.removeIf(uid -> !alive.contains(uid));
+                checkParallelMatchEnd(pm);
+            }
+            return;
+        }
         TournamentSquadManager.ActiveMatchup match = squads.currentMatchup();
         if (match == null) return;
         int aliveA = 0;
@@ -1906,6 +2254,7 @@ public final class EventManager implements Listener {
         TournamentSquadManager.ActiveMatchup active = squads.currentMatchup();
         if (active == null) return;
         cancelGrace();
+        tournamentSuddenDeathActive = false;
 
         // Move active fighters back to spectator gallery & clear their borders
         Arena arena = arenaManager.get(selectedArena);
@@ -1917,8 +2266,7 @@ public final class EventManager implements Listener {
             Player p = Bukkit.getPlayer(id);
             if (p != null) {
                 clearPlayerBorder(p);
-                p.setGameMode(GameMode.SPECTATOR);
-                if (audLoc != null) p.teleport(audLoc);
+                enterProSpectatorMode(p, audLoc);
             }
             spectators.add(id);
         }
@@ -1927,6 +2275,13 @@ public final class EventManager implements Listener {
 
         TournamentSquadManager.MatchResult res = squads.recordMatchWinner(winningTeamId);
         refreshHologramsSafe();
+
+        if (res.winner() != null && res.loser() != null) {
+            String scoreNote = res.grandFinal() && squads.isBo3Finals()
+                    ? ("Bo3 Series: " + res.winsA() + "-" + res.winsB()) : "";
+            discord.notifyTournamentMatchResult(squads.formatLabel().toUpperCase(Locale.ROOT),
+                    active.seriesBadge(), res.winner().name(), res.loser().name(), scoreNote);
+        }
 
         if (res.outcome() == TournamentSquadManager.MatchOutcome.TOURNAMENT_CHAMPION && res.winner() != null) {
             finishTournamentChampion(res.winner());
@@ -2152,6 +2507,14 @@ public final class EventManager implements Listener {
     }
 
     private void scheduleCelebrationAndFinish(List<Player> celebratePlayers, String stopReason) {
+        // Reveal all spectators & clear spectator flight so everyone celebrates visibly together at Winner Podium!
+        for (UUID id : participants) {
+            Player p = Bukkit.getPlayer(id);
+            if (p != null && p.isOnline()) {
+                exitProSpectatorMode(p);
+                p.setGameMode(GameMode.ADVENTURE);
+            }
+        }
         int celebSec = Math.max(0, plugin.getConfig().getInt("celebration-seconds", 6));
         if (celebSec == 0) {
             stopEvent(stopReason);
@@ -2287,10 +2650,8 @@ public final class EventManager implements Listener {
                             eliminationOrder.add(fighterId);
                             spectators.add(fighterId);
                             fighter.getInventory().clear();
-                            fighter.setGameMode(GameMode.SPECTATOR);
-                            Location audLoc = arena != null ? arenaManager.firstSpawn(arena, "audience") : null;
-                            if (audLoc != null) fighter.teleport(audLoc);
-                            else teleportToConfigured(fighter, "spectator");
+                            Location audLoc = arena != null ? arenaManager.firstSpawn(arena, "audience") : configuredLocation("spectator");
+                            enterProSpectatorMode(fighter, audLoc);
                             fighter.sendMessage(FormatUtil.mm(PREFIX + "<red>You were eliminated for being AFK.</red>"));
                             broadcast("<gray>" + FormatUtil.escape(fighter.getName()) + " was eliminated for being AFK.</gray>");
                             afkWarned.remove(fighterId);
@@ -2298,6 +2659,74 @@ public final class EventManager implements Listener {
                         } else if (now - lastActive >= Math.max(60_000L, afkLimit - 60_000L) && afkWarned.add(fighterId)) {
                             fighter.sendMessage(FormatUtil.mm(PREFIX + "<yellow>AFK warning: move or fight within 60 seconds or you will be eliminated!</yellow>"));
                         }
+                    }
+                }
+
+                // Host / Streamer Auto-Cam: smoothly tracks the hottest active PvP action every 4s!
+                if (!autoCamHosts.isEmpty() && (now - lastAutoCamAtMs) >= 4000L && !alive.isEmpty()) {
+                    lastAutoCamAtMs = now;
+                    Location focus = lastHotFightLocation;
+                    if (focus == null || focus.getWorld() == null) {
+                        for (UUID fid : alive) {
+                            Player fp = Bukkit.getPlayer(fid);
+                            if (fp != null && fp.isOnline()) { focus = fp.getLocation(); break; }
+                        }
+                    }
+                    if (focus != null && focus.getWorld() != null) {
+                        Location camLoc = focus.clone().add(0.0, 6.5, -5.5);
+                        camLoc.setYaw(0.0f);
+                        camLoc.setPitch(42.0f);
+                        for (UUID hostId : new ArrayList<>(autoCamHosts)) {
+                            if (alive.contains(hostId)) continue;
+                            Player host = Bukkit.getPlayer(hostId);
+                            if (host != null && host.isOnline()) {
+                                if (host.getGameMode() == GameMode.SURVIVAL) {
+                                    host.setAllowFlight(true);
+                                    host.setFlying(true);
+                                }
+                                host.teleport(camLoc);
+                            }
+                        }
+                    }
+                }
+
+                // Anti-Stall Sudden Death & Damage Tie-Breaker for Tournament Center-Stage Matches!
+                if (eventMode == EventMode.TOURNAMENT && squads.currentMatchup() != null
+                        && !gracePeriodActive && plugin.getConfig().getBoolean("sudden-death.enabled", true)) {
+                    long sdTrigger = Math.max(30L, plugin.getConfig().getLong("sudden-death.tournament-match-seconds", 180L));
+                    long sdTiebreak = Math.max(15L, plugin.getConfig().getLong("sudden-death.tiebreak-after-seconds", 60L));
+                    double sdBorder = Math.max(8.0, plugin.getConfig().getDouble("sudden-death.border-size", 12.0));
+                    long matchElapsed = Math.max(0L, (now - tournamentMatchStartedAtMs) / 1000L);
+                    if (!tournamentSuddenDeathActive && matchElapsed >= sdTrigger) {
+                        tournamentSuddenDeathActive = true;
+                        tournamentSdStartedMs = now;
+                        if (arena != null) {
+                            double cur = currentBorderSize();
+                            activeBorderStartSize = cur;
+                            activeBorderTargetSize = sdBorder;
+                            activeBorderStartMs = now;
+                            activeBorderEndMs = now + 15_000L;
+                            for (UUID fid : alive) {
+                                Player fp = Bukkit.getPlayer(fid);
+                                if (fp != null) {
+                                    applyBorderToPlayer(fp, arena, cur, sdBorder, 15L);
+                                    fp.addPotionEffect(new PotionEffect(PotionEffectType.GLOWING, 20 * 120, 0, false, false, false));
+                                }
+                            }
+                        }
+                        hud.broadcastTitle(participants, "<red><bold>⚡ SUDDEN DEATH! ⚡</bold></red>",
+                                "<yellow>Border closing to " + (int) sdBorder + "x" + (int) sdBorder + " — Highest damage wins in " + sdTiebreak + "s!</yellow>",
+                                100, 1800, 300);
+                        broadcast("<red><bold>⚡ TOURNAMENT SUDDEN DEATH!</bold></red> <yellow>Border closing to " + (int) sdBorder + "x" + (int) sdBorder + " — Damage Tie-Breaker in " + sdTiebreak + "s!</yellow>");
+                    } else if (tournamentSuddenDeathActive && ((now - tournamentSdStartedMs) / 1000L) >= sdTiebreak) {
+                        TournamentSquadManager.ActiveMatchup cm = squads.currentMatchup();
+                        double dmgA = 0.0, dmgB = 0.0;
+                        for (UUID m : cm.teamA().members()) dmgA += tournamentMatchDamage.getOrDefault(m, 0.0);
+                        for (UUID m : cm.teamB().members()) dmgB += tournamentMatchDamage.getOrDefault(m, 0.0);
+                        int winId = dmgA >= dmgB ? cm.teamA().id() : cm.teamB().id();
+                        broadcast("<gold><bold>⚡ SUDDEN DEATH TIE-BREAKER!</bold></gold> <yellow>Highest Damage wins ("
+                                + String.format(Locale.ROOT, "%.0f", dmgA) + " vs " + String.format(Locale.ROOT, "%.0f", dmgB) + " DMG)!</yellow>");
+                        completeTournamentMatch(winId);
                     }
                 }
 
@@ -2549,6 +2978,8 @@ public final class EventManager implements Listener {
             Player player = Bukkit.getPlayer(entry.getKey());
             if (player != null && !player.isDead()) {
                 clearPlayerBorder(player);
+                clearModifiersOnPlayer(player);
+                exitProSpectatorMode(player);
                 hud.clearForPlayer(player);
                 entry.getValue().restore(player, resolveReturnLocation());
                 snapshots.remove(entry.getKey());
@@ -2697,7 +3128,7 @@ public final class EventManager implements Listener {
         for (String page : rawPages) pages.add(FormatUtil.parseFlexible(page));
         meta.pages(pages);
         book.setItemMeta(meta);
-        player.getInventory().setItem(4, book);
+        // Display-only virtual book! Never placed into player inventory so kits & hotbar slots are 100% untouched!
         player.openBook(book);
         playCue(player, "rules-book");
     }
@@ -2739,7 +3170,8 @@ public final class EventManager implements Listener {
     private boolean isInsideAnyLobbyArea(Player player) {
         if (player == null || !player.isOnline() || player.isDead()) return false;
         UUID id = player.getUniqueId();
-        if ((eventRunning && alive.contains(id)) || (casualDuels != null && casualDuels.isInCasualDuel(id))) {
+        if ((eventRunning && alive.contains(id)) || (casualDuels != null && casualDuels.isInCasualDuel(id))
+                || (warmupFfa != null && warmupFfa.isInFfa(id))) {
             return false;
         }
         if (eventOpen && participants.contains(id)) return true;
@@ -2849,8 +3281,9 @@ public final class EventManager implements Listener {
 
     private boolean inWaitingLobby(Player player) {
         UUID id = player.getUniqueId();
-        // Active fighters & casual duelists are NEVER in the waiting lobby (prevents proximity guards from blocking combat/building!)
-        if ((eventRunning && alive.contains(id)) || (casualDuels != null && casualDuels.isInCasualDuel(id))) {
+        // Active fighters, casual duelists, & warmup FFA players are NEVER in the waiting lobby!
+        if ((eventRunning && alive.contains(id)) || (casualDuels != null && casualDuels.isInCasualDuel(id))
+                || (warmupFfa != null && warmupFfa.isInFfa(id))) {
             return false;
         }
         if (eventOpen && participants.contains(id) && !alive.contains(id)) {
@@ -2924,6 +3357,10 @@ public final class EventManager implements Listener {
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onArenaBlockBreakGuard(BlockBreakEvent event) {
         Player player = event.getPlayer();
+        if (spectators.contains(player.getUniqueId())) {
+            event.setCancelled(true);
+            return;
+        }
         if (player.hasPermission("clasherevents.admin")) return;
         if (inWaitingLobby(player)) {
             event.setCancelled(true);
@@ -2934,7 +3371,7 @@ public final class EventManager implements Listener {
                 event.setCancelled(true);
                 return;
             }
-            Arena arena = arenaManager.get(selectedArena);
+            Arena arena = arenaManager.get(arenaIdForPlayer(player.getUniqueId()));
             Block b = event.getBlock();
             if (arena != null && plugin.getConfig().getBoolean("anti-escape.enabled", true)
                     && !arena.isInsideBuildBounds(b.getX(), b.getY(), b.getZ())) {
@@ -2947,6 +3384,10 @@ public final class EventManager implements Listener {
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onArenaBlockPlaceGuard(BlockPlaceEvent event) {
         Player player = event.getPlayer();
+        if (spectators.contains(player.getUniqueId())) {
+            event.setCancelled(true);
+            return;
+        }
         if (player.hasPermission("clasherevents.admin")) return;
         if (inWaitingLobby(player)) {
             event.setCancelled(true);
@@ -2957,7 +3398,7 @@ public final class EventManager implements Listener {
                 event.setCancelled(true);
                 return;
             }
-            Arena arena = arenaManager.get(selectedArena);
+            Arena arena = arenaManager.get(arenaIdForPlayer(player.getUniqueId()));
             Block b = event.getBlock();
             if (arena != null && plugin.getConfig().getBoolean("anti-escape.enabled", true)
                     && !arena.isInsideBuildBounds(b.getX(), b.getY(), b.getZ())) {
@@ -2970,6 +3411,10 @@ public final class EventManager implements Listener {
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onArenaBucketEmptyGuard(PlayerBucketEmptyEvent event) {
         Player player = event.getPlayer();
+        if (spectators.contains(player.getUniqueId())) {
+            event.setCancelled(true);
+            return;
+        }
         if (player.hasPermission("clasherevents.admin")) return;
         if (inWaitingLobby(player)) {
             event.setCancelled(true);
@@ -2980,7 +3425,7 @@ public final class EventManager implements Listener {
                 event.setCancelled(true);
                 return;
             }
-            Arena arena = arenaManager.get(selectedArena);
+            Arena arena = arenaManager.get(arenaIdForPlayer(player.getUniqueId()));
             Block b = event.getBlock();
             if (arena != null && plugin.getConfig().getBoolean("anti-escape.enabled", true)
                     && !arena.isInsideBuildBounds(b.getX(), b.getY(), b.getZ())) {
@@ -3007,12 +3452,17 @@ public final class EventManager implements Listener {
             return;
         }
 
-        Arena arena = arenaManager.get(selectedArena);
+        Arena arena = arenaManager.get(arenaIdForPlayer(id));
         if (arena == null) return;
         String arenaWorld = arenaManager.sharedWorldName();
 
-        // 2. Active fighters cannot ender-pearl/chorus during grace freeze OR outside arena bounds!
+        // 2. Active fighters cannot pearl during No-Pearls modifier, grace freeze, OR outside arena bounds!
         if (eventRunning && alive.contains(id)) {
+            if (event.getCause() == PlayerTeleportEvent.TeleportCause.ENDER_PEARL && hasModifier(EventModifier.NO_PEARLS)) {
+                event.setCancelled(true);
+                warnBoundary(player, "<red>Ender Pearls are disabled by the No-Pearls Event Modifier!</red>");
+                return;
+            }
             if (gracePeriodActive) {
                 event.setCancelled(true);
                 warnBoundary(player, "<yellow>Wait for the grace countdown before pearling!</yellow>");
@@ -3038,47 +3488,61 @@ public final class EventManager implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onTrackPlace(BlockPlaceEvent event) {
-        if (blockTracker.isTracking()) {
-            Block b = event.getBlock();
-            blockTracker.recordBeforeChange(new ArenaBlockTracker.BlockPos(b.getX(), b.getY(), b.getZ()), event.getBlockReplacedState().getBlockData());
-        }
+        Block b = event.getBlock();
+        var pos = new ArenaBlockTracker.BlockPos(b.getX(), b.getY(), b.getZ());
+        var dataBefore = event.getBlockReplacedState().getBlockData();
+        if (blockTracker.isTracking()) blockTracker.recordBeforeChange(pos, dataBefore);
+        ParallelMatch pm = parallelByPlayer.get(event.getPlayer().getUniqueId());
+        if (pm != null && pm.tracker.isTracking()) pm.tracker.recordBeforeChange(pos, dataBefore);
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onTrackBreak(BlockBreakEvent event) {
         if (blockTracker.isTracking()) blockTracker.recordBeforeChange(event.getBlock());
+        ParallelMatch pm = parallelByPlayer.get(event.getPlayer().getUniqueId());
+        if (pm != null && pm.tracker.isTracking()) pm.tracker.recordBeforeChange(event.getBlock());
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onTrackLiquidFlow(BlockFromToEvent event) {
         if (blockTracker.isTracking()) blockTracker.recordBeforeChange(event.getToBlock());
+        for (ParallelMatch pm : activeParallelMatches) if (pm.tracker.isTracking()) pm.tracker.recordBeforeChange(event.getToBlock());
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onTrackIgnite(BlockIgniteEvent event) {
         if (blockTracker.isTracking()) blockTracker.recordBeforeChange(event.getBlock());
+        for (ParallelMatch pm : activeParallelMatches) if (pm.tracker.isTracking()) pm.tracker.recordBeforeChange(event.getBlock());
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onTrackEntityExplode(EntityExplodeEvent event) {
-        if (!blockTracker.isTracking()) return;
-        for (Block b : event.blockList()) blockTracker.recordBeforeChange(b);
+        if (blockTracker.isTracking()) for (Block b : event.blockList()) blockTracker.recordBeforeChange(b);
+        for (ParallelMatch pm : activeParallelMatches) {
+            if (pm.tracker.isTracking()) for (Block b : event.blockList()) pm.tracker.recordBeforeChange(b);
+        }
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onTrackBlockExplode(BlockExplodeEvent event) {
-        if (!blockTracker.isTracking()) return;
-        for (Block b : event.blockList()) blockTracker.recordBeforeChange(b);
+        if (blockTracker.isTracking()) for (Block b : event.blockList()) blockTracker.recordBeforeChange(b);
+        for (ParallelMatch pm : activeParallelMatches) {
+            if (pm.tracker.isTracking()) for (Block b : event.blockList()) pm.tracker.recordBeforeChange(b);
+        }
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onTrackBucketEmpty(PlayerBucketEmptyEvent event) {
         if (blockTracker.isTracking()) blockTracker.recordBeforeChange(event.getBlock());
+        ParallelMatch pm = parallelByPlayer.get(event.getPlayer().getUniqueId());
+        if (pm != null && pm.tracker.isTracking()) pm.tracker.recordBeforeChange(event.getBlock());
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onTrackBucketFill(PlayerBucketFillEvent event) {
         if (blockTracker.isTracking()) blockTracker.recordBeforeChange(event.getBlock());
+        ParallelMatch pm = parallelByPlayer.get(event.getPlayer().getUniqueId());
+        if (pm != null && pm.tracker.isTracking()) pm.tracker.recordBeforeChange(event.getBlock());
     }
 
     // -------------------------------------------------------------------------
@@ -3112,15 +3576,24 @@ public final class EventManager implements Listener {
 
     @EventHandler
     public void onTeamFriendlyFire(EntityDamageByEntityEvent event) {
-        if (!eventRunning || !(event.getEntity() instanceof Player victim)) return;
+        if (!eventRunning) return;
+        Player attacker = null;
+        if (event.getDamager() instanceof Player direct) attacker = direct;
+        else if (event.getDamager() instanceof Projectile proj && proj.getShooter() instanceof Player shooter) attacker = shooter;
+        if (attacker != null && spectators.contains(attacker.getUniqueId())) {
+            event.setCancelled(true);
+            return;
+        }
+        if (!(event.getEntity() instanceof Player victim)) return;
+        if (spectators.contains(victim.getUniqueId())) {
+            event.setCancelled(true);
+            return;
+        }
         if (!alive.contains(victim.getUniqueId())) return;
         if (celebrating || gracePeriodActive) {
             event.setCancelled(true);
             return;
         }
-        Player attacker = null;
-        if (event.getDamager() instanceof Player direct) attacker = direct;
-        else if (event.getDamager() instanceof Projectile proj && proj.getShooter() instanceof Player shooter) attacker = shooter;
         if (attacker == null || !alive.contains(attacker.getUniqueId())) return;
 
         Integer teamA = teams.get(attacker.getUniqueId());
@@ -3130,8 +3603,20 @@ public final class EventManager implements Listener {
             return;
         }
 
+        // Event Modifiers: One-Hit Bow & Vampire Lifesteal!
+        if (hasModifier(EventModifier.ONE_HIT_BOW) && event.getDamager() instanceof org.bukkit.entity.Arrow) {
+            event.setDamage(100.0);
+        }
+        if (hasModifier(EventModifier.VAMPIRE) && event.getDamager() instanceof Player) {
+            AttributeInstance aMax = attacker.getAttribute(Attribute.MAX_HEALTH);
+            double cap = aMax != null ? aMax.getValue() : 20.0;
+            attacker.setHealth(Math.min(cap, attacker.getHealth() + Math.max(0.5, event.getFinalDamage() * 0.25)));
+        }
+
         lastDamager.put(victim.getUniqueId(), attacker.getUniqueId());
         matchDamageDealt.merge(attacker.getUniqueId(), event.getFinalDamage(), Double::sum);
+        tournamentMatchDamage.merge(attacker.getUniqueId(), event.getFinalDamage(), Double::sum);
+        lastHotFightLocation = victim.getLocation().clone();
         long now = System.currentTimeMillis();
         lastCombatAt.put(victim.getUniqueId(), now);
         lastMovementAt.put(attacker.getUniqueId(), now);
@@ -3233,7 +3718,7 @@ public final class EventManager implements Listener {
 
         // 4. Active fighter HARD arena containment — zero escape over walls, above height limit, or into void!
         if (antiEscape && !celebrating) {
-            Arena arena = arenaManager.get(selectedArena);
+            Arena arena = arenaManager.get(arenaIdForPlayer(id));
             if (arena != null) {
                 boolean sameWorld = player.getWorld().getName().equalsIgnoreCase(arenaManager.sharedWorldName());
                 if (!sameWorld || to.getY() < arena.pasteY() - 1.0) {
@@ -3310,7 +3795,13 @@ public final class EventManager implements Listener {
     public void onLobbyDamage(EntityDamageEvent event) {
         if (!(event.getEntity() instanceof Player player)) return;
         UUID id = player.getUniqueId();
+        if (eventRunning && alive.contains(id) && hasModifier(EventModifier.LOW_GRAVITY)
+                && event.getCause() == EntityDamageEvent.DamageCause.FALL) {
+            event.setCancelled(true);
+            return;
+        }
         if (inWaitingLobby(player)
+                || spectators.contains(id)
                 || (eventOpen && participants.contains(id) && !eventRunning)
                 || (celebrating && participants.contains(id))) {
             event.setCancelled(true);
@@ -3320,7 +3811,8 @@ public final class EventManager implements Listener {
     @EventHandler
     public void onLobbyFood(FoodLevelChangeEvent event) {
         if (event.getEntity() instanceof Player player
-                && (inWaitingLobby(player) || (eventOpen && participants.contains(player.getUniqueId()) && !eventRunning))) {
+                && (inWaitingLobby(player) || spectators.contains(player.getUniqueId())
+                || (eventOpen && participants.contains(player.getUniqueId()) && !eventRunning))) {
             event.setCancelled(true);
         }
     }
@@ -3328,6 +3820,10 @@ public final class EventManager implements Listener {
     @EventHandler
     public void onLobbyDrop(PlayerDropItemEvent event) {
         if ("admin-panel".equals(lobbyItemAction(event.getItemDrop().getItemStack()))) {
+            event.setCancelled(true);
+            return;
+        }
+        if (spectators.contains(event.getPlayer().getUniqueId())) {
             event.setCancelled(true);
             return;
         }
@@ -3360,10 +3856,16 @@ public final class EventManager implements Listener {
                 case "squad-manager" -> { if (gui != null) gui.openSquadManagerGui(player); }
                 case "bracket-viewer" -> { if (gui != null) gui.openBracketViewerGui(player); }
                 case "smart-vote", "mode-vote" -> { if (gui != null) gui.openSmartVoteGui(player); }
+                case "spec-tp" -> { if (gui != null) gui.openSpectateGui(player); }
+                case "spec-vote" -> { if (gui != null) gui.openVoteGui(player); }
                 case "leaderboard" -> { if (gui != null) gui.openLeaderboardGui(player, "elo"); }
                 case "leave" -> leaveEvent(player);
                 default -> {}
             }
+            return;
+        }
+        if (spectators.contains(player.getUniqueId())) {
+            event.setCancelled(true);
             return;
         }
         if (player.hasPermission("clasherevents.admin")) return;
@@ -3375,6 +3877,10 @@ public final class EventManager implements Listener {
 
     @EventHandler
     public void onLobbyPickup(PlayerAttemptPickupItemEvent event) {
+        if (spectators.contains(event.getPlayer().getUniqueId())) {
+            event.setCancelled(true);
+            return;
+        }
         if (!event.getPlayer().hasPermission("clasherevents.admin") && inWaitingLobby(event.getPlayer())) {
             event.setCancelled(true);
         }
@@ -3383,20 +3889,28 @@ public final class EventManager implements Listener {
     @EventHandler
     public void onLobbyInventory(InventoryClickEvent event) {
         if (event.getInventory().getHolder() instanceof EventMenuHolder) return;
-        if (event.getWhoClicked() instanceof Player player
-                && !player.hasPermission("clasherevents.admin")
-                && inWaitingLobby(player)) {
-            event.setCancelled(true);
+        if (event.getWhoClicked() instanceof Player player) {
+            if (spectators.contains(player.getUniqueId())) {
+                event.setCancelled(true);
+                return;
+            }
+            if (!player.hasPermission("clasherevents.admin") && inWaitingLobby(player)) {
+                event.setCancelled(true);
+            }
         }
     }
 
     @EventHandler
     public void onLobbyInventoryDrag(InventoryDragEvent event) {
         if (event.getInventory().getHolder() instanceof EventMenuHolder) return;
-        if (event.getWhoClicked() instanceof Player player
-                && !player.hasPermission("clasherevents.admin")
-                && inWaitingLobby(player)) {
-            event.setCancelled(true);
+        if (event.getWhoClicked() instanceof Player player) {
+            if (spectators.contains(player.getUniqueId())) {
+                event.setCancelled(true);
+                return;
+            }
+            if (!player.hasPermission("clasherevents.admin") && inWaitingLobby(player)) {
+                event.setCancelled(true);
+            }
         }
     }
 
@@ -3543,9 +4057,8 @@ public final class EventManager implements Listener {
         Bukkit.getScheduler().runTask(plugin, () -> {
             Player p = event.getPlayer();
             if (participants.contains(id) && !alive.contains(id)) {
-                p.getInventory().clear();
-                p.setGameMode(GameMode.SPECTATOR);
                 spectators.add(id);
+                enterProSpectatorMode(p, null);
             }
         });
     }
@@ -3567,6 +4080,8 @@ public final class EventManager implements Listener {
                 List<Location> points = arena == null ? List.of() : arenaManager.spawns(arena, phase.equals("final") ? "final" : phase);
                 if (!points.isEmpty()) player.teleport(points.get(random.nextInt(points.size())));
                 player.setGameMode(GameMode.SURVIVAL);
+                exitProSpectatorMode(player);
+                applyModifiersToFighter(player);
                 player.sendMessage(FormatUtil.mm(PREFIX + "<green>Reconnected! Your event state has been restored (no fresh kit issued).</green>"));
                 applyCurrentBorderToPlayer(player);
             });
@@ -3609,6 +4124,7 @@ public final class EventManager implements Listener {
     public void onQuit(PlayerQuitEvent event) {
         UUID id = event.getPlayer().getUniqueId();
         parkourStartedAt.remove(id);
+        autoCamHosts.remove(id);
         clearPlayerBorder(event.getPlayer());
         hud.clearForPlayer(event.getPlayer());
         if (eventRunning && !celebrating && alive.contains(id)) {

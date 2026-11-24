@@ -3,9 +3,11 @@ package network.clasher.events.gui;
 import net.kyori.adventure.text.Component;
 import network.clasher.events.arena.ArenaManager;
 import network.clasher.events.kit.KitManager;
+import network.clasher.events.match.DuelSnapshotStore;
 import network.clasher.events.match.EventManager;
 import network.clasher.events.match.TournamentSquadManager;
 import network.clasher.events.model.EventMode;
+import network.clasher.events.model.EventModifier;
 import network.clasher.events.storage.DataStore;
 import network.clasher.events.util.FormatUtil;
 import org.bukkit.Bukkit;
@@ -156,6 +158,17 @@ public final class EventGui implements Listener {
                 "skip-timer",
                 ""
         ));
+        inv.setItem(39, button(
+                Material.BREWING_STAND,
+                "<light_purple><bold>Event Modifiers</bold></light_purple>",
+                List.of(
+                        "<gray>Active:</gray> <yellow>" + FormatUtil.escape(events.modifiersSummary()) + "</yellow>",
+                        "<gray>Toggle Double HP, Vampire, Low Gravity,</gray>",
+                        "<gray>Speed Chaos, No Pearls & One-Hit Bow!</gray>"
+                ),
+                "open-modifiers",
+                ""
+        ));
         inv.setItem(40, button(
                 Material.BOOK,
                 "<aqua><bold>Event Status</bold></aqua>",
@@ -166,6 +179,17 @@ public final class EventGui implements Listener {
                         "<gray>Alive:</gray> <green>" + events.alive().size() + "</green>"
                 ),
                 "status",
+                ""
+        ));
+        boolean camOn = events.isAutoCamEnabled(admin.getUniqueId());
+        inv.setItem(41, button(
+                Material.ENDER_EYE,
+                camOn ? "<green><bold>🎥 Host Auto-Cam: ON</bold></green>" : "<yellow><bold>🎥 Host Auto-Cam: OFF</bold></yellow>",
+                List.of(
+                        "<gray>Automatically teleports your spectator camera</gray>",
+                        "<gray>to live PvP fights every 4 seconds!</gray>"
+                ),
+                "toggle-autocam",
                 ""
         ));
         admin.openInventory(inv);
@@ -286,23 +310,172 @@ public final class EventGui implements Listener {
 
         int[] slots = {10, 11, 12, 13, 14, 15, 16, 22};
         List<EventMode> kitModes = EventMode.kitModes();
+        int freeSlots = events.casualDuels() != null ? events.casualDuels().freeDuelArenaCount() : 0;
         for (int i = 0; i < kitModes.size() && i < slots.length; i++) {
             EventMode km = kitModes.get(i);
-            boolean busy = events.casualDuels() != null && events.casualDuels().isArenaBusy(km.id());
             inv.setItem(slots[i], button(
                     km.icon(),
                     "<yellow><bold>" + km.displayName() + "</bold></yellow>",
                     List.of(
                             "<gray>Opponent:</gray> <white>" + FormatUtil.escape(target.getName()) + "</white>",
-                            "<gray>Arena Status:</gray> " + (busy ? "<red>Busy</red>" : "<green>Ready</green>"),
+                            "<gray>Free Duel Arenas:</gray> " + (freeSlots > 0 ? "<green>" + freeSlots + "/8 Ready</green>" : "<red>Full</red>"),
                             "",
-                            busy ? "<red>Try another kit</red>" : "<green>Click to send duel invite!</green>"
+                            freeSlots > 0 ? "<green>Click to send duel invite!</green>" : "<red>All duel arenas busy</red>"
                     ),
                     "casual-duel-send",
                     target.getName() + ":" + km.id()
             ));
         }
         challenger.openInventory(inv);
+    }
+
+    // -------------------------------------------------------------------------
+    // 1v1 Auto-Queue GUI (36 slots) + Kit Editor Selector GUI (36 slots)
+    // -------------------------------------------------------------------------
+
+    public void openDuelQueueGui(Player player) {
+        EventMenuHolder holder = new EventMenuHolder(EventMenuHolder.ViewType.DUEL_QUEUE);
+        Inventory inv = Bukkit.createInventory(holder, 36,
+                FormatUtil.mm("<dark_gray><bold>🎯 1v1 Duel Queue</bold></dark_gray> <gray>|</gray> <aqua>Pick Kit</aqua>"));
+        holder.setInventory(inv);
+        fillBorder(inv, 36);
+
+        String myQueue = events.casualDuels() != null ? events.casualDuels().queuedKitOf(player.getUniqueId()) : null;
+        int freeSlots = events.casualDuels() != null ? events.casualDuels().freeDuelArenaCount() : 0;
+        int[] slots = {10, 11, 12, 13, 14, 15, 16, 22};
+        List<EventMode> kitModes = EventMode.kitModes();
+        for (int i = 0; i < kitModes.size() && i < slots.length; i++) {
+            EventMode km = kitModes.get(i);
+            int qCount = events.casualDuels() != null ? events.casualDuels().queueCount(km.id()) : 0;
+            boolean inThis = km.id().equalsIgnoreCase(myQueue);
+            ItemStack item = button(
+                    km.icon(),
+                    (inThis ? "<green><bold>✔ " : "<yellow><bold>") + km.displayName() + (inThis ? " (QUEUED)</bold></green>" : "</bold></yellow>"),
+                    List.of(
+                            "<gray>In Queue:</gray> <aqua><bold>" + qCount + "</bold></aqua>",
+                            "<gray>Free Duel Arenas:</gray> <green>" + freeSlots + "/8</green>",
+                            "",
+                            inThis ? "<red>Click to leave queue</red>" : "<green>Click to join 1v1 Queue!</green>"
+                    ),
+                    inThis ? "queue-leave" : "queue-join",
+                    km.id()
+            );
+            if (inThis) setGlint(item);
+            inv.setItem(slots[i], item);
+        }
+
+        if (myQueue != null) {
+            inv.setItem(29, button(Material.RED_WOOL, "<red><bold>Leave 1v1 Queue</bold></red>",
+                    List.of("<gray>Currently queued for <gold>" + FormatUtil.escape(myQueue) + "</gold></gray>"), "queue-leave", ""));
+        }
+        inv.setItem(31, button(Material.BLAZE_POWDER, "<red><bold>🔥 Warmup FFA Pit</bold></red>",
+                List.of("<gray>Drop straight into nonstop PvP practice!</gray>",
+                        "<yellow>" + (events.warmupFfa() != null ? events.warmupFfa().playerCount() : 0) + " fighting now</yellow>"), "join-ffa", ""));
+        inv.setItem(33, button(Material.IRON_SWORD, "<green><bold>Edit Kit Layout</bold></green>",
+                List.of("<gray>Customize your hotbar & offhand for any kit!</gray>"), "open-kiteditor-picker", ""));
+        player.openInventory(inv);
+    }
+
+    public void openKitEditorSelectorGui(Player player) {
+        EventMenuHolder holder = new EventMenuHolder(EventMenuHolder.ViewType.KIT_EDITOR_SELECTOR);
+        Inventory inv = Bukkit.createInventory(holder, 36,
+                FormatUtil.mm("<dark_gray><bold>Edit Kit Layout</bold></dark_gray> <gray>|</gray> <gold>Select Kit</gold>"));
+        holder.setInventory(inv);
+        fillBorder(inv, 36);
+
+        int[] slots = {10, 11, 12, 13, 14, 15, 16, 22};
+        List<EventMode> kitModes = EventMode.kitModes();
+        for (int i = 0; i < kitModes.size() && i < slots.length; i++) {
+            EventMode km = kitModes.get(i);
+            inv.setItem(slots[i], button(
+                    km.icon(),
+                    "<yellow><bold>" + km.displayName() + "</bold></yellow>",
+                    List.of("<gray>Click to customize your personal</gray>", "<gray>hotbar & offhand layout for this kit!</gray>"),
+                    "open-kit-editor",
+                    km.id()
+            ));
+        }
+        player.openInventory(inv);
+    }
+
+    // -------------------------------------------------------------------------
+    // Post-Duel Inventory & Pro Combat Analytics Viewer GUI (54 slots, Read-Only)
+    // -------------------------------------------------------------------------
+
+    public void openPostDuelInventoryGui(Player viewer, String token) {
+        DuelSnapshotStore.PostDuelSnapshot snap = events.casualDuels() != null ? events.casualDuels().snapshots().get(token) : null;
+        if (snap == null) {
+            viewer.sendMessage(FormatUtil.mm("<red>That post-duel inventory snapshot has expired (snapshots last 5 minutes).</red>"));
+            return;
+        }
+        EventMenuHolder holder = new EventMenuHolder(EventMenuHolder.ViewType.POST_DUEL_INV);
+        Inventory inv = Bukkit.createInventory(holder, 54,
+                FormatUtil.mm("<dark_gray>Duel Inv:</dark_gray> " + (snap.winner() ? "<green><bold>" : "<red><bold>")
+                        + FormatUtil.escape(snap.playerName()) + (snap.winner() ? "</bold></green>" : "</bold></red>")));
+        holder.setInventory(inv);
+
+        // Top row: Armor (0..3), Offhand (4), Pro Combat Stats (5), Result Badge (6), Ping (7), Close (8)
+        for (int i = 0; i < 4; i++) {
+            if (snap.armor()[i] != null) inv.setItem(i, snap.armor()[i].clone());
+        }
+        if (snap.offhand() != null) inv.setItem(4, snap.offhand().clone());
+        inv.setItem(5, button(Material.DIAMOND_SWORD, "<gold><bold>⚔ Combat Analytics</bold></gold>", List.of(
+                "<gray>Health Left:</gray> <red>" + String.format(Locale.ROOT, "%.1f / %.0f ❤", snap.remainingHp(), snap.maxHp()) + "</red>",
+                "<gray>Hits Landed:</gray> <yellow>" + snap.hitsLanded() + "</yellow> <gray>(Crits: <aqua>" + snap.critPercent() + "%</aqua>)</gray>",
+                "<gray>Longest Combo:</gray> <green>" + snap.longestCombo() + " hits</green>",
+                "<gray>Total Damage:</gray> <red>" + String.format(Locale.ROOT, "%.1f DMG", snap.damageDealt()) + "</red>",
+                "<gray>Kit:</gray> <white>" + FormatUtil.escape(snap.kitId()) + "</white>"
+        ), "noop", ""));
+        inv.setItem(6, button(snap.winner() ? Material.GOLD_BLOCK : Material.RED_CONCRETE,
+                snap.winner() ? "<gold><bold>🏆 MATCH WINNER</bold></gold>" : "<red><bold>💀 DEFEATED</bold></red>",
+                List.of("<gray>Player:</gray> <white>" + FormatUtil.escape(snap.playerName()) + "</white>"), "noop", ""));
+        inv.setItem(7, button(Material.COMPARATOR, "<aqua><bold>Ping Snapshot</bold></aqua>",
+                List.of("<green>" + snap.pingMs() + "ms</green>"), "noop", ""));
+        inv.setItem(8, button(Material.BARRIER, "<gray>Close</gray>", List.of(), "close", ""));
+
+        // Rows 2-5: Exact hotbar (0..8 -> GUI 9..17) & main inventory (9..35 -> GUI 18..44)
+        for (int i = 0; i < Math.min(36, snap.contents().length); i++) {
+            if (snap.contents()[i] != null) inv.setItem(9 + i, snap.contents()[i].clone());
+        }
+        ItemStack bottom = pane(Material.BLACK_STAINED_GLASS_PANE);
+        for (int s = 45; s < 54; s++) inv.setItem(s, bottom);
+        viewer.openInventory(inv);
+    }
+
+    // -------------------------------------------------------------------------
+    // Admin Event Modifiers / Mutators GUI (36 slots)
+    // -------------------------------------------------------------------------
+
+    public void openEventModifiersGui(Player admin) {
+        EventMenuHolder holder = new EventMenuHolder(EventMenuHolder.ViewType.EVENT_MODIFIERS);
+        Inventory inv = Bukkit.createInventory(holder, 36,
+                FormatUtil.mm("<dark_gray><bold>⚡ Event Modifiers</bold></dark_gray> <gray>|</gray> <light_purple>Mutators</light_purple>"));
+        holder.setInventory(inv);
+        fillBorder(inv, 36);
+
+        int[] slots = {10, 11, 12, 14, 15, 16};
+        EventModifier[] mods = EventModifier.values();
+        for (int i = 0; i < mods.length && i < slots.length; i++) {
+            EventModifier m = mods[i];
+            boolean on = events.hasModifier(m);
+            ItemStack item = button(
+                    m.icon(),
+                    (on ? "<green><bold>● " : "<yellow><bold>") + m.displayName() + (on ? " [ON]</bold></green>" : " [OFF]</bold></yellow>"),
+                    List.of(
+                            "<gray>" + m.description() + "</gray>",
+                            "",
+                            on ? "<red>Click to disable</red>" : "<green>Click to enable for events!</green>"
+                    ),
+                    "toggle-modifier",
+                    m.id()
+            );
+            if (on) setGlint(item);
+            inv.setItem(slots[i], item);
+        }
+        inv.setItem(29, button(Material.BARRIER, "<red><bold>Clear All Modifiers</bold></red>",
+                List.of("<gray>Reset back to vanilla competitive rules.</gray>"), "clear-modifiers", ""));
+        inv.setItem(33, button(Material.ARROW, "<yellow>Back to Control Panel</yellow>", List.of(), "open-admin", ""));
+        admin.openInventory(inv);
     }
 
     // -------------------------------------------------------------------------
@@ -643,6 +816,9 @@ public final class EventGui implements Listener {
             inv.setItem(31, button(Material.PAPER, "<gray>No Active Tournament</gray>",
                     List.of("<yellow>Click 'New Tournament Setup' above to launch one!</yellow>"), "pick-tourney-size", ""));
         }
+        inv.setItem(47, button(Material.POWERED_RAIL,
+                sqMgr.isParallelRounds() ? "<aqua><bold>Parallel Rounds: ON</bold></aqua>" : "<yellow><bold>Parallel Rounds: OFF</bold></yellow>",
+                List.of("<gray>When ON, early rounds with 4+ teams run</gray>", "<gray>simultaneously across multiple arenas!</gray>"), "tourney-toggle-parallel", ""));
         inv.setItem(49, button(Material.ARROW, "<yellow>Back to Control Panel</yellow>", List.of(), "open-admin", ""));
         admin.openInventory(inv);
     }
@@ -934,6 +1110,14 @@ public final class EventGui implements Listener {
         if (!(event.getWhoClicked() instanceof Player player)) return;
         if (event.getClickedInventory() != event.getView().getTopInventory()) return;
         if (holder.viewType() == EventMenuHolder.ViewType.KIT_PREVIEW) return;
+        if (holder.viewType() == EventMenuHolder.ViewType.POST_DUEL_INV) {
+            ItemStack clickedItem = event.getCurrentItem();
+            if (clickedItem != null && clickedItem.hasItemMeta()
+                    && "close".equals(clickedItem.getItemMeta().getPersistentDataContainer().get(actionKey, PersistentDataType.STRING))) {
+                player.closeInventory();
+            }
+            return;
+        }
         if (holder.viewType() == EventMenuHolder.ViewType.KIT_EDITOR) {
             handleKitEditorClick(player, event.getView().getTopInventory(), event.getSlot());
             return;
@@ -1007,6 +1191,49 @@ public final class EventGui implements Listener {
                 events.adminSetBo3Finals(player, !events.squads().isBo3Finals());
                 openAdminTournamentGui(player);
             }
+            case "tourney-toggle-parallel" -> {
+                if (!player.hasPermission("clasherevents.admin")) return;
+                events.adminSetParallelRounds(player, !events.squads().isParallelRounds());
+                openAdminTournamentGui(player);
+            }
+            case "open-modifiers" -> {
+                if (!player.hasPermission("clasherevents.admin")) return;
+                openEventModifiersGui(player);
+            }
+            case "toggle-modifier" -> {
+                if (!player.hasPermission("clasherevents.admin")) return;
+                EventModifier.fromInput(value).ifPresent(m -> {
+                    boolean nowOn = events.toggleModifier(m);
+                    player.sendMessage(FormatUtil.mm("<light_purple>Modifier <gold>" + m.displayName() + "</gold>: " + (nowOn ? "<green>ON</green>" : "<red>OFF</red>") + "</light_purple>"));
+                });
+                openEventModifiersGui(player);
+            }
+            case "clear-modifiers" -> {
+                if (!player.hasPermission("clasherevents.admin")) return;
+                events.clearModifiers();
+                player.sendMessage(FormatUtil.mm("<yellow>Cleared all active event modifiers.</yellow>"));
+                openEventModifiersGui(player);
+            }
+            case "toggle-autocam" -> {
+                if (!player.hasPermission("clasherevents.admin")) return;
+                events.toggleAutoCam(player);
+                openAdminGui(player);
+            }
+            case "queue-join" -> {
+                player.closeInventory();
+                if (events.casualDuels() != null) events.casualDuels().joinQueue(player, value);
+            }
+            case "queue-leave" -> {
+                if (events.casualDuels() != null) events.casualDuels().leaveQueue(player);
+                openDuelQueueGui(player);
+            }
+            case "join-ffa" -> {
+                player.closeInventory();
+                if (events.warmupFfa() != null) events.warmupFfa().joinFfa(player);
+            }
+            case "open-kiteditor-picker" -> openKitEditorSelectorGui(player);
+            case "open-kit-editor" -> openKitLayoutEditor(player, value);
+            case "close" -> player.closeInventory();
             case "tourney-kitvote" -> {
                 if (!player.hasPermission("clasherevents.admin")) return;
                 player.closeInventory();
@@ -1118,8 +1345,9 @@ public final class EventGui implements Listener {
             case "lb-tab" -> openLeaderboardGui(player, value);
             case "spectate" -> {
                 Player target = Bukkit.getPlayerExact(value);
-                if (target != null && player.getGameMode() == GameMode.SPECTATOR) {
-                    player.setSpectatorTarget(target);
+                if (target != null && (events.isSpectator(player.getUniqueId()) || player.getGameMode() == GameMode.SPECTATOR || player.hasPermission("clasherevents.admin"))) {
+                    player.teleport(target.getLocation().add(0.0, 2.5, 0.0));
+                    player.sendMessage(FormatUtil.mm("<aqua>Spectating <yellow>" + FormatUtil.escape(target.getName()) + "</yellow>!</aqua>"));
                     player.closeInventory();
                 }
             }

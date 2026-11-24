@@ -234,6 +234,84 @@ public final class EventHudManager {
         }
     }
 
+    /**
+     * Compact, flicker-free live Duel & Party Duel sidebar showing Kit, Opponent/Sides,
+     * Live Ping comparison (Your Ping vs Opponent Ping), Match Timer, and Sudden Death alert!
+     */
+    public void updateDuelSidebar(
+            Player player,
+            String titleLabel,
+            String kitLabel,
+            String opponentLabel,
+            int opponentPingMs,
+            long elapsedSec,
+            boolean suddenDeath,
+            int suddenDeathRemainSec,
+            Map<UUID, Integer> sideTeams
+    ) {
+        if (player == null || !player.isOnline() || !isScoreboardEnabled()) return;
+        ScoreboardManager mgr = Bukkit.getScoreboardManager();
+        if (mgr == null) return;
+
+        UUID id = player.getUniqueId();
+        Scoreboard board = activeBoards.get(id);
+        Objective obj;
+        if (board == null) {
+            previousBoards.putIfAbsent(id, player.getScoreboard());
+            board = mgr.getNewScoreboard();
+            obj = board.registerNewObjective("ce_hud", Criteria.DUMMY, FormatUtil.mm("<gold><bold>★ CLASHER DUELS ★</bold></gold>"));
+            obj.setDisplaySlot(DisplaySlot.SIDEBAR);
+            for (int i = 0; i < MAX_LINES; i++) {
+                Team t = board.registerNewTeam("ce_l" + i);
+                t.addEntry(LINE_KEYS[i]);
+            }
+            if (isBelowNameHealthEnabled()) {
+                Objective hp = board.registerNewObjective("ce_hp", Criteria.HEALTH, FormatUtil.mm("<red>❤</red>"));
+                hp.setDisplaySlot(DisplaySlot.BELOW_NAME);
+            }
+            activeBoards.put(id, board);
+            player.setScoreboard(board);
+        } else {
+            obj = board.getObjective("ce_hud");
+            if (obj == null) return;
+            if (player.getScoreboard() != board) player.setScoreboard(board);
+        }
+
+        if (sideTeams != null && !sideTeams.isEmpty()) {
+            syncTeamNametags(board, sideTeams);
+        }
+
+        String serverIp = plugin.getConfig().getString("branding.server-ip", "play.clashernetwork.fun");
+        int myPing = Math.max(0, player.getPing());
+        List<String> lines = new ArrayList<>(MAX_LINES);
+        lines.add("<dark_gray><st>------------------</st></dark_gray>");
+        lines.add("<gray>Match:</gray> <yellow>" + FormatUtil.escape(trim(titleLabel, 15)) + "</yellow>");
+        lines.add("<gray>Kit:</gray> <aqua>" + FormatUtil.escape(trim(kitLabel, 16)) + "</aqua>");
+        lines.add("<gray>Opponent:</gray> <white>" + FormatUtil.escape(trim(opponentLabel, 14)) + "</white>");
+        lines.add("");
+        lines.add("<gray>Your Ping:</gray> <green>" + myPing + "ms</green>");
+        if (opponentPingMs >= 0) {
+            lines.add("<gray>Their Ping:</gray> <yellow>" + opponentPingMs + "ms</yellow>");
+        }
+        lines.add("<gray>Duration:</gray> <white>" + FormatUtil.formatDuration(elapsedSec) + "</white>");
+        if (suddenDeath) {
+            lines.add("<red><bold>⚡ SUDDEN DEATH: " + suddenDeathRemainSec + "s</bold></red>");
+        }
+        lines.add("");
+        lines.add("<aqua>" + FormatUtil.escape(trim(serverIp, 24)) + "</aqua>");
+
+        int activeCount = Math.min(lines.size(), MAX_LINES);
+        for (int i = 0; i < MAX_LINES; i++) {
+            Team t = board.getTeam("ce_l" + i);
+            if (i < activeCount) {
+                if (t != null) t.prefix(FormatUtil.mm(lines.get(i)));
+                obj.getScore(LINE_KEYS[i]).setScore(activeCount - i);
+            } else {
+                board.resetScores(LINE_KEYS[i]);
+            }
+        }
+    }
+
     public void sendHitHealth(Player attacker, Player victim, double remainingHp, double maxHp) {
         if (!isHitActionBarEnabled() || attacker == null || victim == null) return;
         String hpFmt = String.format(Locale.ROOT, "%.1f", Math.max(0.0, remainingHp));

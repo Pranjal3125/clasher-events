@@ -1,5 +1,5 @@
 # ==============================================================================
-# Clasher Events v2.5.0 Configuration
+# Clasher Events v2.6.0 Configuration
 # ==============================================================================
 # Zero-dependency plug-and-play PvP tournament & events engine.
 # WorldEdit, WorldGuard, Hologram plugins, and PlaceholderAPI are 100% optional!
@@ -104,12 +104,31 @@ casual-duels:
   request-expire-seconds: 60
 
 # Esports Team Tournaments (1v1 / 2v2 / 3v3 / 4v4) with dedicated Grand Tournament Hall,
-# timed teammate invites, auto-fill for solo players, & optional Best-of-3 Grand Finals!
+# timed teammate invites, auto-fill for solo players, optional Best-of-3 Grand Finals & Parallel Early Rounds!
 tournament:
   default-team-size: 2
   auto-fill-solos: true
   bo3-finals: true
+  parallel-rounds: false
   invite-expire-seconds: 60
+
+# Anti-Stall Sudden Death & Damage Tie-Breaker for 1v1 Duels, Party Duels, & Tournament Matches!
+sudden-death:
+  enabled: true
+  duel-seconds: 180
+  tournament-match-seconds: 180
+  tiebreak-after-seconds: 60
+  border-size: 12
+
+# Always-Open Warmup FFA Pit (/event ffa) — auto-pauses cleanly whenever an Official Event starts!
+warmup-ffa:
+  enabled: true
+  arena: sword
+  kit: sword
+
+# Native Paper Clickable Lobby NPCs in the Imperial Sky Citadel Main Lobby (zero external plugin needed!).
+lobby-npcs:
+  enabled: true
 
 # Optional automatic event hosting (set enabled: true to auto-run events without staff online).
 auto-scheduler:

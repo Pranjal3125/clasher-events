@@ -165,4 +165,35 @@ final class TournamentSquadManagerTest {
         assertEquals(gf3.teamA().id(), mgr.runnerUpTeam().id());
         assertNotNull(mgr.thirdPlaceTeam(), "3rd place semifinalist must be tracked for Bronze Podium!");
     }
+
+    @Test
+    void runsParallelEarlyRoundsAndAutomaticallyTransitionsToCenterStageGrandFinal() {
+        TournamentSquadManager mgr = new TournamentSquadManager();
+        mgr.reset(1, false);
+        mgr.setParallelRounds(true);
+
+        Map<UUID, String> names = new LinkedHashMap<>();
+        for (int i = 0; i < 4; i++) {
+            UUID id = UUID.randomUUID();
+            names.put(id, "Fighter" + (i + 1));
+            mgr.registerPlayer(id, "Fighter" + (i + 1));
+        }
+
+        Random rng = new Random(123);
+        assertEquals(4, mgr.startBracket(names.keySet(), rng));
+        var parallel = mgr.pollParallelBatch(4);
+        assertEquals(2, parallel.size(), "4-team Round 1 must launch 2 matches simultaneously in parallel!");
+
+        // Both parallel matches complete
+        mgr.recordParallelWinner(parallel.get(0).teamA(), parallel.get(0).teamB());
+        mgr.recordParallelWinner(parallel.get(1).teamB(), parallel.get(1).teamA());
+
+        // Round 2 has only 2 teams left -> MUST NOT run parallel; opens Center-Stage Grand Final!
+        assertTrue(mgr.pollParallelBatch(4).isEmpty());
+        var grandFinal = mgr.nextMatchup(rng);
+        assertNotNull(grandFinal);
+        assertTrue(grandFinal.grandFinal(), "Final 2 squads must play Center-Stage Grand Final!");
+        var res = mgr.recordMatchWinner(grandFinal.teamA().id());
+        assertEquals(TournamentSquadManager.MatchOutcome.TOURNAMENT_CHAMPION, res.outcome());
+    }
 }

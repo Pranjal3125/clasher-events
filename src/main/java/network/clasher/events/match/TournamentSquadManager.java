@@ -115,6 +115,7 @@ public final class TournamentSquadManager {
     private int teamSize = 1;
     private boolean invitesLocked = false;
     private boolean bo3Finals = true;
+    private boolean parallelRounds = false;
     private boolean bracketStarted = false;
     private int nextTeamId = 1;
 
@@ -173,6 +174,8 @@ public final class TournamentSquadManager {
     public void setInvitesLocked(boolean locked) { this.invitesLocked = locked; }
     public boolean isBo3Finals() { return bo3Finals; }
     public void setBo3Finals(boolean bo3Finals) { this.bo3Finals = bo3Finals; }
+    public boolean isParallelRounds() { return parallelRounds; }
+    public void setParallelRounds(boolean parallelRounds) { this.parallelRounds = parallelRounds; }
     public boolean isBracketStarted() { return bracketStarted; }
     public int currentRound() { return currentRound; }
     public TournamentTeam lastByeTeam() { return lastByeTeam; }
@@ -665,6 +668,38 @@ public final class TournamentSquadManager {
         currentWinsB = 0;
         bo3PendingNextGame = false;
         return currentMatchup();
+    }
+
+    /**
+     * Pops up to `maxConcurrent` early-round matchups when Parallel Rounds mode is enabled
+     * and at least 2 matchups remain in the current round (Semifinals & Grand Finals stay Center-Stage!).
+     */
+    public List<MatchPair> pollParallelBatch(int maxConcurrent) {
+        if (!bracketStarted || !parallelRounds || bo3PendingNextGame || currentTeamA != null) {
+            return List.of();
+        }
+        // Only run in parallel when 2+ matchups are queued in the same round (never split a Grand Final!)
+        if (matchQueue.size() < 2) return List.of();
+        int take = Math.min(Math.max(2, maxConcurrent), matchQueue.size());
+        List<MatchPair> batch = new ArrayList<>(take);
+        for (int i = 0; i < take; i++) {
+            MatchPair mp = matchQueue.pollFirst();
+            if (mp != null) batch.add(mp);
+        }
+        return batch;
+    }
+
+    /**
+     * Records the winner of an early-round parallel match directly into the bracket.
+     */
+    public void recordParallelWinner(TournamentTeam winner, TournamentTeam loser) {
+        if (loser != null) {
+            loser.setEliminated(true);
+            eliminatedTeams.add(loser);
+        }
+        if (winner != null) {
+            roundWinners.add(winner);
+        }
     }
 
     public MatchResult recordMatchWinner(int winningTeamId) {

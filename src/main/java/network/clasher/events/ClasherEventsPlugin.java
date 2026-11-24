@@ -7,9 +7,11 @@ import network.clasher.events.gui.EventGui;
 import network.clasher.events.hook.ClasherEventsExpansion;
 import network.clasher.events.hud.EventHudManager;
 import network.clasher.events.hud.HologramManager;
+import network.clasher.events.hud.LobbyNpcManager;
 import network.clasher.events.kit.KitManager;
 import network.clasher.events.match.CasualDuelManager;
 import network.clasher.events.match.EventManager;
+import network.clasher.events.match.WarmupFfaManager;
 import network.clasher.events.notify.DiscordWebhookNotifier;
 import network.clasher.events.schedule.EventScheduler;
 import network.clasher.events.storage.DataStore;
@@ -62,8 +64,10 @@ public final class ClasherEventsPlugin extends JavaPlugin {
     private KitManager kitManager;
     private EventManager eventManager;
     private CasualDuelManager casualDuels;
+    private WarmupFfaManager warmupFfa;
     private EventScheduler scheduler;
     private HologramManager holograms;
+    private LobbyNpcManager lobbyNpcs;
 
     @Override
     public void onEnable() {
@@ -90,8 +94,13 @@ public final class ClasherEventsPlugin extends JavaPlugin {
         eventManager.setHolograms(holograms);
         this.casualDuels = new CasualDuelManager(this, arenaManager, kitManager, dataStore, eventManager, hud);
         eventManager.setCasualDuels(casualDuels);
+        this.warmupFfa = new WarmupFfaManager(this, arenaManager, kitManager, dataStore, eventManager, hud);
+        eventManager.setWarmupFfa(warmupFfa);
+        casualDuels.setWarmupFfa(warmupFfa);
+        warmupFfa.setCasualDuels(casualDuels);
         EventGui eventGui = new EventGui(this, arenaManager, eventManager, kitManager);
         eventManager.setGui(eventGui);
+        this.lobbyNpcs = new LobbyNpcManager(this, arenaManager, eventManager, casualDuels, warmupFfa, eventGui);
         EventCommands commands = new EventCommands(this, arenaManager, kitManager, eventManager, eventGui);
 
         registerCommand("ce", commands);
@@ -100,12 +109,15 @@ public final class ClasherEventsPlugin extends JavaPlugin {
 
         Bukkit.getPluginManager().registerEvents(eventManager, this);
         Bukkit.getPluginManager().registerEvents(casualDuels, this);
+        Bukkit.getPluginManager().registerEvents(warmupFfa, this);
+        Bukkit.getPluginManager().registerEvents(lobbyNpcs, this);
         Bukkit.getPluginManager().registerEvents(eventGui, this);
 
         this.scheduler = new EventScheduler(this, eventManager);
         scheduler.start();
+        lobbyNpcs.start();
 
-        // Spawn/refresh 3D Lobby & Winner Podium holograms cleanly on next tick once worlds settle
+        // Spawn/refresh 3D Lobby, Tournament Hall & Winner Podium holograms + 4 Clickable Lobby NPCs cleanly!
         Bukkit.getScheduler().runTaskLater(this, this::refreshHolograms, 20L);
 
         if (Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI")) {
@@ -132,10 +144,11 @@ public final class ClasherEventsPlugin extends JavaPlugin {
     public void refreshHolograms() {
         if (eventManager != null) {
             eventManager.refreshHologramsSafe();
-            return;
-        }
-        if (holograms != null) {
+        } else if (holograms != null) {
             holograms.refreshAll(null);
+        }
+        if (lobbyNpcs != null) {
+            lobbyNpcs.respawnAll();
         }
     }
 
@@ -179,6 +192,13 @@ public final class ClasherEventsPlugin extends JavaPlugin {
         }
         if (casualDuels != null) {
             casualDuels.shutdown();
+        }
+        if (warmupFfa != null) {
+            warmupFfa.shutdown();
+        }
+        if (lobbyNpcs != null) {
+            lobbyNpcs.stop();
+            lobbyNpcs.removeAll();
         }
         if (eventManager != null) {
             eventManager.shutdown();
